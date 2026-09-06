@@ -1,6 +1,6 @@
 {
   "repo": "mateusvillain/digitalnotes",
-  "prdLocation": "docs/prd",
+  "prdLocation": "wiki",
   "epicLabel": "epic",
   "blockedLabel": "blocked"
 }
