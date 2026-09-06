@@ -110,5 +110,10 @@ Fluxos alternativos relevantes:
 
 ## Plano de execução
 
-- **Milestone:** Whiteboard de Post-its — preencher com o link após a publicação
-- **Epics:** preencher com os links após a publicação
+- **Milestone:** [Whiteboard de Post-its](https://github.com/mateusvillain/digitalnotes/milestone/1)
+- **Epics:**
+  - [#5 — Fundação do app e canvas](https://github.com/mateusvillain/digitalnotes/issues/5)
+  - [#2 — Ciclo de vida do post-it](https://github.com/mateusvillain/digitalnotes/issues/2)
+  - [#3 — Persistência e link compartilhável](https://github.com/mateusvillain/digitalnotes/issues/3)
+  - [#4 — Exportação em Markdown](https://github.com/mateusvillain/digitalnotes/issues/4)
+- **Fila pronta para começar:** [issues sem bloqueio](https://github.com/mateusvillain/digitalnotes/issues?q=is%3Aopen+milestone%3A%22Whiteboard+de+Post-its%22+-label%3Ablocked+-label%3Aepic)
