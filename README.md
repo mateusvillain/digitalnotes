@@ -31,4 +31,8 @@ Scripts disponíveis:
 > rode `npm run typecheck` (que já executa `next typegen`) ou `npm run dev` antes de confiar
 > no TypeScript do editor.
 
+O deploy é feito pela Vercel. O framework fica declarado em `vercel.json` em vez de
+depender da detecção automática no painel: foi justamente ela que falhou no import
+inicial, procurando uma pasta `public/` estática depois de um build de Next bem-sucedido.
+
 Stack: Next.js (App Router) · TypeScript · Tailwind CSS · Vitest · deploy na Vercel.
