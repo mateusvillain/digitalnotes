@@ -701,3 +701,119 @@ describe("Whiteboard — cor do post-it", () => {
     expect(seletor()).not.toBeNull();
   });
 });
+
+describe("Whiteboard — apagar com Delete", () => {
+  function criaPostIt(x: number, y: number): void {
+    duploCliqueNoFundo(x, y);
+    fireEvent.keyDown(screen.getByTestId("post-it-editor"), { key: "Escape" });
+  }
+
+  /** A tecla chega pelo documento, que é onde o atalho global ouve. */
+  function apertaTecla(key: string): void {
+    fireEvent.keyDown(document, { key });
+  }
+
+  function cliqueNoFundoLimpando(): void {
+    const surface = screen.getByTestId("viewport-surface");
+
+    fireEvent.pointerDown(surface, { pointerId: 1, button: 0, clientX: 900, clientY: 600 });
+    fireEvent.pointerUp(surface, { pointerId: 1, clientX: 900, clientY: 600 });
+  }
+
+  it("apaga o post-it selecionado", () => {
+    render(<Whiteboard />);
+    criaPostIt(400, 400);
+
+    apertaTecla("Delete");
+
+    expect(postIts()).toEqual([]);
+  });
+
+  it("apaga todos os selecionados", () => {
+    render(<Whiteboard />);
+    criaPostIt(300, 300);
+    criaPostIt(700, 300);
+    fireEvent.pointerDown(postIt(0), { button: 0, shiftKey: true });
+
+    apertaTecla("Delete");
+
+    expect(postIts()).toEqual([]);
+  });
+
+  it("não apaga quem não está selecionado", () => {
+    render(<Whiteboard />);
+    criaPostIt(300, 300);
+    criaPostIt(700, 300);
+
+    // Só o segundo ficou marcado ao ser criado.
+    apertaTecla("Delete");
+
+    expect(postIts()).toHaveLength(1);
+  });
+
+  it("sem nada selecionado não faz nada", () => {
+    render(<Whiteboard />);
+    criaPostIt(400, 400);
+    cliqueNoFundoLimpando();
+
+    apertaTecla("Delete");
+
+    expect(postIts()).toHaveLength(1);
+  });
+
+  it("não apaga enquanto se escreve dentro do post-it", () => {
+    render(<Whiteboard />);
+    duploCliqueNoFundo(400, 400);
+
+    // O erro clássico do atalho global: apagar o post-it em vez do caractere.
+    fireEvent.keyDown(screen.getByTestId("post-it-editor"), { key: "Delete" });
+    fireEvent.keyDown(screen.getByTestId("post-it-editor"), { key: "Backspace" });
+
+    expect(postIts()).toHaveLength(1);
+    expect(screen.getByTestId("post-it-editor")).toBeDefined();
+  });
+
+  // Ver DELETE_KEYS no hook: no Mac a tecla escrita "delete" emite Backspace.
+  it("Backspace também apaga fora da edição", () => {
+    render(<Whiteboard />);
+    criaPostIt(400, 400);
+
+    apertaTecla("Backspace");
+
+    expect(postIts()).toEqual([]);
+  });
+
+  it("apaga com o post-it focado pelo teclado", async () => {
+    const user = userEvent.setup();
+    render(<Whiteboard />);
+    criaPostIt(400, 400);
+    cliqueNoFundoLimpando();
+
+    postIt(0).focus();
+    await user.keyboard("{Enter}");
+    await user.keyboard("{Delete}");
+
+    // O post-it é tabulável desde a #17, mas não é campo de texto: a guarda olha o alvo, e
+    // aqui ela deixa passar de propósito.
+    expect(postIts()).toEqual([]);
+  });
+
+  it("o seletor de cor some junto com o post-it apagado", () => {
+    render(<Whiteboard />);
+    criaPostIt(400, 400);
+    expect(screen.queryByTestId("color-picker")).not.toBeNull();
+
+    apertaTecla("Delete");
+
+    // A barra é ancorada na seleção, que ficou vazia.
+    expect(screen.queryByTestId("color-picker")).toBeNull();
+  });
+
+  it("não apaga com o board vazio", () => {
+    render(<Whiteboard />);
+
+    apertaTecla("Delete");
+
+    expect(postIts()).toEqual([]);
+  });
+});

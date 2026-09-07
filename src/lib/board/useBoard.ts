@@ -65,6 +65,8 @@ export interface BoardApi {
   selectionColor: NoteColor | null;
   /** Pinta toda a seleção de uma cor, numa publicação só. */
   colorSelection: (color: NoteColor) => void;
+  /** Apaga os post-its marcados e esvazia a seleção. Sem nada marcado, não faz nada. */
+  deleteSelection: () => void;
   /** Grava o texto e fecha a edição. */
   commitText: (id: string, text: string) => void;
 }
@@ -298,6 +300,29 @@ export function useBoard(): BoardApi {
     [store],
   );
 
+  const deleteSelection = useCallback(() => {
+    /**
+     * A seleção de agora, guardada numa constante.
+     *
+     * O updater do `setEditingId` lá embaixo é **diferido** — roda no render seguinte, quando
+     * `publishSelection` já trocou o que a ref aponta. Ler a ref lá dentro perguntaria a um
+     * conjunto vazio. O que salva é esta referência, e não a ordem das linhas: a seleção é
+     * imutável, então o conjunto antigo continua intacto depois de a ref ser reapontada.
+     */
+    const deleted = selectionRef.current;
+    if (deleted.size === 0) return;
+
+    // Numa remoção só, como o resto das ações em lote: quem escuta é a persistência, e dez
+    // post-its apagados não são dez reescritas da URL.
+    store.removeNotes([...deleted]);
+    // Quem estava em edição pode ter sido apagado. Não acontece pelo atalho, que se cala
+    // durante a digitação, mas quem chamar isto por outro caminho não tem como saber disso.
+    setEditingId((current) => (current !== null && deleted.has(current) ? null : current));
+    // A seleção some junto: ids de post-its que não existem mais continuariam marcados e
+    // fariam a próxima ação em lote agir sobre nada.
+    publishSelection(EMPTY_SELECTION);
+  }, [publishSelection, store]);
+
   const commitText = useCallback(
     (id: string, text: string) => {
       store.updateNote(id, { text });
@@ -330,5 +355,6 @@ export function useBoard(): BoardApi {
     selected,
     selectionColor,
     colorSelection,
+    deleteSelection,
   };
 }
