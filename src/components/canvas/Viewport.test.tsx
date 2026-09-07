@@ -12,6 +12,15 @@ function wheelEvent(init: WheelEventInit): WheelEvent {
   return new WheelEvent("wheel", { bubbles: true, cancelable: true, ...init });
 }
 
+/** Segura a barra de espaço, que é o modificador de navegação. */
+function seguraEspaco(): void {
+  fireEvent.keyDown(document, { key: " " });
+}
+
+function soltaEspaco(): void {
+  fireEvent.keyUp(document, { key: " " });
+}
+
 function setup() {
   const pan = vi.fn();
   const zoomBy = vi.fn();
@@ -54,8 +63,9 @@ describe("Viewport", () => {
     expect(screen.getByText("post-it")).toBeDefined();
   });
 
-  it("arrastar o fundo desloca a visualização pela diferença de posição", () => {
+  it("com espaço, arrastar o fundo desloca a visualização pela diferença de posição", () => {
     const { surface, pan } = setup();
+    seguraEspaco();
 
     fireEvent.pointerDown(surface, { pointerId: 1, button: 0, clientX: 100, clientY: 100 });
     fireEvent.pointerMove(surface, { pointerId: 1, clientX: 112, clientY: 93 });
@@ -65,8 +75,9 @@ describe("Viewport", () => {
     expect(pan).toHaveBeenNthCalledWith(2, 10, 0);
   });
 
-  it("arrastar a camada do canvas também desloca, não só o fundo", () => {
+  it("com espaço, arrastar a camada do canvas também desloca, não só o fundo", () => {
     const { pan } = setup();
+    seguraEspaco();
     const layer = screen.getByTestId("viewport-layer");
 
     fireEvent.pointerDown(layer, { pointerId: 1, button: 0, clientX: 0, clientY: 0 });
@@ -75,11 +86,38 @@ describe("Viewport", () => {
     expect(pan).toHaveBeenCalledWith(5, 5);
   });
 
-  it("não desloca quando o arraste começa em cima do conteúdo", () => {
+  it("sem espaço, arrastar o fundo não desloca — isso é seleção", () => {
     const { surface, pan } = setup();
 
-    fireEvent.pointerDown(screen.getByText("post-it"), { pointerId: 1, button: 0 });
+    fireEvent.pointerDown(surface, { pointerId: 1, button: 0, clientX: 0, clientY: 0 });
+    fireEvent.pointerMove(surface, { pointerId: 1, clientX: 40, clientY: 40 });
+
+    expect(pan).not.toHaveBeenCalled();
+  });
+
+  it("com espaço, desloca mesmo com o gesto nascendo sobre um post-it", () => {
+    const { surface, pan } = setup();
+    seguraEspaco();
+
+    // O post-it para o pointerdown antes da superfície; a captura do espaço vem antes dele.
+    fireEvent.pointerDown(screen.getByText("post-it"), {
+      pointerId: 1,
+      button: 0,
+      clientX: 0,
+      clientY: 0,
+    });
     fireEvent.pointerMove(surface, { pointerId: 1, clientX: 12, clientY: 12 });
+
+    expect(pan).toHaveBeenCalledWith(12, 12);
+  });
+
+  it("soltar o espaço devolve o arrasto à seleção", () => {
+    const { surface, pan } = setup();
+    seguraEspaco();
+    soltaEspaco();
+
+    fireEvent.pointerDown(surface, { pointerId: 1, button: 0, clientX: 0, clientY: 0 });
+    fireEvent.pointerMove(surface, { pointerId: 1, clientX: 40, clientY: 40 });
 
     expect(pan).not.toHaveBeenCalled();
   });
@@ -123,11 +161,46 @@ describe("Viewport", () => {
     expect(surface.releasePointerCapture).not.toHaveBeenCalled();
   });
 
-  it("a roda amplia para cima e reduz para baixo, ancorada no cursor", () => {
+  it("a roda move o quadro no sentido contrário ao dedo", () => {
+    const { surface, pan, zoomBy } = setup();
+
+    surface.dispatchEvent(wheelEvent({ deltaY: 100 }));
+
+    // Rolar para baixo empurra o conteúdo para cima, como em qualquer página.
+    expect(pan).toHaveBeenCalledWith(-0, -100);
+    expect(zoomBy).not.toHaveBeenCalled();
+  });
+
+  it("dois dedos no trackpad movem nos dois eixos", () => {
+    const { surface, pan } = setup();
+
+    surface.dispatchEvent(wheelEvent({ deltaX: 30, deltaY: -20 }));
+
+    expect(pan).toHaveBeenCalledWith(-30, 20);
+  });
+
+  it("com Shift, a roda de um eixo só move na horizontal", () => {
+    const { surface, pan } = setup();
+
+    surface.dispatchEvent(wheelEvent({ deltaY: 100, shiftKey: true }));
+
+    expect(pan).toHaveBeenCalledWith(-100, 0);
+  });
+
+  it("com Shift, não desvia o que já veio na horizontal", () => {
+    const { surface, pan } = setup();
+
+    // No trackpad o browser já entrega deltaX; desviar de novo cancelaria o eixo vertical.
+    surface.dispatchEvent(wheelEvent({ deltaX: 10, deltaY: 5, shiftKey: true }));
+
+    expect(pan).toHaveBeenCalledWith(-10, -5);
+  });
+
+  it("ctrl+roda amplia para cima e reduz para baixo, ancorado no cursor", () => {
     const { surface, zoomBy } = setup();
 
-    surface.dispatchEvent(wheelEvent({ deltaY: -100, clientX: 200, clientY: 150 }));
-    surface.dispatchEvent(wheelEvent({ deltaY: 100, clientX: 200, clientY: 150 }));
+    surface.dispatchEvent(wheelEvent({ deltaY: -100, clientX: 200, clientY: 150, ctrlKey: true }));
+    surface.dispatchEvent(wheelEvent({ deltaY: 100, clientX: 200, clientY: 150, ctrlKey: true }));
 
     const [ampliar, reduzir] = zoomBy.mock.calls;
     expect(ampliar?.[0]).toBeGreaterThan(1);
@@ -145,13 +218,31 @@ describe("Viewport", () => {
     expect(zoomBy).toHaveBeenCalledOnce();
   });
 
+  it("⌘+roda também amplia, que é o atalho do Mac", () => {
+    const { surface, zoomBy } = setup();
+
+    surface.dispatchEvent(wheelEvent({ deltaY: -100, metaKey: true }));
+
+    expect(zoomBy.mock.calls[0]?.[0]).toBeGreaterThan(1);
+  });
+
   it("normaliza a rolagem em linhas para não ficar lenta no Firefox", () => {
     const { surface, zoomBy } = setup();
 
-    surface.dispatchEvent(wheelEvent({ deltaY: -3, deltaMode: WheelEvent.DOM_DELTA_LINE }));
-    surface.dispatchEvent(wheelEvent({ deltaY: -48 }));
+    surface.dispatchEvent(
+      wheelEvent({ deltaY: -3, deltaMode: WheelEvent.DOM_DELTA_LINE, ctrlKey: true }),
+    );
+    surface.dispatchEvent(wheelEvent({ deltaY: -48, ctrlKey: true }));
 
     expect(zoomBy.mock.calls[0]?.[0]).toBeCloseTo(zoomBy.mock.calls[1]?.[0] as number, 10);
+  });
+
+  it("normaliza a rolagem em linhas também ao mover", () => {
+    const { surface, pan } = setup();
+
+    surface.dispatchEvent(wheelEvent({ deltaY: 3, deltaMode: WheelEvent.DOM_DELTA_LINE }));
+
+    expect(pan).toHaveBeenCalledWith(-0, -48);
   });
 });
 
@@ -337,12 +428,14 @@ describe("Viewport — retângulo de seleção", () => {
 describe("Viewport — clique no fundo", () => {
   function setupClique() {
     const onBackgroundClick = vi.fn();
+    const onSelectionRect = vi.fn();
     render(
       <Viewport
         viewport={IDENTITY_VIEWPORT}
         pan={vi.fn()}
         zoomBy={vi.fn()}
         onBackgroundClick={onBackgroundClick}
+        onSelectionRect={onSelectionRect}
       >
         <span data-testid="conteudo">post-it</span>
       </Viewport>,
@@ -351,7 +444,7 @@ describe("Viewport — clique no fundo", () => {
     const surface = screen.getByTestId("viewport-surface");
     stubPointerCapture(surface);
 
-    return { surface, onBackgroundClick };
+    return { surface, onBackgroundClick, onSelectionRect };
   }
 
   it("avisa do clique quando o ponteiro não andou", () => {
@@ -413,17 +506,18 @@ describe("Viewport — clique no fundo", () => {
     expect(onBackgroundClick).not.toHaveBeenCalled();
   });
 
-  it("trata como clique o arrasto que volta exatamente ao ponto de partida", () => {
-    const { surface, onBackgroundClick } = setupClique();
+  it("o arrasto que volta ao ponto de partida termina com um retângulo vazio", () => {
+    const { surface, onBackgroundClick, onSelectionRect } = setupClique();
 
     fireEvent.pointerDown(surface, { pointerId: 1, button: 0, clientX: 30, clientY: 30 });
     fireEvent.pointerMove(surface, { pointerId: 1, clientX: 200, clientY: 200 });
     fireEvent.pointerMove(surface, { pointerId: 1, clientX: 30, clientY: 30 });
     fireEvent.pointerUp(surface, { pointerId: 1, clientX: 30, clientY: 30 });
 
-    // Voltar ao ponto de partida devolve o gesto à condição de clique: o quadro terminou
-    // onde começou, e limpar a seleção é o que o usuário veria como resultado do clique.
-    expect(onBackgroundClick).toHaveBeenCalledOnce();
+    // Não é o caminho do clique — o retângulo chegou a existir. Mas o resultado visível é o
+    // mesmo: um retângulo sem área não toca ninguém, e sem Shift ele substitui a seleção.
+    expect(onBackgroundClick).not.toHaveBeenCalled();
+    expect(onSelectionRect).toHaveBeenLastCalledWith({ x: 30, y: 30, w: 0, h: 0 });
   });
 
   it("ignora o clique nascido em algo desenhado sobre o fundo", () => {

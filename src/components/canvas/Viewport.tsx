@@ -20,6 +20,7 @@ import {
   type Rect,
 } from "@/lib/canvas/coords";
 import { releaseCapture } from "@/lib/canvas/pointer-capture";
+import { useSpaceHeld } from "@/lib/canvas/useSpaceHeld";
 import { SelectionBox } from "./SelectionBox";
 import type { ViewportApi } from "@/lib/canvas/useViewport";
 
@@ -45,27 +46,41 @@ type ViewportProps = Pick<ViewportApi, "viewport" | "pan" | "zoomBy"> & {
   onBackgroundDoubleClick?: (point: Point) => void;
   /** Clique simples no fundo vazio, sem arrasto. */
   onBackgroundClick?: () => void;
-  /** Começo de um retângulo de seleção, antes do primeiro movimento. */
-  onSelectionStart?: () => void;
+  /** Começo de um retângulo de seleção. Com `additive`, ele soma ao que já estava marcado. */
+  onSelectionStart?: (additive: boolean) => void;
   /** Retângulo de seleção em curso, em coordenadas de canvas. */
   onSelectionRect?: (rect: Rect) => void;
   children?: ReactNode;
 };
 
 /**
- * Converte o `deltaY` da roda para pixels.
+ * Converte um delta da roda para pixels.
  *
  * O Firefox reporta rolagem em linhas e alguns dispositivos em páginas; sem normalizar, o
- * mesmo gesto daria um zoom dezenas de vezes menor nesses casos.
+ * mesmo gesto andaria dezenas de vezes menos nesses casos.
  */
-function wheelDeltaInPixels(event: WheelEvent): number {
-  if (event.deltaMode === WheelEvent.DOM_DELTA_LINE) {
-    return event.deltaY * DELTA_MODE_TO_PIXELS.line;
-  }
-  if (event.deltaMode === WheelEvent.DOM_DELTA_PAGE) {
-    return event.deltaY * DELTA_MODE_TO_PIXELS.page;
-  }
-  return event.deltaY;
+function inPixels(delta: number, deltaMode: number): number {
+  if (deltaMode === WheelEvent.DOM_DELTA_LINE) return delta * DELTA_MODE_TO_PIXELS.line;
+  if (deltaMode === WheelEvent.DOM_DELTA_PAGE) return delta * DELTA_MODE_TO_PIXELS.page;
+  return delta;
+}
+
+/**
+ * Deslocamento do quadro para um evento de roda, em pixels de tela.
+ *
+ * Sinal invertido de propósito: rolar para baixo empurra o **conteúdo** para cima, que é
+ * como rola qualquer página. O quadro anda no sentido oposto ao dedo.
+ *
+ * Com Shift, a rolagem vertical vira horizontal. É a convenção de quem tem roda de um eixo
+ * só; nos trackpads o browser já entrega `deltaX` e o Shift não é necessário — por isso o
+ * desvio só acontece quando não veio deslocamento horizontal nenhum.
+ */
+function wheelPan(event: WheelEvent): Point {
+  const x = inPixels(event.deltaX, event.deltaMode);
+  const y = inPixels(event.deltaY, event.deltaMode);
+
+  if (event.shiftKey && x === 0) return { x: -y, y: 0 };
+  return { x: -x, y: -y };
 }
 
 /**
@@ -79,12 +94,35 @@ function wheelDeltaInPixels(event: WheelEvent): number {
  * deslocamento, a origem para decidir se o gesto foi clique ou arrasto.
  */
 type DragState =
-  | { kind: "pan"; pointerId: number; origin: Point; last: Point }
-  | { kind: "marquee"; pointerId: number; start: Point };
+  | { kind: "pan"; pointerId: number; last: Point }
+  | {
+      kind: "marquee";
+      pointerId: number;
+      /** Origem em pixels de tela, para separar clique de arrasto. */
+      origin: Point;
+      /** Origem em coordenadas de canvas: o canto fixo do retângulo. */
+      start: Point;
+      /** Shift no começo do gesto: o retângulo soma em vez de substituir. */
+      additive: boolean;
+      /** Falso até passar da folga. Antes disso o gesto ainda pode ser um clique. */
+      started: boolean;
+    };
 
 /**
- * Superfície navegável do quadro: arrastar o fundo faz pan, a roda faz zoom ancorado no
- * cursor, e Shift + arrastar desenha o retângulo de seleção.
+ * Superfície navegável do quadro.
+ *
+ * Os dois gestos que disputam o botão principal do mouse foram separados por um modificador,
+ * que é a convenção das ferramentas de quadro:
+ *
+ * - **Arrastar o fundo seleciona**, desenhando o retângulo. Com Shift ele soma ao que já
+ *   estava marcado; sem, substitui.
+ * - **Segurar espaço e arrastar navega**, sobre o fundo e sobre os post-its.
+ * - **Roda e dois dedos no trackpad navegam** também, sem tecla nenhuma.
+ * - **Ctrl (ou ⌘) com a roda dá zoom**, ancorado no cursor. É a mesma tecla que o pinch do
+ *   trackpad emite, então pinçar cai nesse caminho sozinho.
+ *
+ * O zoom deixou de responder à roda pura porque ela passou a mover: são o mesmo evento, e o
+ * único lugar que sobra para o zoom é sob um modificador. Os botões de zoom continuam.
  *
  * O conteúdo do canvas vive dentro de uma única camada transformada, e não de elementos
  * posicionados um a um: com dezenas de post-its, o browser compõe uma transform só em vez
@@ -100,6 +138,7 @@ export function Viewport({
   onSelectionRect,
   children,
 }: ViewportProps) {
+  const spaceHeld = useSpaceHeld();
   const surfaceRef = useRef<HTMLDivElement>(null);
   const layerRef = useRef<HTMLDivElement>(null);
   const drag = useRef<DragState | null>(null);
@@ -147,12 +186,23 @@ export function Viewport({
 
     const handleWheel = (event: WheelEvent) => {
       event.preventDefault();
-      zoomBy(Math.exp(-wheelDeltaInPixels(event) * WHEEL_SENSITIVITY), localPoint(event));
+
+      // Roda e dois dedos no trackpad **movem** o quadro; com Ctrl (ou ⌘) dão zoom. Essa é a
+      // mesma tecla que o pinch do trackpad emite, então o gesto de pinçar cai aqui sozinho,
+      // sem ramo próprio.
+      if (event.ctrlKey || event.metaKey) {
+        const delta = inPixels(event.deltaY, event.deltaMode);
+        zoomBy(Math.exp(-delta * WHEEL_SENSITIVITY), localPoint(event));
+        return;
+      }
+
+      const delta = wheelPan(event);
+      pan(delta.x, delta.y);
     };
 
     surface.addEventListener("wheel", handleWheel, { passive: false });
     return () => surface.removeEventListener("wheel", handleWheel);
-  }, [zoomBy, localPoint]);
+  }, [zoomBy, pan, localPoint]);
 
   /** Verdadeiro só para eventos nascidos no fundo, e não em algo desenhado sobre ele. */
   const isBackground = useCallback(
@@ -184,27 +234,51 @@ export function Viewport({
     [isBackground, localPoint, onBackgroundDoubleClick, viewport],
   );
 
+  /**
+   * Espaço segurado: o gesto vira navegação, em **captura**.
+   *
+   * Em captura porque o pan com espaço vale sobre o quadro inteiro, post-its inclusive — e
+   * o post-it para o `pointerdown` antes de ele chegar à superfície. Interceptando na
+   * descida, o gesto é reivindicado aqui e o post-it nunca chega a armar um arraste.
+   */
+  const handlePointerDownCapture = useCallback(
+    (event: PointerEvent<HTMLDivElement>) => {
+      if (!spaceHeld || event.button !== 0) return;
+
+      event.stopPropagation();
+      event.preventDefault();
+      event.currentTarget.setPointerCapture(event.pointerId);
+      drag.current = {
+        kind: "pan",
+        pointerId: event.pointerId,
+        last: { x: event.clientX, y: event.clientY },
+      };
+    },
+    [spaceHeld],
+  );
+
   const handlePointerDown = useCallback(
     (event: PointerEvent<HTMLDivElement>) => {
       // O gesto nasce no fundo ou na camada do canvas; um post-it (issue #15) para o evento
       // antes de chegar aqui.
       if (!isBackground(event)) return;
       if (event.button !== 0) return;
+      // Com espaço, a captura acima já reivindicou o gesto.
+      if (drag.current !== null) return;
 
       event.currentTarget.setPointerCapture(event.pointerId);
 
-      if (event.shiftKey) {
-        const start = screenToCanvas(localPoint(event), viewportRef.current);
-        drag.current = { kind: "marquee", pointerId: event.pointerId, start };
-        setMarquee(rectFromCorners(start, start));
-        onSelectionStart?.();
-        return;
-      }
-
-      const origin = { x: event.clientX, y: event.clientY };
-      drag.current = { kind: "pan", pointerId: event.pointerId, origin, last: origin };
+      // Arrastar o fundo **seleciona**. Navegar é o gesto com espaço, ou a roda.
+      drag.current = {
+        kind: "marquee",
+        pointerId: event.pointerId,
+        origin: { x: event.clientX, y: event.clientY },
+        start: screenToCanvas(localPoint(event), viewportRef.current),
+        additive: event.shiftKey,
+        started: false,
+      };
     },
-    [isBackground, localPoint, onSelectionStart],
+    [isBackground, localPoint],
   );
 
   const handlePointerMove = useCallback(
@@ -212,21 +286,34 @@ export function Viewport({
       const state = drag.current;
       if (state === null || state.pointerId !== event.pointerId) return;
 
-      if (state.kind === "marquee") {
-        const corner = screenToCanvas(localPoint(event), viewportRef.current);
-        const rect = rectFromCorners(state.start, corner);
-        setMarquee(rect);
-        onSelectionRect?.(rect);
+      if (state.kind === "pan") {
+        // Diferença de clientX/Y, e não movementX/Y: este é o mesmo sistema de coordenadas
+        // usado nas conversões, não muda com o zoom da página e não fica indefinido em
+        // browsers que não implementam movement em eventos de ponteiro.
+        pan(event.clientX - state.last.x, event.clientY - state.last.y);
+        state.last = { x: event.clientX, y: event.clientY };
         return;
       }
 
-      // Diferença de clientX/Y, e não movementX/Y: este é o mesmo sistema de coordenadas
-      // usado nas conversões, não muda com o zoom da página e não fica indefinido em
-      // browsers que não implementam movement em eventos de ponteiro.
-      pan(event.clientX - state.last.x, event.clientY - state.last.y);
-      state.last = { x: event.clientX, y: event.clientY };
+      const here = { x: event.clientX, y: event.clientY };
+      if (!state.started) {
+        // Nada de retângulo antes da folga: sem isto um clique no fundo desenharia uma caixa
+        // de zero pixel e refaria a seleção a partir dela.
+        if (distance(state.origin, here) <= CLICK_SLOP) return;
+        state.started = true;
+        // O Shift do começo do gesto, e não o de agora: soltá-lo no meio do arrasto não
+        // deveria transformar um retângulo que somava num que substitui.
+        onSelectionStart?.(state.additive);
+      }
+
+      const rect = rectFromCorners(
+        state.start,
+        screenToCanvas(localPoint(event), viewportRef.current),
+      );
+      setMarquee(rect);
+      onSelectionRect?.(rect);
     },
-    [localPoint, onSelectionRect, pan],
+    [localPoint, onSelectionRect, onSelectionStart, pan],
   );
 
   /** Encerra o gesto e devolve o que ele era, ou `null` se não havia gesto deste ponteiro. */
@@ -244,12 +331,11 @@ export function Viewport({
   const handlePointerUp = useCallback(
     (event: PointerEvent<HTMLDivElement>) => {
       const state = endDrag(event);
-      if (state === null || state.kind !== "pan") return;
+      if (state === null || state.kind !== "marquee") return;
 
-      // Navegar pelo quadro não é clicar no fundo: sem a folga, todo pan terminaria
-      // limpando a seleção. A distância é medida desde a origem do gesto.
-      const walked = distance(state.origin, { x: event.clientX, y: event.clientY });
-      if (walked <= CLICK_SLOP) onBackgroundClick?.();
+      // Um retângulo que nunca chegou a começar foi um clique, e clique no fundo limpa a
+      // seleção. Navegar com espaço não passa por aqui: mover o quadro não desmarca nada.
+      if (!state.started) onBackgroundClick?.();
     },
     [endDrag, onBackgroundClick],
   );
@@ -273,7 +359,12 @@ export function Viewport({
     <div
       ref={surfaceRef}
       // O cursor muda por CSS, e não por estado: arrastar não precisa de re-render.
-      className="whiteboard-surface absolute inset-0 cursor-grab touch-none overflow-hidden active:cursor-grabbing"
+      // O cursor conta qual gesto o arrasto vai virar: mão só com espaço, cruz para
+      // selecionar. Muda por CSS e por classe, não por estado de gesto: arrastar não
+      // precisa de re-render.
+      className={`whiteboard-surface absolute inset-0 touch-none overflow-hidden ${
+        spaceHeld ? "cursor-grab active:cursor-grabbing" : "cursor-crosshair"
+      }`}
       style={
         {
           // A malha acompanha o zoom e o pan, senão o fundo fica parado e o quadro parece
@@ -283,10 +374,12 @@ export function Viewport({
         } as CSSProperties
       }
       onDoubleClick={handleDoubleClick}
+      onPointerDownCapture={handlePointerDownCapture}
       onPointerDown={handlePointerDown}
       onPointerMove={handlePointerMove}
       onPointerUp={handlePointerUp}
       onPointerCancel={handlePointerCancel}
+      data-space-held={spaceHeld}
       data-testid="viewport-surface"
     >
       <div

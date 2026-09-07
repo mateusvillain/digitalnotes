@@ -54,8 +54,13 @@ export interface BoardApi {
   resizeBy: (delta: Point) => void;
   endResize: () => void;
   cancelResize: () => void;
-  /** Marca o começo de um retângulo de seleção, guardando o que já estava marcado. */
-  beginRectSelection: () => void;
+  /**
+   * Marca o começo de um retângulo de seleção.
+   *
+   * Com `additive`, o retângulo soma ao que já estava marcado; sem, ele substitui — que é o
+   * que faz um retângulo desenhado no vazio limpar a seleção.
+   */
+  beginRectSelection: (additive?: boolean) => void;
   /** Acrescenta ao que já estava marcado os post-its que o retângulo toca. */
   selectInRect: (rect: Rect) => void;
   clearSelection: () => void;
@@ -180,15 +185,16 @@ export function useBoard(): BoardApi {
     [publishSelection, store],
   );
 
-  const beginRectSelection = useCallback(() => {
-    selectionBeforeRect.current = selectionRef.current;
+  const beginRectSelection = useCallback((additive = false) => {
+    // A base sobre a qual o retângulo soma. Vazia quando ele substitui, e é isso que faz
+    // arrastar no vazio desmarcar tudo, sem precisar de um caminho próprio para isso.
+    selectionBeforeRect.current = additive ? selectionRef.current : EMPTY_SELECTION;
   }, []);
 
   const selectInRect = useCallback(
     (rect: Rect) => {
-      // Soma ao que já estava marcado, como o shift-clique — é o mesmo Shift que abre o
-      // gesto. Redesenhar o retângulo recalcula a partir do que havia antes dele, senão
-      // encolher o retângulo nunca desmarcaria ninguém.
+      // Soma à base guardada no começo do gesto. Recalcular a partir dela a cada movimento
+      // é o que faz encolher o retângulo desmarcar de volta quem ele deixou de tocar.
       const tocados = notesInRect(store.getBoard().notes, rect);
       publishSelection(new Set([...selectionBeforeRect.current, ...tocados]));
     },

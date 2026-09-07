@@ -215,17 +215,40 @@ describe("useBoard — seleção", () => {
     expect(hook.result.current.notes.map((note) => note.z)).toEqual(zAntes);
   });
 
-  it("o retângulo soma ao que já estava marcado, a partir do começo do gesto", () => {
+  it("com additive, o retângulo soma ao que já estava marcado", () => {
     const { hook, primeiro, segundo } = comDoisPostIts();
     act(() => hook.result.current.selectNote(segundo.id));
 
-    act(() => hook.result.current.beginRectSelection());
+    act(() => hook.result.current.beginRectSelection(true));
     act(() => hook.result.current.selectInRect({ x: -150, y: -150, w: 300, h: 300 }));
     expect([...hook.result.current.selection].sort()).toEqual([primeiro.id, segundo.id].sort());
 
     // Encolher o retângulo até não tocar mais ninguém devolve a seleção ao que ela era.
     act(() => hook.result.current.selectInRect({ x: 5000, y: 5000, w: 10, h: 10 }));
     expect([...hook.result.current.selection]).toEqual([segundo.id]);
+  });
+
+  it("sem additive, o retângulo substitui a seleção", () => {
+    const { hook, primeiro, segundo } = comDoisPostIts();
+    act(() => hook.result.current.selectNote(segundo.id));
+
+    act(() => hook.result.current.beginRectSelection());
+    act(() => hook.result.current.selectInRect({ x: -150, y: -150, w: 100, h: 100 }));
+
+    // Só o primeiro é tocado, e o segundo sai — arrastar é o gesto padrão de seleção desde
+    // que o pan mudou para o espaço, e um gesto que só soma nunca desmarcaria nada.
+    expect([...hook.result.current.selection]).toEqual([primeiro.id]);
+  });
+
+  it("um retângulo que não toca ninguém esvazia a seleção", () => {
+    const { hook, segundo } = comDoisPostIts();
+    act(() => hook.result.current.selectNote(segundo.id));
+
+    act(() => hook.result.current.beginRectSelection());
+    act(() => hook.result.current.selectInRect({ x: 5000, y: 5000, w: 10, h: 10 }));
+
+    // É isto que faz arrastar no vazio desmarcar tudo, sem um caminho próprio para isso.
+    expect([...hook.result.current.selection]).toEqual([]);
   });
 
   it("seleciona pelo retângulo quem ele toca, e só", () => {

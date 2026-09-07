@@ -14,13 +14,22 @@ function duploCliqueNoFundo(x: number, y: number): void {
   fireEvent.doubleClick(screen.getByTestId("viewport-surface"), { clientX: x, clientY: y });
 }
 
-/** Arrasta o fundo, que é como se desloca o quadro. */
-function arrastaOFundo(dx: number, dy: number): void {
+/** Segura espaço e arrasta: o gesto que desloca o quadro. */
+function navegaOQuadro(dx: number, dy: number): void {
   const surface = screen.getByTestId("viewport-surface");
 
+  fireEvent.keyDown(document, { key: " " });
   fireEvent.pointerDown(surface, { pointerId: 1, button: 0, clientX: 0, clientY: 0 });
   fireEvent.pointerMove(surface, { pointerId: 1, clientX: dx, clientY: dy });
   fireEvent.pointerUp(surface, { pointerId: 1, clientX: dx, clientY: dy });
+  fireEvent.keyUp(document, { key: " " });
+}
+
+/** Rola a roda sobre o quadro. O listener é nativo, então o evento também precisa ser. */
+function rola(init: WheelEventInit): void {
+  screen
+    .getByTestId("viewport-surface")
+    .dispatchEvent(new WheelEvent("wheel", { bubbles: true, cancelable: true, ...init }));
 }
 
 function postIts(): HTMLElement[] {
@@ -70,7 +79,7 @@ describe("Whiteboard", () => {
     // resultado é um viewport com escala diferente de 1. O que este teste guarda é que a
     // conversão desfaz a transformação seja ela qual for.
     await user.click(screen.getByLabelText("Aumentar zoom"));
-    arrastaOFundo(70, -35);
+    navegaOQuadro(70, -35);
     duploCliqueNoFundo(320, 260);
 
     const centroX =
@@ -289,11 +298,20 @@ describe("Whiteboard — seleção", () => {
     expect(Number(postIt(0).style.zIndex)).toBeGreaterThan(Number(postIt(1).style.zIndex));
   });
 
-  it("navegar pelo quadro não limpa a seleção", () => {
+  it("navegar pelo quadro com espaço não limpa a seleção", () => {
     render(<Whiteboard />);
     criaPostIt(200, 200);
 
-    arrastaOFundo(120, 80);
+    navegaOQuadro(120, 80);
+
+    expect(selecionados()).toHaveLength(1);
+  });
+
+  it("navegar pela roda não limpa a seleção", () => {
+    render(<Whiteboard />);
+    criaPostIt(200, 200);
+
+    rola({ deltaY: 120 });
 
     expect(selecionados()).toHaveLength(1);
   });
@@ -815,5 +833,105 @@ describe("Whiteboard — apagar com Delete", () => {
     apertaTecla("Delete");
 
     expect(postIts()).toEqual([]);
+  });
+});
+
+describe("Whiteboard — seleção por arrasto no fundo", () => {
+  function criaPostIt(x: number, y: number): void {
+    duploCliqueNoFundo(x, y);
+    fireEvent.keyDown(screen.getByTestId("post-it-editor"), { key: "Escape" });
+  }
+
+  /** Arrasta um retângulo no fundo, de um canto ao outro, em pixels de tela. */
+  function retangulo(
+    de: [number, number],
+    ate: [number, number],
+    opcoes: { shiftKey?: boolean } = {},
+  ): void {
+    const surface = screen.getByTestId("viewport-surface");
+
+    fireEvent.pointerDown(surface, {
+      pointerId: 1,
+      button: 0,
+      clientX: de[0],
+      clientY: de[1],
+      ...opcoes,
+    });
+    fireEvent.pointerMove(surface, { pointerId: 1, clientX: ate[0], clientY: ate[1] });
+    fireEvent.pointerUp(surface, { pointerId: 1, clientX: ate[0], clientY: ate[1] });
+  }
+
+  function selecionados(): (string | undefined)[] {
+    return screen
+      .queryAllByTestId("post-it")
+      .filter((element) => element.dataset.selected === "true")
+      .map((element) => element.dataset.noteId);
+  }
+
+  it("arrastar no fundo seleciona quem o retângulo toca", () => {
+    render(<Whiteboard />);
+    criaPostIt(300, 300);
+    criaPostIt(800, 300);
+    const primeiro = postIt(0).dataset.noteId;
+
+    retangulo([150, 150], [450, 450]);
+
+    expect(selecionados()).toEqual([primeiro]);
+  });
+
+  it("o retângulo substitui a seleção anterior", () => {
+    render(<Whiteboard />);
+    criaPostIt(300, 300);
+    criaPostIt(800, 300);
+    const primeiro = postIt(0).dataset.noteId;
+
+    // O segundo ficou marcado ao ser criado; o retângulo pega só o primeiro.
+    retangulo([150, 150], [450, 450]);
+
+    expect(selecionados()).toEqual([primeiro]);
+  });
+
+  it("com Shift, o retângulo soma à seleção", () => {
+    render(<Whiteboard />);
+    criaPostIt(300, 300);
+    criaPostIt(800, 300);
+
+    retangulo([150, 150], [450, 450], { shiftKey: true });
+
+    expect(selecionados()).toHaveLength(2);
+  });
+
+  it("arrastar no vazio desmarca tudo", () => {
+    render(<Whiteboard />);
+    criaPostIt(300, 300);
+
+    retangulo([900, 700], [1100, 900]);
+
+    expect(selecionados()).toEqual([]);
+  });
+
+  it("com espaço, arrastar navega e não seleciona", () => {
+    render(<Whiteboard />);
+    criaPostIt(300, 300);
+    criaPostIt(800, 300);
+    const antes = selecionados();
+
+    fireEvent.keyDown(document, { key: " " });
+    retangulo([150, 150], [450, 450]);
+    fireEvent.keyUp(document, { key: " " });
+
+    // O mesmo arrasto que selecionaria agora move o quadro, e a seleção não muda.
+    expect(selecionados()).toEqual(antes);
+  });
+
+  it("o cursor conta qual gesto o arrasto vai virar", () => {
+    render(<Whiteboard />);
+    const surface = screen.getByTestId("viewport-surface");
+
+    expect(surface.className).toContain("cursor-crosshair");
+
+    fireEvent.keyDown(document, { key: " " });
+    expect(surface.className).toContain("cursor-grab");
+    expect(surface.dataset.spaceHeld).toBe("true");
   });
 });

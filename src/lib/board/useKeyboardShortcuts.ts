@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef } from "react";
+import { isEditableTarget } from "@/lib/dom/target";
 
 interface KeyboardShortcutsOptions {
   /** Apagar o que está marcado. Não recebe nada: quem sabe o que está marcado é quem trata. */
@@ -14,26 +15,6 @@ interface KeyboardShortcutsOptions {
  * um atalho que só ouvisse `Delete` seria inalcançável na maior parte dos laptops.
  */
 const DELETE_KEYS = new Set(["Delete", "Backspace"]);
-
-/**
- * O alvo do evento aceita digitação.
- *
- * A pergunta é sobre o **alvo**, e não sobre o estado do quadro: o atalho é global e ouve o
- * documento inteiro, então precisa se calar diante de qualquer campo editável — o editor do
- * post-it, mas também um `input` que ainda vá existir numa barra de busca ou num diálogo.
- * Perguntar só ao board se há alguém em edição responderia por um campo e ignoraria todos os
- * outros.
- */
-export function isEditableTarget(target: EventTarget | null): boolean {
-  if (!(target instanceof HTMLElement)) return false;
-
-  // `isContentEditable` cobre o elemento herdando a propriedade de um ancestral, que é como
-  // um editor rico normalmente marca a área de escrita.
-  if (target.isContentEditable) return true;
-
-  const tag = target.tagName;
-  return tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT";
-}
 
 /**
  * Atalhos de teclado do quadro.
