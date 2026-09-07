@@ -10,8 +10,8 @@ import { AppShell } from "@/components/shell/AppShell";
 /**
  * O quadro: junta o estado de viewport à superfície navegável e aos controles.
  *
- * Enquanto não existem post-its (Epic de ciclo de vida), o conteúdo do canvas é só a marca
- * da origem, que serve para enxergar pan e zoom funcionando.
+ * O canvas ainda não tem conteúdo — os post-its chegam na Epic de ciclo de vida. Pan e zoom
+ * já se enxergam pela malha de pontos, que acompanha o viewport.
  */
 export function Whiteboard() {
   const controls = useViewport();
@@ -36,9 +36,7 @@ export function Whiteboard() {
       }
     >
       <div ref={areaRef} className="absolute inset-0">
-        <Viewport {...controls}>
-          <div className="h-2 w-2 -translate-x-1/2 -translate-y-1/2 rounded-full bg-ink-muted" />
-        </Viewport>
+        <Viewport viewport={controls.viewport} pan={controls.pan} zoomBy={controls.zoomBy} />
       </div>
     </AppShell>
   );

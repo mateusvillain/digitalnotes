@@ -2,9 +2,9 @@
 
 import { useCallback } from "react";
 import { MAX_SCALE, MIN_SCALE, scaleAsPercent, type Point } from "@/lib/canvas/coords";
-import { ZOOM_STEP, type ViewportControls as Controls } from "@/lib/canvas/useViewport";
+import { ZOOM_STEP, type ViewportApi } from "@/lib/canvas/useViewport";
 
-interface ViewportControlsProps extends Pick<Controls, "viewport" | "zoomBy" | "reset"> {
+interface ViewportControlsProps extends Pick<ViewportApi, "viewport" | "zoomBy" | "reset"> {
   /**
    * Ponto de ancoragem do zoom por botão — o centro da área visível. É função, e não um
    * ponto pronto, porque depende do tamanho atual do container: medir na hora do clique
@@ -37,6 +37,7 @@ export function ViewportControls({ viewport, zoomBy, reset, anchor }: ViewportCo
         className="rounded-control px-2 text-xs tabular-nums text-ink-muted transition-colors hover:bg-canvas hover:text-ink"
         onClick={reset}
         aria-label="Voltar o zoom para 100%"
+        title="Voltar o zoom para 100%"
       >
         {scaleAsPercent(viewport.scale)}%
       </button>

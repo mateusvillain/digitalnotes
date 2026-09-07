@@ -40,11 +40,25 @@ describe("useViewport", () => {
     expect(result.current.viewport.scale).toBe(MAX_SCALE);
   });
 
+  it("não deixa rastro na URL nem no armazenamento local", () => {
+    // O PRD trata o viewport como estado efêmero. Quando a #20 e a #22 passarem a escrever
+    // na URL e no localStorage, é este teste que denuncia se o viewport for junto.
+    const urlAntes = window.location.href;
+    const { result } = renderHook(() => useViewport());
+
+    act(() => result.current.pan(50, 50));
+    act(() => result.current.zoomBy(2, { x: 0, y: 0 }));
+
+    expect(window.location.href).toBe(urlAntes);
+    expect(Object.keys(window.localStorage)).toHaveLength(0);
+    expect(Object.keys(window.sessionStorage)).toHaveLength(0);
+  });
+
   it("reset volta para 100% na origem depois de pan e zoom", () => {
     const { result } = renderHook(() => useViewport());
 
     act(() => result.current.pan(120, -80));
-    act(() => result.current.zoomTo(2.5, { x: 10, y: 10 }));
+    act(() => result.current.zoomBy(2.5, { x: 10, y: 10 }));
     act(() => result.current.reset());
 
     expect(result.current.viewport).toEqual(IDENTITY_VIEWPORT);

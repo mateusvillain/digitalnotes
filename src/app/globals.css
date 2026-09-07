@@ -73,7 +73,6 @@
 /* Malha de pontos do quadro: não vira utilitária, é detalhe da superfície abaixo. */
 :root {
   --canvas-dot-size: 1px;
-  --canvas-dot-gap: 24px;
 }
 
 /* Estilo base do texto. Componentes só declaram o que fogem daqui. */
@@ -86,7 +85,9 @@ body {
 
 /**
  * Superfície do quadro: malha de pontos sutil que dá noção de deslocamento durante o pan.
- * O tamanho da malha é fixo por enquanto; a issue #9 passa a escalá-la junto com o zoom.
+ *
+ * O espaçamento vem do componente Viewport pela variável --canvas-dot-gap, porque precisa
+ * acompanhar a escala; o fallback vale para a superfície renderizada sem viewport.
  */
 .whiteboard-surface {
   background-color: var(--color-canvas);
@@ -95,5 +96,5 @@ body {
     var(--color-canvas-dot) var(--canvas-dot-size),
     transparent var(--canvas-dot-size)
   );
-  background-size: var(--canvas-dot-gap) var(--canvas-dot-gap);
+  background-size: var(--canvas-dot-gap, 24px) var(--canvas-dot-gap, 24px);
 }
