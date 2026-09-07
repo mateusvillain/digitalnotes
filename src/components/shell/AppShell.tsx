@@ -18,15 +18,11 @@ interface AppShellProps {
 export function AppShell({ children, controls }: AppShellProps) {
   return (
     <div className="flex h-dvh flex-col overflow-hidden">
-      <header className="z-10 flex shrink-0 items-center justify-between gap-4 border-b border-border bg-surface px-4 py-3">
-        <div className="flex items-baseline gap-2">
-          <h1 className="text-sm font-semibold tracking-tight text-ink">digitalnotes</h1>
-          <p className="hidden text-xs text-ink-muted sm:block">
-            O board vive na própria URL — copie o link para compartilhar.
-          </p>
-        </div>
-        {/* Reservado às ações do board (exportar Markdown, na issue #24). */}
-        <div className="flex items-center gap-2" />
+      <header className="z-10 flex shrink-0 items-baseline gap-2 border-b border-border bg-surface px-4 py-3">
+        <h1 className="text-sm font-semibold tracking-tight">digitalnotes</h1>
+        <p className="hidden text-xs text-ink-muted sm:block">
+          O board vive na própria URL — copie o link para compartilhar.
+        </p>
       </header>
 
       <main className="whiteboard-surface relative min-h-0 flex-1">

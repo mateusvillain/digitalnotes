@@ -1,8 +1,9 @@
 /**
  * Ponte entre o índice de cor guardado no board e o token de tema correspondente.
  *
- * O contrato (src/lib/board/types.ts) é dono da paleta e da ordem; este arquivo é dono do
- * valor visual de cada cor. A ordem das duas listas precisa bater — o teste garante isso.
+ * O contrato (src/lib/board/types.ts) é dono da paleta e da ordem; o tema é dono do valor
+ * visual de cada cor. O nome do token é derivado do nome da cor, e não escrito à mão, para
+ * não existir uma segunda lista capaz de divergir da primeira.
  */
 
 import { NOTE_COLORS, type NoteColor, type NoteColorName } from "@/lib/board/types";
@@ -10,17 +11,10 @@ import { NOTE_COLORS, type NoteColor, type NoteColorName } from "@/lib/board/typ
 /** Cor do texto escrito em cima de qualquer post-it. */
 export const NOTE_INK_VAR = "--color-note-ink";
 
-/** Variável CSS do fundo de cada cor de post-it, na ordem de NOTE_COLORS. */
-export const NOTE_BACKGROUND_VARS: Record<NoteColorName, string> = {
-  yellow: "--color-note-yellow",
-  pink: "--color-note-pink",
-  green: "--color-note-green",
-  blue: "--color-note-blue",
-  purple: "--color-note-purple",
-  orange: "--color-note-orange",
-};
+/** Variável CSS do fundo de uma cor de post-it. Um typo aqui é erro de compilação. */
+export type NoteBackgroundVar = `--color-note-${NoteColorName}`;
 
 /** Variável CSS de fundo a partir do índice guardado no board. */
-export function noteBackgroundVar(color: NoteColor): string {
-  return NOTE_BACKGROUND_VARS[NOTE_COLORS[color]];
+export function noteBackgroundVar(color: NoteColor): NoteBackgroundVar {
+  return `--color-note-${NOTE_COLORS[color]}`;
 }
