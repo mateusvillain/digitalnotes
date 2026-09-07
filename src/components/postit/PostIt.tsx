@@ -2,9 +2,10 @@
 
 import { memo, useRef, type CSSProperties, type MouseEvent, type PointerEvent } from "react";
 import type { Note } from "@/lib/board/types";
-import type { Point } from "@/lib/canvas/coords";
+import type { Point, Size } from "@/lib/canvas/coords";
 import { useDrag } from "@/lib/canvas/useDrag";
 import { noteBackgroundColor } from "@/lib/theme/note-colors";
+import { ResizeHandle } from "./ResizeHandle";
 import { NOTE_TEXT_CLASS } from "./note-text";
 import { PostItEditor } from "./PostItEditor";
 
@@ -26,6 +27,12 @@ interface PostItProps {
   onDragMove?: (delta: Point) => void;
   onDragEnd?: () => void;
   onDragCancel?: () => void;
+  /** Tamanho em curso durante o redimensionamento, em coordenadas de canvas. */
+  size?: Size | null;
+  onResizeStart?: (id: string) => void;
+  onResizeMove?: (delta: Point) => void;
+  onResizeEnd?: () => void;
+  onResizeCancel?: () => void;
   /** Fim da edição, com o texto final. Sair confirma, e quem recebe é que escreve na store. */
   onEditCommit?: (id: string, text: string) => void;
 }
@@ -65,6 +72,11 @@ function PostItComponent({
   onDragMove,
   onDragEnd,
   onDragCancel,
+  size = null,
+  onResizeStart,
+  onResizeMove,
+  onResizeEnd,
+  onResizeCancel,
 }: PostItProps) {
   /**
    * Colapso de seleção adiado para o soltar.
@@ -94,11 +106,23 @@ function PostItComponent({
     onCancel: () => onDragCancel?.(),
   });
 
+  const resize = useDrag({
+    onStart: () => onResizeStart?.(note.id),
+    onMove: (delta) => onResizeMove?.(delta),
+    onEnd: (delta) => {
+      onResizeMove?.(delta);
+      onResizeEnd?.();
+    },
+    onCancel: () => onResizeCancel?.(),
+  });
+
   const style: CSSProperties = {
     left: note.x,
     top: note.y,
-    width: note.w,
-    height: note.h,
+    // Redimensionar não mexe em left/top: o post-it é descrito pelo canto superior
+    // esquerdo, e é ele que a alça do canto oposto mantém parado.
+    width: size?.w ?? note.w,
+    height: size?.h ?? note.h,
     zIndex: note.z,
     backgroundColor: noteBackgroundColor(note.color),
     // O arraste move por transform, não por left/top: o browser compõe a translação sem
@@ -159,7 +183,7 @@ function PostItComponent({
       // `note` em vez de `article`: um `article` com nome acessível vira região navegável,
       // e um quadro com dezenas de post-its viraria um quadro com dezenas de regiões.
       role="note"
-      className={`absolute overflow-hidden select-none shadow-note ${NOTE_TEXT_CLASS} ${selected ? SELECTED_CLASS : ""}`}
+      className={`group absolute overflow-hidden select-none shadow-note ${NOTE_TEXT_CLASS} ${selected ? SELECTED_CLASS : ""}`}
       style={style}
       onPointerDown={handlePointerDown}
       onPointerMove={drag.onPointerMove}
@@ -171,10 +195,13 @@ function PostItComponent({
       data-selected={selected}
       data-editing={editing}
       data-dragging={offset !== null}
+      data-resizing={size !== null}
       // Rótulo só para o post-it sem conteúdo visível: com texto, o próprio conteúdo já
       // nomeia o elemento, e repetir viraria um nome acessível de até 2000 caracteres.
       aria-label={note.text.trim() === "" ? "Post-it vazio" : undefined}
     >
+      {/* A alça some durante a escrita: ali o post-it é um campo de texto, não uma caixa. */}
+      {editing ? null : <ResizeHandle handlers={resize} alwaysVisible={selected} />}
       {editing ? (
         <PostItEditor
           // Trocar de post-it em edição precisa remontar o editor: ele é não controlado, e

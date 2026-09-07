@@ -7,6 +7,7 @@
  * descartadas e reportadas em `warnings`, e só um board irrecuperável vira erro.
  */
 
+import type { Size } from "@/lib/canvas/coords";
 import {
   CANVAS_MAX_ABS_COORDINATE,
   NOTE_MAX_TEXT_LENGTH,
@@ -35,6 +36,20 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
 }
 
 /**
+ * Limita um tamanho ao que o contrato aceita.
+ *
+ * Exportada porque redimensionar (#16) precisa **mostrar** o mesmo limite que a store vai
+ * gravar: se a interface deixasse arrastar até 40 e a normalização subisse para 80 ao
+ * soltar, o post-it saltaria de tamanho na frente de quem o estava ajustando.
+ */
+export function clampNoteSize(size: { w: unknown; h: unknown }): Size {
+  return {
+    w: clampOr(size.w, NOTE_SIZE.minWidth, NOTE_SIZE.maxWidth, NOTE_SIZE.defaultWidth),
+    h: clampOr(size.h, NOTE_SIZE.minHeight, NOTE_SIZE.maxHeight, NOTE_SIZE.defaultHeight),
+  };
+}
+
+/**
  * Normaliza uma note. Devolve `null` quando os campos obrigatórios não têm como ser
  * recuperados — id, posição e cor. Tamanho, z e texto têm padrão ou são ajustáveis.
  *
@@ -55,8 +70,7 @@ export function normalizeNote(input: unknown): Note | null {
     id,
     x: clampOr(x, -CANVAS_MAX_ABS_COORDINATE, CANVAS_MAX_ABS_COORDINATE, 0),
     y: clampOr(y, -CANVAS_MAX_ABS_COORDINATE, CANVAS_MAX_ABS_COORDINATE, 0),
-    w: clampOr(w, NOTE_SIZE.minWidth, NOTE_SIZE.maxWidth, NOTE_SIZE.defaultWidth),
-    h: clampOr(h, NOTE_SIZE.minHeight, NOTE_SIZE.maxHeight, NOTE_SIZE.defaultHeight),
+    ...clampNoteSize({ w, h }),
     color,
     text: typeof text === "string" ? text.slice(0, NOTE_MAX_TEXT_LENGTH) : "",
     z: isFiniteNumber(z) ? Math.trunc(z) : 0,

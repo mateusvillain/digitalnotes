@@ -441,6 +441,24 @@ describe("useBoard — estabilidade dos callbacks", () => {
     expect(result.current.selectNote).toBe(antes.selectNote);
   });
 
+  it("grava o último movimento quando ele chega junto com o fim do gesto", () => {
+    const { result } = renderHook(() => useBoard());
+    act(() => result.current.createNoteAt({ x: 500, y: 500 }));
+    const note = defined(result.current.notes[0], "o post-it");
+    act(() => result.current.selectNote(note.id));
+    act(() => result.current.startDrag(note.id));
+
+    // Soltar o ponteiro reporta o último deslocamento e o fim do gesto no mesmo evento,
+    // sem render entre os dois. Uma ref atualizada só no render seguinte gravaria a
+    // posição anterior, e o post-it voltaria um pedaço ao ser solto.
+    act(() => {
+      result.current.dragBy({ x: 137, y: 12 });
+      result.current.endDrag();
+    });
+
+    expect(defined(result.current.notes[0], "o post-it").x).toBe(note.x + 137);
+  });
+
   it("grava o deslocamento atual mesmo com o endDrag lendo de ref", () => {
     const { result } = renderHook(() => useBoard());
     act(() => result.current.createNoteAt({ x: 300, y: 300 }));
@@ -453,5 +471,150 @@ describe("useBoard — estabilidade dos callbacks", () => {
 
     // Estável não é obsoleto: o callback é o mesmo, e o valor que ele lê é o último.
     expect(defined(result.current.notes[0], "o post-it").x).toBe(note.x + 90);
+  });
+});
+
+describe("useBoard — redimensionamento", () => {
+  function comUmPostIt() {
+    const hook = renderHook(() => useBoard());
+    act(() => hook.result.current.createNoteAt({ x: 500, y: 500 }));
+    return { hook, note: defined(hook.result.current.notes[0], "o post-it criado") };
+  }
+
+  function noteAtual(hook: ReturnType<typeof comUmPostIt>["hook"]) {
+    return defined(hook.result.current.notes[0], "o post-it");
+  }
+
+  it("não redimensiona nada fora do gesto", () => {
+    const { result } = renderHook(() => useBoard());
+
+    expect(result.current.resizing).toBeNull();
+  });
+
+  it("não toca na store enquanto a alça é arrastada", () => {
+    const { hook, note } = comUmPostIt();
+
+    act(() => hook.result.current.startResize(note.id));
+    act(() => hook.result.current.resizeBy({ x: 60, y: 40 }));
+
+    expect(hook.result.current.resizing).toEqual({
+      id: note.id,
+      size: { w: note.w + 60, h: note.h + 40 },
+    });
+    expect(noteAtual(hook).w).toBe(note.w);
+    expect(noteAtual(hook).h).toBe(note.h);
+  });
+
+  it("grava o tamanho final ao soltar", () => {
+    const { hook, note } = comUmPostIt();
+
+    act(() => hook.result.current.startResize(note.id));
+    act(() => hook.result.current.resizeBy({ x: 60, y: 40 }));
+    act(() => hook.result.current.endResize());
+
+    expect(noteAtual(hook).w).toBe(note.w + 60);
+    expect(noteAtual(hook).h).toBe(note.h + 40);
+    expect(hook.result.current.resizing).toBeNull();
+  });
+
+  it("grava inteiros, mesmo com o gesto chegando fracionado pelo zoom", () => {
+    const { hook, note } = comUmPostIt();
+
+    act(() => hook.result.current.startResize(note.id));
+    act(() => hook.result.current.resizeBy({ x: 10.6, y: -4.2 }));
+    act(() => hook.result.current.endResize());
+
+    expect(noteAtual(hook).w).toBe(note.w + 11);
+    expect(noteAtual(hook).h).toBe(note.h - 4);
+  });
+
+  it("respeita o tamanho mínimo já enquanto se arrasta", () => {
+    const { hook, note } = comUmPostIt();
+
+    act(() => hook.result.current.startResize(note.id));
+    act(() => hook.result.current.resizeBy({ x: -5000, y: -5000 }));
+
+    // O limite aparece na hora, e não só ao gravar: deixar encolher além do mínimo e
+    // devolver o tamanho ao soltar faria o post-it saltar na frente de quem o ajustava.
+    expect(hook.result.current.resizing?.size).toEqual({
+      w: NOTE_SIZE.minWidth,
+      h: NOTE_SIZE.minHeight,
+    });
+  });
+
+  it("respeita o tamanho máximo", () => {
+    const { hook, note } = comUmPostIt();
+
+    act(() => hook.result.current.startResize(note.id));
+    act(() => hook.result.current.resizeBy({ x: 999_999, y: 999_999 }));
+
+    expect(hook.result.current.resizing?.size).toEqual({
+      w: NOTE_SIZE.maxWidth,
+      h: NOTE_SIZE.maxHeight,
+    });
+  });
+
+  it("não move a âncora do post-it", () => {
+    const { hook, note } = comUmPostIt();
+
+    act(() => hook.result.current.startResize(note.id));
+    act(() => hook.result.current.resizeBy({ x: 120, y: 90 }));
+    act(() => hook.result.current.endResize());
+
+    // O post-it é descrito pelo canto superior esquerdo, e é ele que a alça do canto oposto
+    // mantém parado.
+    expect(noteAtual(hook).x).toBe(note.x);
+    expect(noteAtual(hook).y).toBe(note.y);
+  });
+
+  it("mede sempre a partir do tamanho de quando o gesto começou", () => {
+    const { hook, note } = comUmPostIt();
+
+    act(() => hook.result.current.startResize(note.id));
+    act(() => hook.result.current.resizeBy({ x: 100, y: 0 }));
+    act(() => hook.result.current.resizeBy({ x: 40, y: 0 }));
+    act(() => hook.result.current.endResize());
+
+    // O deslocamento vem acumulado desde a origem: somar cada aviso ao tamanho anterior
+    // faria o post-it crescer o dobro.
+    expect(noteAtual(hook).w).toBe(note.w + 40);
+  });
+
+  it("cancelar devolve o tamanho de antes", () => {
+    const { hook, note } = comUmPostIt();
+
+    act(() => hook.result.current.startResize(note.id));
+    act(() => hook.result.current.resizeBy({ x: 300, y: 300 }));
+    act(() => hook.result.current.cancelResize());
+
+    expect(hook.result.current.resizing).toBeNull();
+    expect(noteAtual(hook).w).toBe(note.w);
+  });
+
+  it("ignora o pedido para um post-it que não existe", () => {
+    const { hook } = comUmPostIt();
+
+    act(() => hook.result.current.startResize("naoexiste"));
+
+    expect(hook.result.current.resizing).toBeNull();
+  });
+});
+
+describe("useBoard — o fim do gesto no mesmo evento do último movimento", () => {
+  it("grava o tamanho do soltar, e não o do movimento anterior", () => {
+    const { result } = renderHook(() => useBoard());
+    act(() => result.current.createNoteAt({ x: 500, y: 500 }));
+    const note = defined(result.current.notes[0], "o post-it");
+
+    act(() => {
+      result.current.startResize(note.id);
+      result.current.resizeBy({ x: 70, y: 30 });
+      result.current.endResize();
+    });
+
+    // Começo, movimento e fim podem acontecer no mesmo evento: um arrasto rápido dispara
+    // pointermove e pointerup sem render entre eles.
+    expect(defined(result.current.notes[0], "o post-it").w).toBe(note.w + 70);
+    expect(defined(result.current.notes[0], "o post-it").h).toBe(note.h + 30);
   });
 });

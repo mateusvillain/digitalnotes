@@ -19,6 +19,7 @@ export function Whiteboard() {
   const controls = useViewport();
   const board = useBoard();
   const dragOffsetBy = board.dragBy;
+  const resizeOffsetBy = board.resizeBy;
   /**
    * A escala atual, lida por ref dentro do conversor de arraste.
    *
@@ -42,6 +43,15 @@ export function Whiteboard() {
       dragOffsetBy({ x: delta.x / scale, y: delta.y / scale });
     },
     [dragOffsetBy],
+  );
+
+  /** Mesma conversão do arraste: a alça segue o cursor, não os pixels de tela. */
+  const resizeBy = useCallback(
+    (delta: Point) => {
+      const scale = scaleRef.current;
+      resizeOffsetBy({ x: delta.x / scale, y: delta.y / scale });
+    },
+    [resizeOffsetBy],
   );
 
   /** Centro da área visível, usado como âncora do zoom por botão. */
@@ -84,6 +94,11 @@ export function Whiteboard() {
             onDragMove={dragBy}
             onDragEnd={board.endDrag}
             onDragCancel={board.cancelDrag}
+            resizing={board.resizing}
+            onResizeStart={board.startResize}
+            onResizeMove={resizeBy}
+            onResizeEnd={board.endResize}
+            onResizeCancel={board.cancelResize}
           />
         </Viewport>
       </div>
