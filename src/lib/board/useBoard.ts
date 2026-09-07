@@ -1,11 +1,19 @@
 "use client";
 
-import { useCallback, useRef, useState, useSyncExternalStore } from "react";
+import { useCallback, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { topLeftCenteredAt, type Point, type Rect, type Size } from "@/lib/canvas/coords";
-import { EMPTY_SELECTION, notesInRect, selectOnly, toggle, type Selection } from "./selection";
+import {
+  EMPTY_SELECTION,
+  notesInRect,
+  selectOnly,
+  selectedNotes,
+  sharedColor,
+  toggle,
+  type Selection,
+} from "./selection";
 import { clampNoteSize } from "./schema";
 import { createBoardStore } from "./store";
-import { NOTE_SIZE, type Board, type Note } from "./types";
+import { NOTE_SIZE, type Board, type Note, type NoteColor } from "./types";
 
 /** Um post-it em redimensionamento e o tamanho que ele tem agora, durante o gesto. */
 export interface Resizing {
@@ -51,6 +59,12 @@ export interface BoardApi {
   /** Acrescenta ao que já estava marcado os post-its que o retângulo toca. */
   selectInRect: (rect: Rect) => void;
   clearSelection: () => void;
+  /** As notes marcadas. É por elas que passam as ações em lote — colorir, e apagar (#19). */
+  selected: readonly Note[];
+  /** Cor comum à seleção, ou `null` se ela estiver vazia ou tiver mais de uma cor. */
+  selectionColor: NoteColor | null;
+  /** Pinta toda a seleção de uma cor, numa publicação só. */
+  colorSelection: (color: NoteColor) => void;
   /** Grava o texto e fecha a edição. */
   commitText: (id: string, text: string) => void;
 }
@@ -265,6 +279,25 @@ export function useBoard(): BoardApi {
 
   const cancelResize = useCallback(() => publishResizing(null), [publishResizing]);
 
+  /**
+   * As notes marcadas, derivadas e não guardadas.
+   *
+   * Guardar a lista em estado daria duas fontes para a mesma verdade — a seleção e a cópia
+   * dela —, e elas divergiriam no primeiro post-it apagado com algo ainda marcado.
+   */
+  const selected = useMemo(() => selectedNotes(board.notes, selection), [board.notes, selection]);
+
+  const selectionColor = useMemo(() => sharedColor(selected), [selected]);
+
+  const colorSelection = useCallback(
+    (color: NoteColor) => {
+      // Uma publicação só para a seleção inteira, como no arraste: quem escuta é a
+      // persistência, que reescreve a URL a cada aviso.
+      store.updateNotes([...selectionRef.current].map((id) => ({ id, patch: { color } })));
+    },
+    [store],
+  );
+
   const commitText = useCallback(
     (id: string, text: string) => {
       store.updateNote(id, { text });
@@ -294,5 +327,8 @@ export function useBoard(): BoardApi {
     beginRectSelection,
     selectInRect,
     clearSelection,
+    selected,
+    selectionColor,
+    colorSelection,
   };
 }

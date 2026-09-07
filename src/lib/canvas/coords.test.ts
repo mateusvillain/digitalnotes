@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  boundingRect,
   canvasToScreen,
   clampScale,
   distance,
@@ -158,5 +159,51 @@ describe("distance", () => {
     const origem = { x: 0, y: 0 };
     // Três passos de dois pixels: nenhum passa de uma folga de 4, mas o gesto andou 6.
     expect(distance(origem, { x: 6, y: 0 })).toBeGreaterThan(4);
+  });
+});
+
+describe("boundingRect", () => {
+  it("devolve null para lista vazia", () => {
+    // "Nada selecionado" e "seleção na origem" precisam ser distinguíveis por quem posiciona
+    // um controle pela caixa.
+    expect(boundingRect([])).toBeNull();
+  });
+
+  it("de um retângulo só, é ele mesmo", () => {
+    expect(boundingRect([{ x: 10, y: 20, w: 30, h: 40 }])).toEqual({ x: 10, y: 20, w: 30, h: 40 });
+  });
+
+  it("envolve retângulos separados", () => {
+    expect(
+      boundingRect([
+        { x: 0, y: 0, w: 10, h: 10 },
+        { x: 90, y: 40, w: 10, h: 10 },
+      ]),
+    ).toEqual({ x: 0, y: 0, w: 100, h: 50 });
+  });
+
+  it("envolve um retângulo contido em outro", () => {
+    expect(
+      boundingRect([
+        { x: 0, y: 0, w: 100, h: 100 },
+        { x: 20, y: 20, w: 10, h: 10 },
+      ]),
+    ).toEqual({ x: 0, y: 0, w: 100, h: 100 });
+  });
+
+  it("lida com coordenadas negativas", () => {
+    expect(
+      boundingRect([
+        { x: -50, y: -30, w: 10, h: 10 },
+        { x: 10, y: 10, w: 10, h: 10 },
+      ]),
+    ).toEqual({ x: -50, y: -30, w: 70, h: 50 });
+  });
+
+  it("não depende da ordem da lista", () => {
+    const a = { x: 5, y: 5, w: 10, h: 10 };
+    const b = { x: -5, y: 40, w: 10, h: 10 };
+
+    expect(boundingRect([a, b])).toEqual(boundingRect([b, a]));
   });
 });

@@ -3,7 +3,7 @@ import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import { NOTE_COLORS } from "@/lib/board/types";
 import { WCAG_AA_NORMAL_TEXT, contrastRatio, parseHexColor } from "./contrast";
-import { NOTE_INK_VAR, noteBackgroundVar } from "./note-colors";
+import { NOTE_COLOR_LABELS, NOTE_INK_VAR, noteBackgroundVar, noteColorLabel } from "./note-colors";
 
 const globalsCss = readFileSync(resolve(import.meta.dirname, "../../app/globals.css"), "utf8");
 
@@ -80,5 +80,26 @@ describe("tokens de texto sobre as superfícies da interface", () => {
     expect(contrastRatio(tokenValue(ink), tokenValue(surface))).toBeGreaterThanOrEqual(
       WCAG_AA_NORMAL_TEXT,
     );
+  });
+});
+
+describe("rótulos de cor", () => {
+  it("dá um rótulo a cada cor da paleta", () => {
+    // O Record é sobre o nome da cor: uma cor nova sem rótulo já não compilaria. O teste
+    // guarda o outro lado — um rótulo vazio compila, mas não anuncia nada.
+    for (const nome of NOTE_COLORS) {
+      expect(NOTE_COLOR_LABELS[nome].trim()).not.toBe("");
+    }
+  });
+
+  it("não repete rótulo entre cores", () => {
+    const rotulos = NOTE_COLORS.map((nome) => NOTE_COLOR_LABELS[nome]);
+
+    expect(new Set(rotulos).size).toBe(NOTE_COLORS.length);
+  });
+
+  it("traduz o índice guardado no board", () => {
+    expect(noteColorLabel(0)).toBe("Amarelo");
+    expect(noteColorLabel((NOTE_COLORS.length - 1) as 5)).toBe("Laranja");
   });
 });

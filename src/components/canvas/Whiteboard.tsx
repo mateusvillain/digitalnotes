@@ -5,8 +5,10 @@ import { AppShell } from "@/components/shell/AppShell";
 import { useBoard } from "@/lib/board/useBoard";
 import type { Point } from "@/lib/canvas/coords";
 import { useViewport } from "@/lib/canvas/useViewport";
+import { ColorPicker } from "@/components/postit/ColorPicker";
 import { Board } from "./Board";
 import { Viewport } from "./Viewport";
+import { SelectionToolbar } from "./SelectionToolbar";
 import { ViewportControls } from "./ViewportControls";
 
 /**
@@ -60,6 +62,9 @@ export function Whiteboard() {
     [resizeOffsetBy, toCanvasDelta],
   );
 
+  /** Um gesto de ponteiro em curso sobre um post-it: arrastar ou redimensionar. */
+  const emGesto = board.dragOffset !== null || board.resizing !== null;
+
   /** Centro da área visível, usado como âncora do zoom por botão. */
   const center = useCallback((): Point => {
     const rect = areaRef.current?.getBoundingClientRect();
@@ -107,6 +112,23 @@ export function Whiteboard() {
             onResizeCancel={board.cancelResize}
           />
         </Viewport>
+
+        {/*
+          Fora do `Viewport`, e de propósito duas vezes. Fora da camada transformada, para a
+          barra não escalar com o zoom; e fora da superfície, para clicar numa cor não
+          chegar ao fundo do quadro, que leria o clique como "limpar a seleção".
+
+          Some durante o gesto: a caixa da seleção é calculada com as posições já gravadas,
+          então uma barra visível durante um arraste ficaria parada enquanto os post-its
+          andam por baixo dela.
+        */}
+        {emGesto ? null : (
+          <div className="pointer-events-none absolute inset-0">
+            <SelectionToolbar rects={board.selected} viewport={controls.viewport}>
+              <ColorPicker value={board.selectionColor} onChange={board.colorSelection} />
+            </SelectionToolbar>
+          </div>
+        )}
       </div>
     </AppShell>
   );

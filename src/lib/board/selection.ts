@@ -9,7 +9,7 @@
  */
 
 import { rectsIntersect, type Rect } from "@/lib/canvas/coords";
-import type { Note } from "./types";
+import type { Note, NoteColor } from "./types";
 
 /** Ids marcados. Conjunto, e não lista: pertencer é a única pergunta que se faz a ela. */
 export type Selection = ReadonlySet<string>;
@@ -41,4 +41,24 @@ export function intersects(note: Note, rect: Rect): boolean {
 /** Ids dos post-its que o retângulo toca. */
 export function notesInRect(notes: readonly Note[], rect: Rect): Selection {
   return new Set(notes.filter((note) => intersects(note, rect)).map((note) => note.id));
+}
+
+/** As notes marcadas, na ordem em que o board as guarda. */
+export function selectedNotes(notes: readonly Note[], selection: Selection): Note[] {
+  return notes.filter((note) => selection.has(note.id));
+}
+
+/**
+ * A cor que a seleção tem, ou `null` quando não há uma só.
+ *
+ * `null` cobre dois casos de propósito — nada selecionado, e post-its de cores diferentes.
+ * Nos dois a resposta a "qual é a cor atual?" é a mesma: não há uma, e o seletor não tem o
+ * que marcar. Inventar uma (a do primeiro, a mais frequente) marcaria no seletor uma cor
+ * que parte da seleção não tem.
+ */
+export function sharedColor(notes: readonly Note[]): NoteColor | null {
+  const first = notes[0];
+  if (first === undefined) return null;
+
+  return notes.every((note) => note.color === first.color) ? first.color : null;
 }
