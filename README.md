@@ -2,8 +2,9 @@
 
 Whiteboard de anotações em post-its, sem cadastro. O board vive na própria URL.
 
-O planejamento da primeira versão está em [`docs/prd/`](docs/prd/) e no
-[milestone "Whiteboard de Post-its"](https://github.com/mateusvillain/digitalnotes/milestones).
+O planejamento da primeira versão está no
+[PRD na Wiki](https://github.com/mateusvillain/digitalnotes/wiki/Whiteboard-de-Post-its)
+e no [milestone "Whiteboard de Post-its"](https://github.com/mateusvillain/digitalnotes/milestone/1).
 
 O formato de dados do board está documentado em
 [`docs/board-format.md`](docs/board-format.md).
