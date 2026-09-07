@@ -44,12 +44,17 @@ export function Whiteboard() {
           pan={controls.pan}
           zoomBy={controls.zoomBy}
           onBackgroundDoubleClick={board.createNoteAt}
+          onBackgroundClick={board.clearSelection}
+          onSelectionStart={board.beginRectSelection}
+          onSelectionRect={board.selectInRect}
         >
           <Board
             notes={board.notes}
             editingId={board.editingId}
+            selection={board.selection}
             onEditStart={board.startEditing}
             onEditCommit={board.commitText}
+            onSelect={board.selectNote}
           />
         </Viewport>
       </div>

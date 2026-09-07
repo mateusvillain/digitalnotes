@@ -4,12 +4,21 @@ import {
   useCallback,
   useEffect,
   useRef,
+  useState,
   type CSSProperties,
   type MouseEvent,
   type PointerEvent,
   type ReactNode,
 } from "react";
-import { canvasToScreen, screenToCanvas, type Point } from "@/lib/canvas/coords";
+import {
+  canvasToScreen,
+  distance,
+  rectFromCorners,
+  screenToCanvas,
+  type Point,
+  type Rect,
+} from "@/lib/canvas/coords";
+import { SelectionBox } from "./SelectionBox";
 import type { ViewportApi } from "@/lib/canvas/useViewport";
 
 /**
@@ -26,12 +35,27 @@ const DOT_GAP = 24;
  */
 const WHEEL_SENSITIVITY = 0.002;
 
+/**
+ * Distância, em pixels de tela, abaixo da qual soltar o botão ainda conta como clique.
+ *
+ * Medida sempre **desde a origem do gesto**, nunca passo a passo: um arrasto lento anda dois
+ * ou três pixels por evento e nunca passaria de uma folga aplicada a cada passo — o pan
+ * terminaria limpando a seleção.
+ */
+const CLICK_SLOP = 4;
+
 /** Pixels equivalentes a uma unidade de `deltaY` em cada modo de rolagem do browser. */
 const DELTA_MODE_TO_PIXELS = { line: 16, page: 100 } as const;
 
 type ViewportProps = Pick<ViewportApi, "viewport" | "pan" | "zoomBy"> & {
   /** Duplo clique no fundo vazio, já convertido para coordenadas de canvas. */
   onBackgroundDoubleClick?: (point: Point) => void;
+  /** Clique simples no fundo vazio, sem arrasto. */
+  onBackgroundClick?: () => void;
+  /** Começo de um retângulo de seleção, antes do primeiro movimento. */
+  onSelectionStart?: () => void;
+  /** Retângulo de seleção em curso, em coordenadas de canvas. */
+  onSelectionRect?: (rect: Rect) => void;
   children?: ReactNode;
 };
 
@@ -52,8 +76,22 @@ function wheelDeltaInPixels(event: WheelEvent): number {
 }
 
 /**
+ * Gesto em curso sobre o fundo.
+ *
+ * Arrastar o fundo navega pelo quadro, como o PRD descreve; com Shift, o mesmo arrasto
+ * desenha o retângulo de seleção. Um estado só, e não uma flag por gesto, porque os dois
+ * são exclusivos por natureza: um ponteiro faz uma coisa de cada vez.
+ *
+ * O pan guarda a origem além da última posição: a última serve para o passo do
+ * deslocamento, a origem para decidir se o gesto foi clique ou arrasto.
+ */
+type DragState =
+  | { kind: "pan"; pointerId: number; origin: Point; last: Point }
+  | { kind: "marquee"; pointerId: number; start: Point };
+
+/**
  * Superfície navegável do quadro: arrastar o fundo faz pan, a roda faz zoom ancorado no
- * cursor.
+ * cursor, e Shift + arrastar desenha o retângulo de seleção.
  *
  * O conteúdo do canvas vive dentro de uma única camada transformada, e não de elementos
  * posicionados um a um: com dezenas de post-its, o browser compõe uma transform só em vez
@@ -64,13 +102,29 @@ export function Viewport({
   pan,
   zoomBy,
   onBackgroundDoubleClick,
+  onBackgroundClick,
+  onSelectionStart,
+  onSelectionRect,
   children,
 }: ViewportProps) {
   const surfaceRef = useRef<HTMLDivElement>(null);
   const layerRef = useRef<HTMLDivElement>(null);
-  const panPointerId = useRef<number | null>(null);
-  /** Última posição do ponteiro, em coordenadas de tela. */
-  const lastPointer = useRef<Point>({ x: 0, y: 0 });
+  const drag = useRef<DragState | null>(null);
+  /**
+   * O viewport atual, para os handlers de ponteiro.
+   *
+   * Lido de uma ref, e não da closure: durante um pan o viewport muda a cada quadro, e
+   * handlers que dependessem dele seriam recriados na mesma frequência.
+   */
+  const viewportRef = useRef(viewport);
+  viewportRef.current = viewport;
+  /**
+   * O retângulo em desenho.
+   *
+   * É o único estado do viewport que precisa de re-render — pan e zoom se resolvem por
+   * transform, mas um retângulo que não redesenha não é um retângulo.
+   */
+  const [marquee, setMarquee] = useState<Rect | null>(null);
 
   /** Posição do ponteiro relativa ao canto do container — é o que as conversões esperam. */
   const localPoint = useCallback((event: { clientX: number; clientY: number }): Point => {
@@ -134,41 +188,90 @@ export function Viewport({
 
   const handlePointerDown = useCallback(
     (event: PointerEvent<HTMLDivElement>) => {
-      // Arrasta o quadro pelo fundo ou pela camada do canvas; um post-it (issue #15) para o
-      // evento antes de chegar aqui.
+      // O gesto nasce no fundo ou na camada do canvas; um post-it (issue #15) para o evento
+      // antes de chegar aqui.
       if (!isBackground(event)) return;
       if (event.button !== 0) return;
 
-      panPointerId.current = event.pointerId;
-      lastPointer.current = { x: event.clientX, y: event.clientY };
       event.currentTarget.setPointerCapture(event.pointerId);
+
+      if (event.shiftKey) {
+        const start = screenToCanvas(localPoint(event), viewportRef.current);
+        drag.current = { kind: "marquee", pointerId: event.pointerId, start };
+        setMarquee(rectFromCorners(start, start));
+        onSelectionStart?.();
+        return;
+      }
+
+      const origin = { x: event.clientX, y: event.clientY };
+      drag.current = { kind: "pan", pointerId: event.pointerId, origin, last: origin };
     },
-    [isBackground],
+    [isBackground, localPoint, onSelectionStart],
   );
 
   const handlePointerMove = useCallback(
     (event: PointerEvent<HTMLDivElement>) => {
-      if (panPointerId.current !== event.pointerId) return;
+      const state = drag.current;
+      if (state === null || state.pointerId !== event.pointerId) return;
+
+      if (state.kind === "marquee") {
+        const corner = screenToCanvas(localPoint(event), viewportRef.current);
+        const rect = rectFromCorners(state.start, corner);
+        setMarquee(rect);
+        onSelectionRect?.(rect);
+        return;
+      }
 
       // Diferença de clientX/Y, e não movementX/Y: este é o mesmo sistema de coordenadas
       // usado nas conversões, não muda com o zoom da página e não fica indefinido em
       // browsers que não implementam movement em eventos de ponteiro.
-      pan(event.clientX - lastPointer.current.x, event.clientY - lastPointer.current.y);
-      lastPointer.current = { x: event.clientX, y: event.clientY };
+      pan(event.clientX - state.last.x, event.clientY - state.last.y);
+      state.last = { x: event.clientX, y: event.clientY };
     },
-    [pan],
+    [localPoint, onSelectionRect, pan],
   );
 
-  const handlePointerUp = useCallback((event: PointerEvent<HTMLDivElement>) => {
-    if (panPointerId.current !== event.pointerId) return;
+  /** Encerra o gesto e devolve o que ele era, ou `null` se não havia gesto deste ponteiro. */
+  const endDrag = useCallback((event: PointerEvent<HTMLDivElement>): DragState | null => {
+    const state = drag.current;
+    if (state === null || state.pointerId !== event.pointerId) return null;
 
-    panPointerId.current = null;
+    drag.current = null;
+    setMarquee(null);
     // Depois de um pointercancel o ponteiro já não está ativo, e soltar a captura de um id
     // inativo lança.
     if (event.currentTarget.hasPointerCapture(event.pointerId)) {
       event.currentTarget.releasePointerCapture(event.pointerId);
     }
+
+    return state;
   }, []);
+
+  const handlePointerUp = useCallback(
+    (event: PointerEvent<HTMLDivElement>) => {
+      const state = endDrag(event);
+      if (state === null || state.kind !== "pan") return;
+
+      // Navegar pelo quadro não é clicar no fundo: sem a folga, todo pan terminaria
+      // limpando a seleção. A distância é medida desde a origem do gesto.
+      const walked = distance(state.origin, { x: event.clientX, y: event.clientY });
+      if (walked <= CLICK_SLOP) onBackgroundClick?.();
+    },
+    [endDrag, onBackgroundClick],
+  );
+
+  /**
+   * Gesto interrompido pelo sistema.
+   *
+   * Encerra sem interpretar: um cancelamento não é um clique, e tratá-lo como tal limparia
+   * a seleção por causa de uma notificação do SO.
+   */
+  const handlePointerCancel = useCallback(
+    (event: PointerEvent<HTMLDivElement>) => {
+      endDrag(event);
+    },
+    [endDrag],
+  );
 
   const origin = canvasToScreen({ x: 0, y: 0 }, viewport);
 
@@ -189,7 +292,7 @@ export function Viewport({
       onPointerDown={handlePointerDown}
       onPointerMove={handlePointerMove}
       onPointerUp={handlePointerUp}
-      onPointerCancel={handlePointerUp}
+      onPointerCancel={handlePointerCancel}
       data-testid="viewport-surface"
     >
       <div
@@ -201,6 +304,7 @@ export function Viewport({
         data-testid="viewport-layer"
       >
         {children}
+        <SelectionBox rect={marquee} />
       </div>
     </div>
   );

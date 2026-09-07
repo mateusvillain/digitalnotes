@@ -1,6 +1,6 @@
 "use client";
 
-import type { CSSProperties, MouseEvent } from "react";
+import type { CSSProperties, MouseEvent, PointerEvent } from "react";
 import type { Note } from "@/lib/board/types";
 import { noteBackgroundColor } from "@/lib/theme/note-colors";
 import { NOTE_TEXT_CLASS } from "./note-text";
@@ -14,6 +14,8 @@ interface PostItProps {
   editing?: boolean;
   /** Duplo clique sobre o post-it: o pedido de entrar em edição. */
   onEditStart?: (id: string) => void;
+  /** Pedido de seleção. `additive` vem do shift, que acrescenta em vez de trocar. */
+  onSelect?: (id: string, additive: boolean) => void;
   /** Fim da edição, com o texto final. Sair confirma, e quem recebe é que escreve na store. */
   onEditCommit?: (id: string, text: string) => void;
 }
@@ -47,6 +49,7 @@ export function PostIt({
   editing = false,
   onEditStart,
   onEditCommit,
+  onSelect,
 }: PostItProps) {
   const style: CSSProperties = {
     left: note.x,
@@ -56,6 +59,16 @@ export function PostIt({
     zIndex: note.z,
     backgroundColor: noteBackgroundColor(note.color),
   };
+
+  function handlePointerDown(event: PointerEvent<HTMLDivElement>): void {
+    if (event.button !== 0) return;
+    // Selecionar no apertar, e não no soltar: arrastar (#15) começa por aqui, e o post-it
+    // precisa já estar marcado quando o movimento começa.
+    //
+    // Quem está escrevendo não é interrompido: o clique dentro do texto posiciona o cursor,
+    // e reselecionar tiraria o foco do editor.
+    if (!editing) onSelect?.(note.id, event.shiftKey);
+  }
 
   function handleDoubleClick(event: MouseEvent<HTMLDivElement>): void {
     // O evento para aqui: no fundo do canvas, duplo clique cria um post-it (#13), e editar
@@ -71,6 +84,7 @@ export function PostIt({
       role="note"
       className={`absolute overflow-hidden shadow-note ${NOTE_TEXT_CLASS} ${selected ? SELECTED_CLASS : ""}`}
       style={style}
+      onPointerDown={handlePointerDown}
       onDoubleClick={handleDoubleClick}
       data-testid="post-it"
       data-note-id={note.id}

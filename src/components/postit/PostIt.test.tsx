@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import { Viewport } from "@/components/canvas/Viewport";
@@ -231,5 +231,46 @@ describe("PostIt em edição", () => {
 
     rerender(<PostIt note={note()} editing />);
     expect(screen.getByTestId("post-it").dataset.editing).toBe("true");
+  });
+});
+
+describe("PostIt — seleção", () => {
+  it("pede a seleção ao ser apertado, e não ao ser solto", () => {
+    const onSelect = vi.fn();
+    render(<PostIt note={note({ id: "xyz789" })} onSelect={onSelect} />);
+
+    // Arrastar (#15) começa no pointerdown: o post-it precisa já estar marcado quando o
+    // movimento começa, senão arrasta-se algo que ainda não foi selecionado.
+    fireEvent.pointerDown(screen.getByTestId("post-it"), { button: 0 });
+
+    expect(onSelect).toHaveBeenCalledExactlyOnceWith("xyz789", false);
+  });
+
+  it("avisa que o shift estava apertado, para acrescentar em vez de trocar", () => {
+    const onSelect = vi.fn();
+    render(<PostIt note={note({ id: "xyz789" })} onSelect={onSelect} />);
+
+    fireEvent.pointerDown(screen.getByTestId("post-it"), { button: 0, shiftKey: true });
+
+    expect(onSelect).toHaveBeenCalledExactlyOnceWith("xyz789", true);
+  });
+
+  it("não age em botão que não é o primário", () => {
+    const onSelect = vi.fn();
+    render(<PostIt note={note()} onSelect={onSelect} />);
+
+    fireEvent.pointerDown(screen.getByTestId("post-it"), { button: 2 });
+
+    expect(onSelect).not.toHaveBeenCalled();
+  });
+
+  it("não interrompe quem está escrevendo", () => {
+    const onSelect = vi.fn();
+    render(<PostIt note={note()} editing onSelect={onSelect} />);
+
+    // Clicar dentro do texto posiciona o cursor; reselecionar tiraria o foco do editor.
+    fireEvent.pointerDown(screen.getByTestId("post-it-editor"), { button: 0 });
+
+    expect(onSelect).not.toHaveBeenCalled();
   });
 });

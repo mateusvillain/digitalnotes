@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import type { Note } from "@/lib/board/types";
@@ -64,5 +64,42 @@ describe("Board", () => {
     await user.keyboard(" e depois{Escape}");
 
     expect(onEditCommit).toHaveBeenCalledExactlyOnceWith("aaa111", "antes e depois");
+  });
+});
+
+describe("Board — seleção", () => {
+  it("marca visualmente só os post-its da seleção", () => {
+    render(
+      <Board
+        notes={[note({ id: "aaa111" }), note({ id: "bbb222" }), note({ id: "ccc333" })]}
+        selection={new Set(["aaa111", "ccc333"])}
+      />,
+    );
+
+    expect(screen.getAllByTestId("post-it").map((element) => element.dataset.selected)).toEqual([
+      "true",
+      "false",
+      "true",
+    ]);
+  });
+
+  it("desmarca tudo quando não recebe seleção", () => {
+    render(<Board notes={[note({ id: "aaa111" })]} />);
+
+    expect(defined(screen.getAllByTestId("post-it")[0], "o post-it").dataset.selected).toBe(
+      "false",
+    );
+  });
+
+  it("repassa o pedido de seleção com o id e o shift", () => {
+    const onSelect = vi.fn();
+    render(<Board notes={[note({ id: "aaa111" }), note({ id: "bbb222" })]} onSelect={onSelect} />);
+
+    fireEvent.pointerDown(defined(screen.getAllByTestId("post-it")[1], "o segundo post-it"), {
+      button: 0,
+      shiftKey: true,
+    });
+
+    expect(onSelect).toHaveBeenCalledExactlyOnceWith("bbb222", true);
   });
 });

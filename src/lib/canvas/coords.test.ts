@@ -2,10 +2,12 @@ import { describe, expect, it } from "vitest";
 import {
   canvasToScreen,
   clampScale,
+  distance,
   IDENTITY_VIEWPORT,
   MAX_SCALE,
   MIN_SCALE,
   panBy,
+  rectsIntersect,
   scaleAsPercent,
   screenToCanvas,
   topLeftCenteredAt,
@@ -117,5 +119,44 @@ describe("topLeftCenteredAt", () => {
     const canto = topLeftCenteredAt(centro, size);
 
     expect({ x: canto.x + size.w / 2, y: canto.y + size.h / 2 }).toEqual(centro);
+  });
+});
+
+describe("rectsIntersect", () => {
+  const base = { x: 0, y: 0, w: 100, h: 100 };
+
+  it("reconhece sobreposição parcial", () => {
+    expect(rectsIntersect(base, { x: 50, y: 50, w: 100, h: 100 })).toBe(true);
+  });
+
+  it("reconhece um retângulo inteiramente dentro do outro, dos dois lados", () => {
+    expect(rectsIntersect(base, { x: -10, y: -10, w: 200, h: 200 })).toBe(true);
+    expect(rectsIntersect(base, { x: 10, y: 10, w: 5, h: 5 })).toBe(true);
+  });
+
+  it("não conta encostar como intersectar", () => {
+    expect(rectsIntersect(base, { x: -50, y: 0, w: 50, h: 100 })).toBe(false);
+  });
+
+  it("retângulo sem área não toca nada, nem o que está embaixo dele", () => {
+    // É o que um clique, ou um arrasto de um eixo só, produz.
+    expect(rectsIntersect(base, { x: 50, y: 50, w: 0, h: 0 })).toBe(false);
+    expect(rectsIntersect(base, { x: 0, y: 50, w: 100, h: 0 })).toBe(false);
+  });
+
+  it("ignora retângulos separados", () => {
+    expect(rectsIntersect(base, { x: 500, y: 500, w: 10, h: 10 })).toBe(false);
+  });
+});
+
+describe("distance", () => {
+  it("mede em linha reta, e não por eixo", () => {
+    expect(distance({ x: 0, y: 0 }, { x: 3, y: 4 })).toBe(5);
+  });
+
+  it("acumula o gesto lento que um limite por passo deixaria escapar", () => {
+    const origem = { x: 0, y: 0 };
+    // Três passos de dois pixels: nenhum passa de uma folga de 4, mas o gesto andou 6.
+    expect(distance(origem, { x: 6, y: 0 })).toBeGreaterThan(4);
   });
 });

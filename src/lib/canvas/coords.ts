@@ -15,6 +15,12 @@ export interface Point {
   y: number;
 }
 
+/** Retângulo alinhado aos eixos, em coordenadas de canvas. */
+export interface Rect extends Size {
+  x: number;
+  y: number;
+}
+
 /** Dimensões de uma caixa, em unidades de canvas. */
 export interface Size {
   w: number;
@@ -74,6 +80,45 @@ export function canvasToScreen(point: Point, viewport: Viewport): Point {
  */
 export function topLeftCenteredAt(center: Point, size: Size): Point {
   return { x: center.x - size.w / 2, y: center.y - size.h / 2 };
+}
+
+/**
+ * Retângulo entre dois cantos, em qualquer ordem.
+ *
+ * Arrastar da direita para a esquerda é tão comum quanto o contrário, e um retângulo de
+ * largura negativa não desenha nem intersecta nada.
+ */
+export function rectFromCorners(a: Point, b: Point): Rect {
+  return {
+    x: Math.min(a.x, b.x),
+    y: Math.min(a.y, b.y),
+    w: Math.abs(a.x - b.x),
+    h: Math.abs(a.y - b.y),
+  };
+}
+
+/**
+ * Sobreposição entre dois retângulos.
+ *
+ * Estritamente maior que zero: encostar não é intersectar, e retângulo sem área não toca
+ * nada — nem aquele sobre o qual ele por acaso caiu. É o que um arrasto de um eixo só, ou
+ * um clique, produz.
+ */
+export function rectsIntersect(a: Rect, b: Rect): boolean {
+  if (a.w <= 0 || a.h <= 0 || b.w <= 0 || b.h <= 0) return false;
+
+  return a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y;
+}
+
+/**
+ * Distância entre dois pontos, em linha reta.
+ *
+ * Existe para separar clicar de arrastar: a conta precisa ser sobre o deslocamento desde a
+ * origem do gesto, e não sobre o passo de cada evento — um arrasto lento anda três pixels
+ * por vez e nunca passaria de uma folga aplicada passo a passo.
+ */
+export function distance(a: Point, b: Point): number {
+  return Math.hypot(a.x - b.x, a.y - b.y);
 }
 
 /** Desloca o viewport em pixels de tela. */
