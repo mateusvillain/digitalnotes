@@ -17,11 +17,11 @@ describe("AppShell", () => {
     expect(screen.getByRole("heading", { name: "digitalnotes" }).className).toContain("sr-only");
   });
 
-  it("põe os controles no canto superior direito, fora da borda", () => {
+  it("põe os controles no canto inferior direito, fora da borda", () => {
     const { container } = render(<AppShell controls={<button type="button">zoom</button>} />);
     const faixa = container.querySelector(".shadow-control")?.parentElement;
 
-    expect(faixa?.className).toContain("top-0");
+    expect(faixa?.className).toContain("bottom-0");
     expect(faixa?.className).toContain("justify-end");
     // O respiro da borda vem do padding da faixa, não de um deslocamento do próprio bloco.
     expect(faixa?.className).toContain("p-4");

@@ -32,7 +32,7 @@ export function AppShell({ children, controls }: AppShellProps) {
       {controls === undefined ? null : (
         // Acima do quadro **e** da barra de seleção (`z-20`): um controle da aplicação não
         // pode ser coberto por um overlay que segue os post-its.
-        <div className="pointer-events-none absolute inset-x-0 top-0 z-30 flex justify-end p-4">
+        <div className="pointer-events-none absolute inset-x-0 bottom-0 z-30 flex justify-end p-4">
           <div className="pointer-events-auto rounded-control border border-border bg-surface p-1 shadow-control">
             {controls}
           </div>
