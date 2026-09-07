@@ -728,3 +728,86 @@ describe("useBoard — cor da seleção", () => {
     }
   });
 });
+
+describe("useBoard — apagar a seleção", () => {
+  function comDoisPostIts() {
+    const hook = renderHook(() => useBoard());
+    act(() => hook.result.current.createNoteAt({ x: 0, y: 0 }));
+    act(() => hook.result.current.createNoteAt({ x: 500, y: 0 }));
+
+    return {
+      hook,
+      primeiro: defined(hook.result.current.notes[0], "o primeiro post-it"),
+      segundo: defined(hook.result.current.notes[1], "o segundo post-it"),
+    };
+  }
+
+  it("apaga o post-it marcado", () => {
+    const { hook, primeiro, segundo } = comDoisPostIts();
+    act(() => hook.result.current.selectNote(primeiro.id));
+
+    act(() => hook.result.current.deleteSelection());
+
+    expect(hook.result.current.notes.map((note) => note.id)).toEqual([segundo.id]);
+  });
+
+  it("apaga a seleção inteira", () => {
+    const { hook, primeiro, segundo } = comDoisPostIts();
+    act(() => hook.result.current.selectNote(primeiro.id));
+    act(() => hook.result.current.selectNote(segundo.id, true));
+
+    act(() => hook.result.current.deleteSelection());
+
+    expect(hook.result.current.notes).toEqual([]);
+  });
+
+  it("esvazia a seleção depois de apagar", () => {
+    const { hook, primeiro } = comDoisPostIts();
+    act(() => hook.result.current.selectNote(primeiro.id));
+
+    act(() => hook.result.current.deleteSelection());
+
+    // Ids de post-its que não existem mais fariam a próxima ação em lote agir sobre nada.
+    expect([...hook.result.current.selection]).toEqual([]);
+  });
+
+  it("fecha a edição do post-it apagado", () => {
+    const { result } = renderHook(() => useBoard());
+    act(() => result.current.createNoteAt({ x: 0, y: 0 }));
+
+    // Criar já deixa o post-it selecionado e em edição.
+    act(() => result.current.deleteSelection());
+
+    expect(result.current.editingId).toBeNull();
+  });
+
+  it("não mexe na edição de quem não foi apagado", () => {
+    const { hook, primeiro, segundo } = comDoisPostIts();
+    act(() => hook.result.current.startEditing(segundo.id));
+    act(() => hook.result.current.selectNote(primeiro.id));
+
+    act(() => hook.result.current.deleteSelection());
+
+    expect(hook.result.current.editingId).toBe(segundo.id);
+  });
+
+  it("não faz nada sem seleção", () => {
+    const { hook } = comDoisPostIts();
+    act(() => hook.result.current.clearSelection());
+    const antes = hook.result.current.notes;
+
+    act(() => hook.result.current.deleteSelection());
+
+    expect(hook.result.current.notes).toBe(antes);
+  });
+
+  it("apagar duas vezes seguidas não quebra", () => {
+    const { hook, primeiro } = comDoisPostIts();
+    act(() => hook.result.current.selectNote(primeiro.id));
+
+    act(() => hook.result.current.deleteSelection());
+    act(() => hook.result.current.deleteSelection());
+
+    expect(hook.result.current.notes).toHaveLength(1);
+  });
+});

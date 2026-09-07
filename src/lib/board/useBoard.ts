@@ -65,6 +65,8 @@ export interface BoardApi {
   selectionColor: NoteColor | null;
   /** Pinta toda a seleção de uma cor, numa publicação só. */
   colorSelection: (color: NoteColor) => void;
+  /** Apaga os post-its marcados e esvazia a seleção. Sem nada marcado, não faz nada. */
+  deleteSelection: () => void;
   /** Grava o texto e fecha a edição. */
   commitText: (id: string, text: string) => void;
 }
@@ -298,6 +300,23 @@ export function useBoard(): BoardApi {
     [store],
   );
 
+  const deleteSelection = useCallback(() => {
+    const ids = [...selectionRef.current];
+    if (ids.length === 0) return;
+
+    // Numa remoção só, como o resto das ações em lote: quem escuta é a persistência, e dez
+    // post-its apagados não são dez reescritas da URL.
+    const apagados = selectionRef.current;
+
+    store.removeNotes(ids);
+    // Quem estava em edição pode ter sido apagado. Lido **antes** de esvaziar a seleção, ou
+    // a pergunta seria feita a um conjunto já vazio e a resposta seria sempre "não".
+    setEditingId((current) => (current !== null && apagados.has(current) ? null : current));
+    // A seleção some junto: ids de post-its que não existem mais continuariam marcados e
+    // fariam a próxima ação em lote agir sobre nada.
+    publishSelection(EMPTY_SELECTION);
+  }, [publishSelection, store]);
+
   const commitText = useCallback(
     (id: string, text: string) => {
       store.updateNote(id, { text });
@@ -330,5 +349,6 @@ export function useBoard(): BoardApi {
     selected,
     selectionColor,
     colorSelection,
+    deleteSelection,
   };
 }

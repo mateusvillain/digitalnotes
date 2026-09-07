@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef } from "react";
 import { AppShell } from "@/components/shell/AppShell";
 import { useBoard } from "@/lib/board/useBoard";
+import { useKeyboardShortcuts } from "@/lib/board/useKeyboardShortcuts";
 import type { Point } from "@/lib/canvas/coords";
 import { useViewport } from "@/lib/canvas/useViewport";
 import { ColorPicker } from "@/components/postit/ColorPicker";
@@ -61,6 +62,8 @@ export function Whiteboard() {
     (delta: Point) => resizeOffsetBy(toCanvasDelta(delta)),
     [resizeOffsetBy, toCanvasDelta],
   );
+
+  useKeyboardShortcuts({ onDelete: board.deleteSelection });
 
   /** Um gesto de ponteiro em curso sobre um post-it: arrastar ou redimensionar. */
   const inGesture = board.dragOffset !== null || board.resizing !== null;
