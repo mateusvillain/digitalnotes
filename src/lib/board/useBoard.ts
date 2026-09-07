@@ -1,10 +1,17 @@
 "use client";
 
 import { useCallback, useRef, useState, useSyncExternalStore } from "react";
-import { topLeftCenteredAt, type Point, type Rect } from "@/lib/canvas/coords";
+import { topLeftCenteredAt, type Point, type Rect, type Size } from "@/lib/canvas/coords";
 import { EMPTY_SELECTION, notesInRect, selectOnly, toggle, type Selection } from "./selection";
+import { clampNoteSize } from "./schema";
 import { createBoardStore } from "./store";
 import { NOTE_SIZE, type Board, type Note } from "./types";
+
+/** Um post-it em redimensionamento e o tamanho que ele tem agora, durante o gesto. */
+export interface Resizing {
+  id: string;
+  size: Size;
+}
 
 export interface BoardApi {
   /** Notes do board, na ordem em que a store as guarda. */
@@ -31,6 +38,14 @@ export interface BoardApi {
   endDrag: () => void;
   /** Desfaz o arraste sem gravar nada. */
   cancelDrag: () => void;
+  /** Post-it sendo redimensionado e o tamanho que ele tem agora, ou `null`. */
+  resizing: Resizing | null;
+  /** Começa a redimensionar um post-it. */
+  startResize: (id: string) => void;
+  /** Cresce ou encolhe o post-it em curso, em coordenadas de canvas. */
+  resizeBy: (delta: Point) => void;
+  endResize: () => void;
+  cancelResize: () => void;
   /** Marca o começo de um retângulo de seleção, guardando o que já estava marcado. */
   beginRectSelection: () => void;
   /** Acrescenta ao que já estava marcado os post-its que o retângulo toca. */
@@ -58,18 +73,48 @@ export function useBoard(): BoardApi {
   /** A seleção de antes do retângulo começar, para o gesto poder ser refeito enquanto anda. */
   const selectionBeforeRect = useRef<Selection>(EMPTY_SELECTION);
   const [dragOffset, setDragOffset] = useState<Point | null>(null);
+  const [resizing, setResizing] = useState<Resizing | null>(null);
 
   /**
-   * Cópias em ref do que os callbacks de arraste precisam ler.
+   * Cópias em ref do que os callbacks de gesto precisam ler.
    *
    * Os callbacks são passados a cada post-it: se mudassem de identidade a cada quadro do
    * gesto, todo post-it re-renderizaria a cada movimento do ponteiro, e é justamente isso
    * que o critério de fluidez proíbe. Lendo de ref, eles ficam estáveis para sempre.
+   *
+   * Todas são escritas **junto com** o estado, pelos `publish*` abaixo, e não durante o
+   * render: soltar o ponteiro reporta o último movimento e o fim do gesto no mesmo evento,
+   * e uma ref atualizada só no render seguinte faria o fim gravar o valor anterior.
    */
+  const selectionRef = useRef<Selection>(EMPTY_SELECTION);
   const dragOffsetRef = useRef<Point | null>(null);
-  dragOffsetRef.current = dragOffset;
-  const selectionRef = useRef<Selection>(selection);
-  selectionRef.current = selection;
+  const resizingRef = useRef<Resizing | null>(null);
+
+  /**
+   * Publica a seleção na ref e no estado, nessa ordem.
+   *
+   * Aceita a forma de atualização do `useState`, mas resolve-a **aqui**, contra a ref: quem
+   * chama precisa saber na hora o que a seleção virou — `selectNote` decide pela resposta
+   * se promove o post-it —, e um updater executado lá adiante, no render, responderia tarde
+   * demais.
+   */
+  const publishSelection = useCallback((next: Selection | ((current: Selection) => Selection)) => {
+    const value = typeof next === "function" ? next(selectionRef.current) : next;
+    selectionRef.current = value;
+    setSelection(value);
+  }, []);
+
+  /** Publica o deslocamento do arraste na ref e no estado, nessa ordem. */
+  const publishDragOffset = useCallback((offset: Point | null) => {
+    dragOffsetRef.current = offset;
+    setDragOffset(offset);
+  }, []);
+
+  /** Publica o tamanho em curso na ref e no estado, nessa ordem. */
+  const publishResizing = useCallback((next: Resizing | null) => {
+    resizingRef.current = next;
+    setResizing(next);
+  }, []);
 
   // O mesmo `getBoard` nos dois argumentos: o board inicial no servidor é o mesmo objeto do
   // primeiro render no cliente, então não há divergência de hidratação a conciliar.
@@ -89,9 +134,9 @@ export function useBoard(): BoardApi {
 
       setEditingId(note.id);
       // Criar é selecionar: o post-it recém-nascido é sobre o que as próximas ações agem.
-      setSelection(selectOnly(note.id));
+      publishSelection(selectOnly(note.id));
     },
-    [store],
+    [publishSelection, store],
   );
 
   // `setEditingId` já é estável: embrulhar em useCallback seria só um intermediário.
@@ -102,13 +147,13 @@ export function useBoard(): BoardApi {
       let promoted = true;
 
       if (additive) {
-        setSelection((current) => {
+        publishSelection((current) => {
           // Shift-clique tira tanto quanto põe, e tirar não é motivo para promover.
           promoted = !current.has(id);
           return toggle(current, id);
         });
       } else {
-        setSelection(selectOnly(id));
+        publishSelection(selectOnly(id));
       }
 
       // Selecionar traz para a frente, e isso **é** do board: a ordem de empilhamento vai
@@ -116,12 +161,12 @@ export function useBoard(): BoardApi {
       // apontou para aquele post-it, naquela ordem.
       if (promoted) store.bringToFront(id);
     },
-    [store],
+    [publishSelection, store],
   );
 
   const beginRectSelection = useCallback(() => {
-    selectionBeforeRect.current = selection;
-  }, [selection]);
+    selectionBeforeRect.current = selectionRef.current;
+  }, []);
 
   const selectInRect = useCallback(
     (rect: Rect) => {
@@ -129,29 +174,29 @@ export function useBoard(): BoardApi {
       // gesto. Redesenhar o retângulo recalcula a partir do que havia antes dele, senão
       // encolher o retângulo nunca desmarcaria ninguém.
       const tocados = notesInRect(store.getBoard().notes, rect);
-      setSelection(new Set([...selectionBeforeRect.current, ...tocados]));
+      publishSelection(new Set([...selectionBeforeRect.current, ...tocados]));
     },
-    [store],
+    [publishSelection, store],
   );
 
-  const clearSelection = useCallback(() => setSelection(EMPTY_SELECTION), []);
+  const clearSelection = useCallback(() => publishSelection(EMPTY_SELECTION), [publishSelection]);
 
   const startDrag = useCallback(
     (id: string) => {
-      setDragOffset({ x: 0, y: 0 });
+      publishDragOffset({ x: 0, y: 0 });
       // Pegar um post-it é apontar para ele, como clicar: ele vai para a frente dos demais.
       // Sem isto, arrastar um post-it de dentro de uma seleção o deixaria atrás — a seleção
       // já existia, então nenhum clique chegou a promovê-lo.
       store.bringToFront(id);
     },
-    [store],
+    [publishDragOffset, store],
   );
 
-  const dragBy = useCallback((offset: Point) => setDragOffset(offset), []);
+  const dragBy = publishDragOffset;
 
   const endDrag = useCallback(() => {
     const offset = dragOffsetRef.current;
-    setDragOffset(null);
+    publishDragOffset(null);
     if (offset === null) return;
 
     // Uma publicação só para a seleção inteira: quem escuta é a persistência, que reescreve
@@ -169,9 +214,56 @@ export function useBoard(): BoardApi {
           },
         })),
     );
-  }, [store]);
+  }, [publishDragOffset, store]);
 
-  const cancelDrag = useCallback(() => setDragOffset(null), []);
+  const cancelDrag = useCallback(() => publishDragOffset(null), [publishDragOffset]);
+
+  const startResize = useCallback(
+    (id: string) => {
+      const note = store.getNote(id);
+      if (note === undefined) return;
+
+      publishResizing({ id, size: { w: note.w, h: note.h } });
+    },
+    [publishResizing, store],
+  );
+
+  const resizeBy = useCallback(
+    (delta: Point) => {
+      const current = resizingRef.current;
+      if (current === null) return;
+
+      // Medido a partir do tamanho de quando o gesto começou, e não do quadro anterior: o
+      // deslocamento já vem acumulado desde a origem, e somá-lo ao tamanho atual faria o
+      // post-it crescer o dobro.
+      const note = store.getNote(current.id);
+      if (note === undefined) return;
+
+      // O limite é aplicado enquanto se arrasta, e não só ao gravar: deixar encolher além
+      // do mínimo e devolver o tamanho ao soltar faria o post-it saltar na frente de quem
+      // o estava ajustando.
+      publishResizing({
+        id: current.id,
+        size: clampNoteSize({ w: note.w + delta.x, h: note.h + delta.y }),
+      });
+    },
+    [publishResizing, store],
+  );
+
+  const endResize = useCallback(() => {
+    const current = resizingRef.current;
+    publishResizing(null);
+    if (current === null) return;
+
+    // Inteiros, como na posição: cada casa decimal custa caracteres de link, e o zoom faz o
+    // deslocamento chegar aqui fracionado.
+    store.updateNote(current.id, {
+      w: Math.round(current.size.w),
+      h: Math.round(current.size.h),
+    });
+  }, [publishResizing, store]);
+
+  const cancelResize = useCallback(() => publishResizing(null), [publishResizing]);
 
   const commitText = useCallback(
     (id: string, text: string) => {
@@ -193,6 +285,11 @@ export function useBoard(): BoardApi {
     dragBy,
     endDrag,
     cancelDrag,
+    resizing,
+    startResize,
+    resizeBy,
+    endResize,
+    cancelResize,
     selectNote,
     beginRectSelection,
     selectInRect,

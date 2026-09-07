@@ -4,6 +4,7 @@ import { PostIt } from "@/components/postit/PostIt";
 import type { Selection } from "@/lib/board/selection";
 import type { Point } from "@/lib/canvas/coords";
 import type { Note } from "@/lib/board/types";
+import type { Resizing } from "@/lib/board/useBoard";
 
 interface BoardProps {
   notes: readonly Note[];
@@ -20,6 +21,12 @@ interface BoardProps {
   onDragMove?: (delta: Point) => void;
   onDragEnd?: () => void;
   onDragCancel?: () => void;
+  /** Post-it em redimensionamento e o tamanho que ele tem agora. */
+  resizing?: Resizing | null;
+  onResizeStart?: (id: string) => void;
+  onResizeMove?: (delta: Point) => void;
+  onResizeEnd?: () => void;
+  onResizeCancel?: () => void;
 }
 
 /**
@@ -44,6 +51,11 @@ export function Board({
   onDragMove,
   onDragEnd,
   onDragCancel,
+  resizing = null,
+  onResizeStart,
+  onResizeMove,
+  onResizeEnd,
+  onResizeCancel,
 }: BoardProps) {
   return (
     <>
@@ -66,6 +78,11 @@ export function Board({
             onDragMove={onDragMove}
             onDragEnd={onDragEnd}
             onDragCancel={onDragCancel}
+            size={resizing?.id === note.id ? resizing.size : null}
+            onResizeStart={onResizeStart}
+            onResizeMove={onResizeMove}
+            onResizeEnd={onResizeEnd}
+            onResizeCancel={onResizeCancel}
           />
         );
       })}

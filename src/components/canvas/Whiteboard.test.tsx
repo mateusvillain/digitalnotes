@@ -2,6 +2,7 @@ import { fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it } from "vitest";
 import { defined } from "@/test-utils/defined";
+import { NOTE_SIZE } from "@/lib/board/types";
 import { Whiteboard } from "./Whiteboard";
 
 /**
@@ -388,5 +389,154 @@ describe("Whiteboard — arraste", () => {
     arrastaPostIt(0, 150, 150);
 
     expect(screen.queryByTestId("post-it-editor")).toBeNull();
+  });
+});
+
+describe("Whiteboard — redimensionamento", () => {
+  function criaPostIt(x: number, y: number): void {
+    duploCliqueNoFundo(x, y);
+    fireEvent.keyDown(screen.getByTestId("post-it-editor"), { key: "Escape" });
+  }
+
+  function alca(): HTMLElement {
+    return screen.getByTestId("resize-handle");
+  }
+
+  function tamanho(): { w: number; h: number } {
+    const element = postIt(0);
+    return {
+      w: Number.parseFloat(element.style.width),
+      h: Number.parseFloat(element.style.height),
+    };
+  }
+
+  function posicao(): { x: number; y: number } {
+    const element = postIt(0);
+    return {
+      x: Number.parseFloat(element.style.left),
+      y: Number.parseFloat(element.style.top),
+    };
+  }
+
+  /** Puxa a alça pelo deslocamento pedido, em pixels de tela. */
+  function puxaAlca(dx: number, dy: number, solta = true): void {
+    const handle = alca();
+    fireEvent.pointerDown(handle, { pointerId: 1, button: 0, clientX: 0, clientY: 0 });
+    fireEvent.pointerMove(handle, { pointerId: 1, clientX: dx, clientY: dy });
+    if (solta) fireEvent.pointerUp(handle, { pointerId: 1, clientX: dx, clientY: dy });
+  }
+
+  it("mostra a alça no post-it selecionado", () => {
+    render(<Whiteboard />);
+    criaPostIt(400, 400);
+
+    expect(alca().dataset.visible).toBe("true");
+  });
+
+  it("esconde a alça enquanto se escreve", () => {
+    render(<Whiteboard />);
+    duploCliqueNoFundo(400, 400);
+
+    // Ali o post-it é um campo de texto, não uma caixa a ajustar.
+    expect(screen.queryByTestId("resize-handle")).toBeNull();
+  });
+
+  it("altera largura e altura acompanhando o cursor", () => {
+    render(<Whiteboard />);
+    criaPostIt(400, 400);
+    const antes = tamanho();
+
+    puxaAlca(70, 30);
+
+    expect(tamanho()).toEqual({ w: antes.w + 70, h: antes.h + 30 });
+  });
+
+  it("acompanha o cursor também com o quadro aproximado", async () => {
+    const user = userEvent.setup();
+    render(<Whiteboard />);
+    criaPostIt(400, 400);
+    const antes = tamanho();
+
+    await user.click(screen.getByLabelText("Aumentar zoom"));
+    const escala = Number(
+      screen.getByTestId("viewport-layer").style.transform.match(/scale\(([^)]+)\)/)?.[1],
+    );
+    puxaAlca(100, 0);
+
+    expect(escala).toBeGreaterThan(1);
+    expect(tamanho().w).toBe(antes.w + Math.round(100 / escala));
+  });
+
+  it("não grava nada enquanto a alça está sendo puxada", () => {
+    render(<Whiteboard />);
+    criaPostIt(400, 400);
+    const antes = tamanho();
+
+    puxaAlca(70, 30, false);
+    expect(tamanho()).toEqual({ w: antes.w + 70, h: antes.h + 30 });
+
+    // O que se vê já é o tamanho novo; o que está gravado só muda ao soltar. O teste do
+    // hook cobre a store; aqui o que importa é que o gesto termine no mesmo lugar.
+    fireEvent.pointerUp(alca(), { pointerId: 1, clientX: 70, clientY: 30 });
+    expect(tamanho()).toEqual({ w: antes.w + 70, h: antes.h + 30 });
+  });
+
+  it("não deixa encolher além do mínimo", () => {
+    render(<Whiteboard />);
+    criaPostIt(400, 400);
+
+    puxaAlca(-5000, -5000);
+
+    expect(tamanho()).toEqual({ w: NOTE_SIZE.minWidth, h: NOTE_SIZE.minHeight });
+  });
+
+  it("não move o post-it ao redimensionar", () => {
+    render(<Whiteboard />);
+    criaPostIt(400, 400);
+    const antes = posicao();
+
+    puxaAlca(120, 90);
+
+    expect(posicao()).toEqual(antes);
+  });
+
+  it("acompanha o cursor também com o quadro afastado", async () => {
+    const user = userEvent.setup();
+    render(<Whiteboard />);
+    criaPostIt(400, 400);
+    const antes = tamanho();
+
+    await user.click(screen.getByLabelText("Diminuir zoom"));
+    const escala = Number(
+      screen.getByTestId("viewport-layer").style.transform.match(/scale\(([^)]+)\)/)?.[1],
+    );
+    puxaAlca(100, 0);
+
+    // Afastado, cada pixel de tela vale mais de um de canvas: o post-it cresce **mais** que
+    // os cem pixels do cursor. É o lado da conversão em que o arredondamento é mais grosso.
+    expect(escala).toBeLessThan(1);
+    expect(tamanho().w).toBe(antes.w + Math.round(100 / escala));
+  });
+
+  it("duplo clique na alça não abre o editor", () => {
+    render(<Whiteboard />);
+    criaPostIt(400, 400);
+
+    fireEvent.doubleClick(alca(), { button: 0 });
+
+    // A alça é para ajustar o tamanho; abrir o editor ali cobriria justamente o que se
+    // estava ajustando.
+    expect(screen.queryByTestId("post-it-editor")).toBeNull();
+  });
+
+  it("puxar a alça não arrasta o post-it junto", () => {
+    render(<Whiteboard />);
+    criaPostIt(400, 400);
+    const antes = posicao();
+
+    puxaAlca(150, 150, false);
+
+    expect(postIt(0).dataset.dragging).toBe("false");
+    expect(posicao()).toEqual(antes);
   });
 });

@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useRef } from "react";
+import { useCallback, useEffect, useRef } from "react";
 import { AppShell } from "@/components/shell/AppShell";
 import { useBoard } from "@/lib/board/useBoard";
 import type { Point } from "@/lib/canvas/coords";
@@ -19,6 +19,7 @@ export function Whiteboard() {
   const controls = useViewport();
   const board = useBoard();
   const dragOffsetBy = board.dragBy;
+  const resizeOffsetBy = board.resizeBy;
   /**
    * A escala atual, lida por ref dentro do conversor de arraste.
    *
@@ -27,7 +28,12 @@ export function Whiteboard() {
    * re-renderizar a cada movimento do ponteiro.
    */
   const scaleRef = useRef(controls.viewport.scale);
-  scaleRef.current = controls.viewport.scale;
+  // Sincronizada por efeito, e não no render: escrever uma ref enquanto se renderiza é
+  // inseguro sob render concorrente. Quem lê são os conversores, chamados dentro de um
+  // gesto de ponteiro — e o zoom não muda enquanto um post-it está sendo arrastado.
+  useEffect(() => {
+    scaleRef.current = controls.viewport.scale;
+  }, [controls.viewport.scale]);
   const areaRef = useRef<HTMLDivElement>(null);
 
   /**
@@ -35,13 +41,23 @@ export function Whiteboard() {
    *
    * É o delta de tela dividido pela escala, e não o delta bruto: a 200%, dois pixels de
    * mouse são um pixel de canvas, e sem a divisão o post-it andaria o dobro do cursor.
+   *
+   * Arrastar e redimensionar fazem a mesma conta porque é a mesma pergunta: quantas
+   * unidades de canvas o cursor andou.
    */
+  const toCanvasDelta = useCallback((delta: Point): Point => {
+    const scale = scaleRef.current;
+    return { x: delta.x / scale, y: delta.y / scale };
+  }, []);
+
   const dragBy = useCallback(
-    (delta: Point) => {
-      const scale = scaleRef.current;
-      dragOffsetBy({ x: delta.x / scale, y: delta.y / scale });
-    },
-    [dragOffsetBy],
+    (delta: Point) => dragOffsetBy(toCanvasDelta(delta)),
+    [dragOffsetBy, toCanvasDelta],
+  );
+
+  const resizeBy = useCallback(
+    (delta: Point) => resizeOffsetBy(toCanvasDelta(delta)),
+    [resizeOffsetBy, toCanvasDelta],
   );
 
   /** Centro da área visível, usado como âncora do zoom por botão. */
@@ -84,6 +100,11 @@ export function Whiteboard() {
             onDragMove={dragBy}
             onDragEnd={board.endDrag}
             onDragCancel={board.cancelDrag}
+            resizing={board.resizing}
+            onResizeStart={board.startResize}
+            onResizeMove={resizeBy}
+            onResizeEnd={board.endResize}
+            onResizeCancel={board.cancelResize}
           />
         </Viewport>
       </div>
