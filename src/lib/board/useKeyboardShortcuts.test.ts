@@ -58,8 +58,7 @@ describe("useKeyboardShortcuts", () => {
 
     tecla("Backspace");
 
-    // No teclado do Mac a tecla escrita "delete" emite Backspace: ouvir só `Delete` deixaria
-    // o atalho inalcançável na maior parte dos laptops.
+    // Ver DELETE_KEYS: no Mac a tecla escrita "delete" emite Backspace.
     expect(onDelete).toHaveBeenCalledOnce();
   });
 

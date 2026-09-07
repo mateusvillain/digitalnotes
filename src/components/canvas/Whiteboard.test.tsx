@@ -773,12 +773,28 @@ describe("Whiteboard — apagar com Delete", () => {
     expect(screen.getByTestId("post-it-editor")).toBeDefined();
   });
 
+  // Ver DELETE_KEYS no hook: no Mac a tecla escrita "delete" emite Backspace.
   it("Backspace também apaga fora da edição", () => {
     render(<Whiteboard />);
     criaPostIt(400, 400);
 
     apertaTecla("Backspace");
 
+    expect(postIts()).toEqual([]);
+  });
+
+  it("apaga com o post-it focado pelo teclado", async () => {
+    const user = userEvent.setup();
+    render(<Whiteboard />);
+    criaPostIt(400, 400);
+    cliqueNoFundoLimpando();
+
+    postIt(0).focus();
+    await user.keyboard("{Enter}");
+    await user.keyboard("{Delete}");
+
+    // O post-it é tabulável desde a #17, mas não é campo de texto: a guarda olha o alvo, e
+    // aqui ela deixa passar de propósito.
     expect(postIts()).toEqual([]);
   });
 

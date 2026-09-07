@@ -64,7 +64,10 @@ export function useKeyboardShortcuts({ onDelete }: KeyboardShortcutsOptions): vo
       if (!DELETE_KEYS.has(event.key)) return;
       if (isEditableTarget(event.target)) return;
 
-      // No Mac, Backspace fora de um campo é "voltar" no histórico em navegadores antigos.
+      // Sempre, e não só quando algo foi apagado: fora de um campo de texto, Backspace é
+      // "voltar" no histórico em navegadores antigos, e sair do quadro sem querer é pior do
+      // que engolir uma tecla que não fez nada. Dentro de um campo o `return` acima já
+      // devolveu a tecla a quem estava digitando.
       event.preventDefault();
       onDeleteRef.current();
     }
