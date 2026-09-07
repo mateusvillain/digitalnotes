@@ -1,7 +1,6 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
-import { stubPointerCapture } from "@/test-utils/pointer";
 import type { Note } from "@/lib/board/types";
 import { defined } from "@/test-utils/defined";
 import { Board } from "./Board";
@@ -97,7 +96,6 @@ describe("Board — seleção", () => {
     render(<Board notes={[note({ id: "aaa111" }), note({ id: "bbb222" })]} onSelect={onSelect} />);
 
     const segundo = defined(screen.getAllByTestId("post-it")[1], "o segundo post-it");
-    stubPointerCapture(segundo);
     fireEvent.pointerDown(segundo, { button: 0, shiftKey: true });
 
     expect(onSelect).toHaveBeenCalledExactlyOnceWith("bbb222", true);

@@ -18,7 +18,16 @@ import { ViewportControls } from "./ViewportControls";
 export function Whiteboard() {
   const controls = useViewport();
   const board = useBoard();
-  const scale = controls.viewport.scale;
+  const dragOffsetBy = board.dragBy;
+  /**
+   * A escala atual, lida por ref dentro do conversor de arraste.
+   *
+   * O conversor é passado a cada post-it. Se mudasse de identidade quando o zoom muda, a
+   * memoização dos post-its cairia junto — e é ela que impede o quadro inteiro de
+   * re-renderizar a cada movimento do ponteiro.
+   */
+  const scaleRef = useRef(controls.viewport.scale);
+  scaleRef.current = controls.viewport.scale;
   const areaRef = useRef<HTMLDivElement>(null);
 
   /**
@@ -28,8 +37,11 @@ export function Whiteboard() {
    * mouse são um pixel de canvas, e sem a divisão o post-it andaria o dobro do cursor.
    */
   const dragBy = useCallback(
-    (delta: Point) => board.dragBy({ x: delta.x / scale, y: delta.y / scale }),
-    [board, scale],
+    (delta: Point) => {
+      const scale = scaleRef.current;
+      dragOffsetBy({ x: delta.x / scale, y: delta.y / scale });
+    },
+    [dragOffsetBy],
   );
 
   /** Centro da área visível, usado como âncora do zoom por botão. */

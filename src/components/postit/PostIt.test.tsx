@@ -1,7 +1,6 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
-import { stubPointerCapture } from "@/test-utils/pointer";
 import { Viewport } from "@/components/canvas/Viewport";
 import { NOTE_COLORS, NOTE_MAX_TEXT_LENGTH, type Note } from "@/lib/board/types";
 import { noteBackgroundColor } from "@/lib/theme/note-colors";
@@ -242,7 +241,6 @@ describe("PostIt — seleção", () => {
 
     // Arrastar (#15) começa no pointerdown: o post-it precisa já estar marcado quando o
     // movimento começa, senão arrasta-se algo que ainda não foi selecionado.
-    stubPointerCapture(screen.getByTestId("post-it"));
     fireEvent.pointerDown(screen.getByTestId("post-it"), { button: 0 });
 
     expect(onSelect).toHaveBeenCalledExactlyOnceWith("xyz789", false);
@@ -252,7 +250,6 @@ describe("PostIt — seleção", () => {
     const onSelect = vi.fn();
     render(<PostIt note={note({ id: "xyz789" })} onSelect={onSelect} />);
 
-    stubPointerCapture(screen.getByTestId("post-it"));
     fireEvent.pointerDown(screen.getByTestId("post-it"), { button: 0, shiftKey: true });
 
     expect(onSelect).toHaveBeenCalledExactlyOnceWith("xyz789", true);
@@ -281,7 +278,6 @@ describe("PostIt — seleção", () => {
 describe("PostIt — arraste", () => {
   /** Aperta, anda e (opcionalmente) solta sobre o post-it. */
   function arrasta(element: HTMLElement, ate: [number, number], solta = true): void {
-    stubPointerCapture(element);
     fireEvent.pointerDown(element, { pointerId: 1, button: 0, clientX: 0, clientY: 0 });
     fireEvent.pointerMove(element, { pointerId: 1, clientX: ate[0], clientY: ate[1] });
     if (solta) fireEvent.pointerUp(element, { pointerId: 1, clientX: ate[0], clientY: ate[1] });
@@ -350,7 +346,6 @@ describe("PostIt — arraste", () => {
     const onDragEnd = vi.fn();
     render(<PostIt note={note()} onDragStart={onDragStart} onDragEnd={onDragEnd} />);
     const element = screen.getByTestId("post-it");
-    stubPointerCapture(element);
 
     fireEvent.pointerDown(element, { pointerId: 1, button: 0, clientX: 10, clientY: 10 });
     fireEvent.pointerUp(element, { pointerId: 1, clientX: 10, clientY: 10 });
@@ -375,7 +370,6 @@ describe("PostIt — seleção adiada ao arrastar um grupo", () => {
     const onSelect = vi.fn();
     render(<PostIt note={note({ id: "xyz789" })} selected onSelect={onSelect} />);
     const element = screen.getByTestId("post-it");
-    stubPointerCapture(element);
 
     fireEvent.pointerDown(element, { pointerId: 1, button: 0, clientX: 0, clientY: 0 });
 
@@ -388,7 +382,6 @@ describe("PostIt — seleção adiada ao arrastar um grupo", () => {
     const onSelect = vi.fn();
     render(<PostIt note={note({ id: "xyz789" })} selected onSelect={onSelect} />);
     const element = screen.getByTestId("post-it");
-    stubPointerCapture(element);
 
     fireEvent.pointerDown(element, { pointerId: 1, button: 0, clientX: 0, clientY: 0 });
     fireEvent.pointerUp(element, { pointerId: 1, clientX: 0, clientY: 0 });
@@ -401,7 +394,6 @@ describe("PostIt — seleção adiada ao arrastar um grupo", () => {
     const onSelect = vi.fn();
     render(<PostIt note={note({ id: "xyz789" })} selected onSelect={onSelect} />);
     const element = screen.getByTestId("post-it");
-    stubPointerCapture(element);
 
     fireEvent.pointerDown(element, { pointerId: 1, button: 0, clientX: 0, clientY: 0 });
     fireEvent.pointerMove(element, { pointerId: 1, clientX: 100, clientY: 0 });
@@ -414,10 +406,72 @@ describe("PostIt — seleção adiada ao arrastar um grupo", () => {
     const onSelect = vi.fn();
     render(<PostIt note={note({ id: "xyz789" })} onSelect={onSelect} />);
     const element = screen.getByTestId("post-it");
-    stubPointerCapture(element);
 
     fireEvent.pointerDown(element, { pointerId: 1, button: 0, clientX: 0, clientY: 0 });
 
     expect(onSelect).toHaveBeenCalledExactlyOnceWith("xyz789", false);
+  });
+});
+
+describe("PostIt — gestos que não deveriam mover nada", () => {
+  it("shift sobre um post-it selecionado desmarca, e não arrasta", () => {
+    const onSelect = vi.fn();
+    const onDragStart = vi.fn();
+    render(
+      <PostIt
+        note={note({ id: "xyz789" })}
+        selected
+        onSelect={onSelect}
+        onDragStart={onDragStart}
+      />,
+    );
+    const element = screen.getByTestId("post-it");
+
+    fireEvent.pointerDown(element, {
+      pointerId: 1,
+      button: 0,
+      shiftKey: true,
+      clientX: 0,
+      clientY: 0,
+    });
+    fireEvent.pointerMove(element, { pointerId: 1, clientX: 200, clientY: 0 });
+
+    // O shift o tirou da seleção; seguir arrastando moveria justamente o que se acabou de
+    // desmarcar.
+    expect(onSelect).toHaveBeenCalledExactlyOnceWith("xyz789", true);
+    expect(onDragStart).not.toHaveBeenCalled();
+  });
+
+  it("gesto cancelado não desmarca os outros depois", () => {
+    const onSelect = vi.fn();
+    render(<PostIt note={note({ id: "xyz789" })} selected onSelect={onSelect} />);
+    const element = screen.getByTestId("post-it");
+
+    fireEvent.pointerDown(element, { pointerId: 1, button: 0, clientX: 0, clientY: 0 });
+    fireEvent.pointerCancel(element, { pointerId: 1 });
+
+    // Um gesto interrompido pelo sistema não decidiu nada — nem que o clique aconteceu.
+    expect(onSelect).not.toHaveBeenCalled();
+  });
+
+  it("grava a posição de onde o ponteiro foi solto, e não a do último movimento", () => {
+    const onDragMove = vi.fn();
+    render(<PostIt note={note()} onDragMove={onDragMove} />);
+    const element = screen.getByTestId("post-it");
+
+    fireEvent.pointerDown(element, { pointerId: 1, button: 0, clientX: 0, clientY: 0 });
+    fireEvent.pointerMove(element, { pointerId: 1, clientX: 100, clientY: 0 });
+    // Soltar pode carregar uma posição que nenhum pointermove chegou a reportar.
+    fireEvent.pointerUp(element, { pointerId: 1, clientX: 137, clientY: 12 });
+
+    expect(onDragMove).toHaveBeenLastCalledWith({ x: 137, y: 12 });
+  });
+
+  it("não deixa o arraste pintar o texto pelo caminho", () => {
+    render(<PostIt note={note({ text: "comprar pão" })} />);
+
+    // Sem isto, arrastar um post-it com texto o percorre selecionando caractere por
+    // caractere. O editor tem seu próprio campo, e lá o texto continua selecionável.
+    expect(screen.getByTestId("post-it").className).toContain("select-none");
   });
 });

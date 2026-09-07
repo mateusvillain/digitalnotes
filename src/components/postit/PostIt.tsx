@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, type CSSProperties, type MouseEvent, type PointerEvent } from "react";
+import { memo, useRef, type CSSProperties, type MouseEvent, type PointerEvent } from "react";
 import type { Note } from "@/lib/board/types";
 import type { Point } from "@/lib/canvas/coords";
 import { useDrag } from "@/lib/canvas/useDrag";
@@ -53,7 +53,7 @@ const SELECTED_CLASS = "outline outline-2 outline-offset-2 outline-selection";
  * exigiriam um número fixo de linhas que um post-it redimensionável (#16) não tem. O texto
  * inteiro continua no board e reaparece inteiro ao editar — nada se perde, só deixa de caber.
  */
-export function PostIt({
+function PostItComponent({
   note,
   selected = false,
   editing = false,
@@ -85,7 +85,12 @@ export function PostIt({
       onDragStart?.(note.id);
     },
     onMove: (delta) => onDragMove?.(delta),
-    onEnd: () => onDragEnd?.(),
+    onEnd: (delta) => {
+      // O deslocamento do soltar, e não o do último movimento: soltar o botão pode carregar
+      // uma posição que nenhum pointermove chegou a reportar, e é essa que vai para a store.
+      onDragMove?.(delta);
+      onDragEnd?.();
+    },
     onCancel: () => onDragCancel?.(),
   });
 
@@ -107,23 +112,37 @@ export function PostIt({
 
     // Quem está escrevendo não é interrompido: o clique dentro do texto posiciona o cursor,
     // e reselecionar tiraria o foco do editor.
-    if (!editing) {
-      dragged.current = false;
-      pendingCollapse.current = false;
+    if (editing) return;
 
-      // Selecionar no apertar, e antes de armar o arraste: o post-it precisa já estar
-      // marcado quando o movimento começa, senão arrasta-se algo que ainda não foi
-      // selecionado. A exceção é o que já está selecionado — esse espera o soltar.
-      if (event.shiftKey || !selected) onSelect?.(note.id, event.shiftKey);
-      else pendingCollapse.current = true;
-    }
+    dragged.current = false;
+    pendingCollapse.current = false;
+
+    // Selecionar no apertar, e antes de armar o arraste: o post-it precisa já estar marcado
+    // quando o movimento começa, senão arrasta-se algo que ainda não foi selecionado. A
+    // exceção é o que já está selecionado — esse espera o soltar.
+    if (event.shiftKey || !selected) onSelect?.(note.id, event.shiftKey);
+    else pendingCollapse.current = true;
+
+    // Shift sobre um post-it selecionado o **tira** da seleção: seguir arrastando moveria
+    // justamente o que se acabou de desmarcar.
+    if (event.shiftKey && selected) return;
 
     drag.onPointerDown(event);
   }
 
   function handlePointerUp(event: PointerEvent<HTMLDivElement>): void {
     drag.onPointerUp(event);
+    finishGesture();
+  }
 
+  function handlePointerCancel(event: PointerEvent<HTMLDivElement>): void {
+    drag.onPointerCancel(event);
+    // Um gesto cancelado não decidiu nada: o colapso pendente é descartado, não aplicado.
+    pendingCollapse.current = false;
+  }
+
+  /** Fecha o gesto de ponteiro: sem arraste, o que houve foi um clique. */
+  function finishGesture(): void {
     if (pendingCollapse.current && !dragged.current) onSelect?.(note.id, false);
     pendingCollapse.current = false;
   }
@@ -140,12 +159,12 @@ export function PostIt({
       // `note` em vez de `article`: um `article` com nome acessível vira região navegável,
       // e um quadro com dezenas de post-its viraria um quadro com dezenas de regiões.
       role="note"
-      className={`absolute overflow-hidden shadow-note ${NOTE_TEXT_CLASS} ${selected ? SELECTED_CLASS : ""}`}
+      className={`absolute overflow-hidden select-none shadow-note ${NOTE_TEXT_CLASS} ${selected ? SELECTED_CLASS : ""}`}
       style={style}
       onPointerDown={handlePointerDown}
       onPointerMove={drag.onPointerMove}
       onPointerUp={handlePointerUp}
-      onPointerCancel={drag.onPointerCancel}
+      onPointerCancel={handlePointerCancel}
       onDoubleClick={handleDoubleClick}
       data-testid="post-it"
       data-note-id={note.id}
@@ -170,3 +189,14 @@ export function PostIt({
     </div>
   );
 }
+
+/**
+ * Memoizado de propósito.
+ *
+ * Arrastar publica um deslocamento novo a cada movimento do ponteiro, e sem memo isso
+ * re-renderizaria todo post-it do quadro a cada evento — inclusive os parados. Com ele,
+ * re-renderiza só quem tem prop diferente: os selecionados, que são os que se movem.
+ *
+ * Isso só funciona porque os callbacks que chegam aqui são estáveis; ver `useBoard`.
+ */
+export const PostIt = memo(PostItComponent);

@@ -23,7 +23,7 @@ export interface BoardApi {
    * arraste. É otimista: mora fora da store até o gesto terminar.
    */
   dragOffset: Point | null;
-  /** Começa a arrastar a partir de um post-it, garantindo que ele esteja selecionado. */
+  /** Começa a arrastar a partir de um post-it, que já chega selecionado. */
   startDrag: (id: string) => void;
   /** Move a seleção enquanto o gesto acontece, sem tocar na store. */
   dragBy: (offset: Point) => void;
@@ -58,6 +58,18 @@ export function useBoard(): BoardApi {
   /** A seleção de antes do retângulo começar, para o gesto poder ser refeito enquanto anda. */
   const selectionBeforeRect = useRef<Selection>(EMPTY_SELECTION);
   const [dragOffset, setDragOffset] = useState<Point | null>(null);
+
+  /**
+   * Cópias em ref do que os callbacks de arraste precisam ler.
+   *
+   * Os callbacks são passados a cada post-it: se mudassem de identidade a cada quadro do
+   * gesto, todo post-it re-renderizaria a cada movimento do ponteiro, e é justamente isso
+   * que o critério de fluidez proíbe. Lendo de ref, eles ficam estáveis para sempre.
+   */
+  const dragOffsetRef = useRef<Point | null>(null);
+  dragOffsetRef.current = dragOffset;
+  const selectionRef = useRef<Selection>(selection);
+  selectionRef.current = selection;
 
   // O mesmo `getBoard` nos dois argumentos: o board inicial no servidor é o mesmo objeto do
   // primeiro render no cliente, então não há divergência de hidratação a conciliar.
@@ -124,17 +136,21 @@ export function useBoard(): BoardApi {
 
   const clearSelection = useCallback(() => setSelection(EMPTY_SELECTION), []);
 
-  const startDrag = useCallback((id: string) => {
-    // Arrastar um post-it de fora da seleção move só ele: quem pega um post-it solto não
-    // está pedindo para levar junto o que estava marcado antes.
-    setSelection((current) => (current.has(id) ? current : selectOnly(id)));
-    setDragOffset({ x: 0, y: 0 });
-  }, []);
+  const startDrag = useCallback(
+    (id: string) => {
+      setDragOffset({ x: 0, y: 0 });
+      // Pegar um post-it é apontar para ele, como clicar: ele vai para a frente dos demais.
+      // Sem isto, arrastar um post-it de dentro de uma seleção o deixaria atrás — a seleção
+      // já existia, então nenhum clique chegou a promovê-lo.
+      store.bringToFront(id);
+    },
+    [store],
+  );
 
   const dragBy = useCallback((offset: Point) => setDragOffset(offset), []);
 
   const endDrag = useCallback(() => {
-    const offset = dragOffset;
+    const offset = dragOffsetRef.current;
     setDragOffset(null);
     if (offset === null) return;
 
@@ -144,7 +160,7 @@ export function useBoard(): BoardApi {
     store.updateNotes(
       store
         .getBoard()
-        .notes.filter((note) => selection.has(note.id))
+        .notes.filter((note) => selectionRef.current.has(note.id))
         .map((note) => ({
           id: note.id,
           patch: {
@@ -153,7 +169,7 @@ export function useBoard(): BoardApi {
           },
         })),
     );
-  }, [dragOffset, selection, store]);
+  }, [store]);
 
   const cancelDrag = useCallback(() => setDragOffset(null), []);
 

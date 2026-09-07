@@ -2,6 +2,7 @@
 
 import { useCallback, useRef, type PointerEvent } from "react";
 import { CLICK_SLOP, distance, type Point } from "./coords";
+import { releaseCapture } from "./pointer-capture";
 
 interface UseDragOptions {
   /** Primeiro movimento além da folga: aqui o gesto deixou de ser um clique. */
@@ -96,11 +97,7 @@ export function useDrag({
     if (current === null || current.pointerId !== event.pointerId) return null;
 
     state.current = null;
-    // Depois de um pointercancel o ponteiro já não está ativo, e soltar a captura de um id
-    // inativo lança.
-    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
-      event.currentTarget.releasePointerCapture(event.pointerId);
-    }
+    releaseCapture(event);
 
     return current;
   }, []);

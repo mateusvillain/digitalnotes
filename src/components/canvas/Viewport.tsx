@@ -19,6 +19,7 @@ import {
   type Point,
   type Rect,
 } from "@/lib/canvas/coords";
+import { releaseCapture } from "@/lib/canvas/pointer-capture";
 import { SelectionBox } from "./SelectionBox";
 import type { ViewportApi } from "@/lib/canvas/useViewport";
 
@@ -230,11 +231,7 @@ export function Viewport({
 
     drag.current = null;
     setMarquee(null);
-    // Depois de um pointercancel o ponteiro já não está ativo, e soltar a captura de um id
-    // inativo lança.
-    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
-      event.currentTarget.releasePointerCapture(event.pointerId);
-    }
+    releaseCapture(event);
 
     return state;
   }, []);

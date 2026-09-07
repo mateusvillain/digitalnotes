@@ -2,7 +2,6 @@ import { fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it } from "vitest";
 import { defined } from "@/test-utils/defined";
-import { stubPointerCapture } from "@/test-utils/pointer";
 import { Whiteboard } from "./Whiteboard";
 
 /**
@@ -17,7 +16,6 @@ function duploCliqueNoFundo(x: number, y: number): void {
 /** Arrasta o fundo, que é como se desloca o quadro. */
 function arrastaOFundo(dx: number, dy: number): void {
   const surface = screen.getByTestId("viewport-surface");
-  stubPointerCapture(surface);
 
   fireEvent.pointerDown(surface, { pointerId: 1, button: 0, clientX: 0, clientY: 0 });
   fireEvent.pointerMove(surface, { pointerId: 1, clientX: dx, clientY: dy });
@@ -30,9 +28,7 @@ function postIts(): HTMLElement[] {
 
 /** O n-ésimo post-it desenhado, falhando o teste se ele não existir. */
 function postIt(indice: number): HTMLElement {
-  const element = defined(postIts()[indice], `o post-it de índice ${indice}`);
-  stubPointerCapture(element);
-  return element;
+  return defined(postIts()[indice], `o post-it de índice ${indice}`);
 }
 
 describe("Whiteboard", () => {
@@ -162,7 +158,6 @@ describe("Whiteboard — seleção", () => {
   /** Aperta e solta no fundo sem andar: o clique que limpa a seleção. */
   function cliqueNoFundo(): void {
     const surface = screen.getByTestId("viewport-surface");
-    stubPointerCapture(surface);
 
     fireEvent.pointerDown(surface, { pointerId: 1, button: 0, clientX: 700, clientY: 500 });
     fireEvent.pointerUp(surface, { pointerId: 1, clientX: 700, clientY: 500 });
@@ -171,7 +166,6 @@ describe("Whiteboard — seleção", () => {
   /** Shift + arrastar no fundo, de um canto de tela ao outro. */
   function retanguloDeSelecao(de: [number, number], ate: [number, number]): void {
     const surface = screen.getByTestId("viewport-surface");
-    stubPointerCapture(surface);
 
     fireEvent.pointerDown(surface, {
       pointerId: 1,
@@ -263,7 +257,6 @@ describe("Whiteboard — seleção", () => {
     cliqueNoFundo();
 
     const surface = screen.getByTestId("viewport-surface");
-    stubPointerCapture(surface);
 
     fireEvent.pointerDown(surface, {
       pointerId: 1,
