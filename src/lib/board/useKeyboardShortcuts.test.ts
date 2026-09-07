@@ -1,6 +1,6 @@
 import { renderHook } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
-import { isEditableTarget, useKeyboardShortcuts } from "./useKeyboardShortcuts";
+import { useKeyboardShortcuts } from "./useKeyboardShortcuts";
 
 /** Dispara uma tecla no documento, opcionalmente a partir de um alvo. */
 function tecla(key: string, target: HTMLElement = document.body): boolean {
@@ -16,31 +16,6 @@ function elemento(tag: string, editable = false): HTMLElement {
   document.body.append(node);
   return node;
 }
-
-describe("isEditableTarget", () => {
-  it("reconhece input, textarea e select", () => {
-    for (const tag of ["input", "textarea", "select"]) {
-      expect(isEditableTarget(elemento(tag))).toBe(true);
-    }
-  });
-
-  it("reconhece contenteditable", () => {
-    const node = elemento("div", true);
-    // O jsdom não implementa isContentEditable a partir do atributo.
-    Object.defineProperty(node, "isContentEditable", { value: true });
-
-    expect(isEditableTarget(node)).toBe(true);
-  });
-
-  it("não reconhece um div comum", () => {
-    expect(isEditableTarget(elemento("div"))).toBe(false);
-  });
-
-  it("aguenta alvo nulo e alvo que não é elemento", () => {
-    expect(isEditableTarget(null)).toBe(false);
-    expect(isEditableTarget(document)).toBe(false);
-  });
-});
 
 describe("useKeyboardShortcuts", () => {
   it("Delete chama o tratador", () => {

@@ -14,13 +14,22 @@ function duploCliqueNoFundo(x: number, y: number): void {
   fireEvent.doubleClick(screen.getByTestId("viewport-surface"), { clientX: x, clientY: y });
 }
 
-/** Arrasta o fundo, que é como se desloca o quadro. */
-function arrastaOFundo(dx: number, dy: number): void {
+/** Segura espaço e arrasta: o gesto que desloca o quadro. */
+function navegaOQuadro(dx: number, dy: number): void {
   const surface = screen.getByTestId("viewport-surface");
 
+  fireEvent.keyDown(document, { key: " " });
   fireEvent.pointerDown(surface, { pointerId: 1, button: 0, clientX: 0, clientY: 0 });
   fireEvent.pointerMove(surface, { pointerId: 1, clientX: dx, clientY: dy });
   fireEvent.pointerUp(surface, { pointerId: 1, clientX: dx, clientY: dy });
+  fireEvent.keyUp(document, { key: " " });
+}
+
+/** Rola a roda sobre o quadro. O listener é nativo, então o evento também precisa ser. */
+function rola(init: WheelEventInit): void {
+  screen
+    .getByTestId("viewport-surface")
+    .dispatchEvent(new WheelEvent("wheel", { bubbles: true, cancelable: true, ...init }));
 }
 
 function postIts(): HTMLElement[] {
@@ -70,7 +79,7 @@ describe("Whiteboard", () => {
     // resultado é um viewport com escala diferente de 1. O que este teste guarda é que a
     // conversão desfaz a transformação seja ela qual for.
     await user.click(screen.getByLabelText("Aumentar zoom"));
-    arrastaOFundo(70, -35);
+    navegaOQuadro(70, -35);
     duploCliqueNoFundo(320, 260);
 
     const centroX =
@@ -289,11 +298,20 @@ describe("Whiteboard — seleção", () => {
     expect(Number(postIt(0).style.zIndex)).toBeGreaterThan(Number(postIt(1).style.zIndex));
   });
 
-  it("navegar pelo quadro não limpa a seleção", () => {
+  it("navegar pelo quadro com espaço não limpa a seleção", () => {
     render(<Whiteboard />);
     criaPostIt(200, 200);
 
-    arrastaOFundo(120, 80);
+    navegaOQuadro(120, 80);
+
+    expect(selecionados()).toHaveLength(1);
+  });
+
+  it("navegar pela roda não limpa a seleção", () => {
+    render(<Whiteboard />);
+    criaPostIt(200, 200);
+
+    rola({ deltaY: 120 });
 
     expect(selecionados()).toHaveLength(1);
   });
@@ -815,5 +833,188 @@ describe("Whiteboard — apagar com Delete", () => {
     apertaTecla("Delete");
 
     expect(postIts()).toEqual([]);
+  });
+});
+
+describe("Whiteboard — seleção por arrasto no fundo", () => {
+  function criaPostIt(x: number, y: number): void {
+    duploCliqueNoFundo(x, y);
+    fireEvent.keyDown(screen.getByTestId("post-it-editor"), { key: "Escape" });
+  }
+
+  /** Arrasta um retângulo no fundo, de um canto ao outro, em pixels de tela. */
+  function retangulo(
+    de: [number, number],
+    ate: [number, number],
+    opcoes: { shiftKey?: boolean } = {},
+  ): void {
+    const surface = screen.getByTestId("viewport-surface");
+
+    fireEvent.pointerDown(surface, {
+      pointerId: 1,
+      button: 0,
+      clientX: de[0],
+      clientY: de[1],
+      ...opcoes,
+    });
+    fireEvent.pointerMove(surface, { pointerId: 1, clientX: ate[0], clientY: ate[1] });
+    fireEvent.pointerUp(surface, { pointerId: 1, clientX: ate[0], clientY: ate[1] });
+  }
+
+  function selecionados(): (string | undefined)[] {
+    return screen
+      .queryAllByTestId("post-it")
+      .filter((element) => element.dataset.selected === "true")
+      .map((element) => element.dataset.noteId);
+  }
+
+  it("arrastar no fundo seleciona quem o retângulo toca", () => {
+    render(<Whiteboard />);
+    criaPostIt(300, 300);
+    criaPostIt(800, 300);
+    const primeiro = postIt(0).dataset.noteId;
+
+    retangulo([150, 150], [450, 450]);
+
+    expect(selecionados()).toEqual([primeiro]);
+  });
+
+  it("o retângulo substitui a seleção anterior", () => {
+    render(<Whiteboard />);
+    criaPostIt(300, 300);
+    criaPostIt(800, 300);
+    const primeiro = postIt(0).dataset.noteId;
+
+    // O segundo ficou marcado ao ser criado; o retângulo pega só o primeiro.
+    retangulo([150, 150], [450, 450]);
+
+    expect(selecionados()).toEqual([primeiro]);
+  });
+
+  it("com Shift, o retângulo soma à seleção", () => {
+    render(<Whiteboard />);
+    criaPostIt(300, 300);
+    criaPostIt(800, 300);
+
+    retangulo([150, 150], [450, 450], { shiftKey: true });
+
+    expect(selecionados()).toHaveLength(2);
+  });
+
+  it("arrastar no vazio desmarca tudo", () => {
+    render(<Whiteboard />);
+    criaPostIt(300, 300);
+
+    retangulo([900, 700], [1100, 900]);
+
+    expect(selecionados()).toEqual([]);
+  });
+
+  it("com espaço, arrastar navega e não seleciona", () => {
+    render(<Whiteboard />);
+    criaPostIt(300, 300);
+    criaPostIt(800, 300);
+    const antes = selecionados();
+
+    fireEvent.keyDown(document, { key: " " });
+    retangulo([150, 150], [450, 450]);
+    fireEvent.keyUp(document, { key: " " });
+
+    // O mesmo arrasto que selecionaria agora move o quadro, e a seleção não muda.
+    expect(selecionados()).toEqual(antes);
+  });
+
+  it("shift+clique no fundo não desmarca", () => {
+    render(<Whiteboard />);
+    criaPostIt(300, 300);
+    const surface = screen.getByTestId("viewport-surface");
+
+    fireEvent.pointerDown(surface, {
+      pointerId: 1,
+      button: 0,
+      shiftKey: true,
+      clientX: 900,
+      clientY: 700,
+    });
+    fireEvent.pointerUp(surface, { pointerId: 1, clientX: 900, clientY: 700 });
+
+    // O Shift acrescenta, no post-it e no retângulo; errar o alvo não pode desfazer a
+    // seleção que o gesto ia ampliar.
+    expect(selecionados()).toHaveLength(1);
+  });
+
+  it("clique sem Shift no fundo desmarca", () => {
+    render(<Whiteboard />);
+    criaPostIt(300, 300);
+    const surface = screen.getByTestId("viewport-surface");
+
+    fireEvent.pointerDown(surface, { pointerId: 1, button: 0, clientX: 900, clientY: 700 });
+    fireEvent.pointerUp(surface, { pointerId: 1, clientX: 900, clientY: 700 });
+
+    expect(selecionados()).toEqual([]);
+  });
+
+  it("um dedo navega, já que no toque não há espaço para segurar", () => {
+    render(<Whiteboard />);
+    criaPostIt(300, 300);
+    const surface = screen.getByTestId("viewport-surface");
+    const antes = screen.getByTestId("viewport-layer").style.transform;
+
+    fireEvent.pointerDown(surface, {
+      pointerId: 1,
+      button: 0,
+      pointerType: "touch",
+      clientX: 100,
+      clientY: 100,
+    });
+    fireEvent.pointerMove(surface, {
+      pointerId: 1,
+      pointerType: "touch",
+      clientX: 160,
+      clientY: 140,
+    });
+    fireEvent.pointerUp(surface, {
+      pointerId: 1,
+      pointerType: "touch",
+      clientX: 160,
+      clientY: 140,
+    });
+
+    // O quadro andou, e a seleção ficou de pé: no toque, arrastar não desenha retângulo.
+    expect(screen.getByTestId("viewport-layer").style.transform).not.toBe(antes);
+    expect(selecionados()).toHaveLength(1);
+  });
+
+  it("com espaço, arrastar a partir de um post-it navega em vez de movê-lo", () => {
+    render(<Whiteboard />);
+    criaPostIt(300, 300);
+    const posicaoAntes = postIt(0).style.left;
+    const camadaAntes = screen.getByTestId("viewport-layer").style.transform;
+
+    fireEvent.keyDown(document, { key: " " });
+    // O gesto nasce **no post-it**, que para o pointerdown antes da superfície: só a captura
+    // chega antes dele.
+    fireEvent.pointerDown(postIt(0), { pointerId: 1, button: 0, clientX: 100, clientY: 100 });
+    fireEvent.pointerMove(screen.getByTestId("viewport-surface"), {
+      pointerId: 1,
+      clientX: 180,
+      clientY: 150,
+    });
+    fireEvent.pointerUp(screen.getByTestId("viewport-surface"), { pointerId: 1 });
+    fireEvent.keyUp(document, { key: " " });
+
+    expect(screen.getByTestId("viewport-layer").style.transform).not.toBe(camadaAntes);
+    expect(postIt(0).style.left).toBe(posicaoAntes);
+  });
+
+  it("o cursor conta qual gesto o arrasto vai virar", () => {
+    render(<Whiteboard />);
+    const surface = screen.getByTestId("viewport-surface");
+
+    expect(surface.className).toContain("cursor-crosshair");
+
+    fireEvent.keyDown(document, { key: " " });
+    expect(surface.className).toContain("cursor-grab");
+    expect(surface.dataset.spaceHeld).toBe("true");
   });
 });
