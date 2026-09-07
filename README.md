@@ -5,6 +5,9 @@ Whiteboard de anotações em post-its, sem cadastro. O board vive na própria UR
 O planejamento da primeira versão está em [`docs/prd/`](docs/prd/) e no
 [milestone "Whiteboard de Post-its"](https://github.com/mateusvillain/digitalnotes/milestones).
 
+O formato de dados do board está documentado em
+[`docs/board-format.md`](docs/board-format.md).
+
 ## Desenvolvimento
 
 ```bash
