@@ -1,6 +1,14 @@
 import { describe, expect, it } from "vitest";
 import type { Rect } from "@/lib/canvas/coords";
-import { EMPTY_SELECTION, intersects, notesInRect, selectOnly, toggle } from "./selection";
+import {
+  EMPTY_SELECTION,
+  intersects,
+  notesInRect,
+  selectOnly,
+  selectedNotes,
+  sharedColor,
+  toggle,
+} from "./selection";
 import type { Note } from "./types";
 
 function note(overrides: Partial<Note> = {}): Note {
@@ -80,5 +88,55 @@ describe("notesInRect", () => {
 
   it("devolve seleção vazia quando o retângulo não toca nada", () => {
     expect([...notesInRect([note()], rect(900, 900, 10, 10))]).toEqual([...EMPTY_SELECTION]);
+  });
+});
+
+describe("selectedNotes", () => {
+  const notes = [note({ id: "a" }), note({ id: "b" }), note({ id: "c" })];
+
+  it("devolve só as marcadas", () => {
+    const marcadas = selectedNotes(notes, new Set(["a", "c"]));
+
+    expect(marcadas.map((each) => each.id)).toEqual(["a", "c"]);
+  });
+
+  it("mantém a ordem do board, e não a da seleção", () => {
+    // A seleção é um conjunto: ela não tem ordem para oferecer. Quem tem é o board.
+    const marcadas = selectedNotes(notes, new Set(["c", "a"]));
+
+    expect(marcadas.map((each) => each.id)).toEqual(["a", "c"]);
+  });
+
+  it("ignora id marcado que não existe mais no board", () => {
+    expect(selectedNotes(notes, new Set(["a", "sumiu"])).map((each) => each.id)).toEqual(["a"]);
+  });
+
+  it("devolve vazio sem seleção", () => {
+    expect(selectedNotes(notes, EMPTY_SELECTION)).toEqual([]);
+  });
+});
+
+describe("sharedColor", () => {
+  it("devolve a cor quando todas têm a mesma", () => {
+    expect(sharedColor([note({ color: 3 }), note({ color: 3 })])).toBe(3);
+  });
+
+  it("devolve null quando as cores divergem", () => {
+    // Não há uma "cor atual" a marcar no seletor, e escolher a do primeiro mentiria sobre
+    // as demais.
+    expect(sharedColor([note({ color: 3 }), note({ color: 1 })])).toBeNull();
+  });
+
+  it("devolve null para lista vazia", () => {
+    expect(sharedColor([])).toBeNull();
+  });
+
+  it("uma note só é a própria cor comum", () => {
+    expect(sharedColor([note({ color: 5 })])).toBe(5);
+  });
+
+  it("distingue a cor 0 da ausência de cor comum", () => {
+    // Amarelo é o índice 0, e um `?? null` descuidado o transformaria em "sem cor comum".
+    expect(sharedColor([note({ color: 0 }), note({ color: 0 })])).toBe(0);
   });
 });

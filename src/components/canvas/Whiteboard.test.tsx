@@ -540,3 +540,164 @@ describe("Whiteboard — redimensionamento", () => {
     expect(posicao()).toEqual(antes);
   });
 });
+
+describe("Whiteboard — cor do post-it", () => {
+  function criaPostIt(x: number, y: number): void {
+    duploCliqueNoFundo(x, y);
+    fireEvent.keyDown(screen.getByTestId("post-it-editor"), { key: "Escape" });
+  }
+
+  /** Aperta e solta no fundo sem andar: o clique que limpa a seleção. */
+  function cliqueNoFundoLimpando(): void {
+    const surface = screen.getByTestId("viewport-surface");
+
+    fireEvent.pointerDown(surface, { pointerId: 1, button: 0, clientX: 900, clientY: 600 });
+    fireEvent.pointerUp(surface, { pointerId: 1, clientX: 900, clientY: 600 });
+  }
+
+  function seletor(): HTMLElement | null {
+    return screen.queryByTestId("color-picker");
+  }
+
+  /** A cor de fundo desenhada no n-ésimo post-it. */
+  function corDe(indice: number): string {
+    return postIt(indice).style.backgroundColor;
+  }
+
+  function escolheCor(nome: string): void {
+    fireEvent.click(screen.getByRole("radio", { name: nome }));
+  }
+
+  it("não mostra o seletor sem seleção", () => {
+    render(<Whiteboard />);
+    criaPostIt(400, 400);
+    cliqueNoFundoLimpando();
+
+    expect(seletor()).toBeNull();
+  });
+
+  it("mostra o seletor para o post-it selecionado", () => {
+    render(<Whiteboard />);
+    criaPostIt(400, 400);
+
+    expect(seletor()).not.toBeNull();
+  });
+
+  it("indica a cor atual do post-it", () => {
+    render(<Whiteboard />);
+    criaPostIt(400, 400);
+
+    // O post-it nasce amarelo, que é o índice 0 da paleta.
+    expect(screen.getByRole("radio", { name: "Amarelo" }).getAttribute("aria-checked")).toBe(
+      "true",
+    );
+  });
+
+  it("escolher uma cor pinta o post-it na hora", () => {
+    render(<Whiteboard />);
+    criaPostIt(400, 400);
+    const antes = corDe(0);
+
+    escolheCor("Verde");
+
+    expect(corDe(0)).not.toBe(antes);
+    expect(corDe(0)).toBe("var(--color-note-green)");
+  });
+
+  it("a cor escolhida passa a ser a indicada", () => {
+    render(<Whiteboard />);
+    criaPostIt(400, 400);
+
+    escolheCor("Roxo");
+
+    expect(screen.getByRole("radio", { name: "Roxo" }).getAttribute("aria-checked")).toBe("true");
+  });
+
+  it("pinta todos os post-its selecionados", () => {
+    render(<Whiteboard />);
+    criaPostIt(300, 300);
+    criaPostIt(700, 300);
+    fireEvent.pointerDown(postIt(0), { button: 0, shiftKey: true });
+
+    escolheCor("Azul");
+
+    expect(corDe(0)).toBe("var(--color-note-blue)");
+    expect(corDe(1)).toBe("var(--color-note-blue)");
+  });
+
+  it("não indica cor quando os selecionados divergem", () => {
+    render(<Whiteboard />);
+    criaPostIt(300, 300);
+    escolheCor("Rosa");
+    criaPostIt(700, 300);
+    fireEvent.pointerDown(postIt(0), { button: 0, shiftKey: true });
+
+    // Um rosa e um amarelo: não há uma cor atual a marcar.
+    const marcadas = screen
+      .getAllByRole("radio")
+      .filter((cor) => cor.getAttribute("aria-checked") === "true");
+    expect(marcadas).toEqual([]);
+  });
+
+  it("clicar numa cor não desmarca o post-it", () => {
+    render(<Whiteboard />);
+    criaPostIt(400, 400);
+
+    escolheCor("Laranja");
+
+    // A barra vive fora da superfície do quadro justamente para o clique não chegar ao
+    // fundo, que o leria como o pedido de limpar a seleção.
+    expect(postIt(0).dataset.selected).toBe("true");
+    expect(seletor()).not.toBeNull();
+  });
+
+  it("dá para chegar ao seletor e trocar a cor só pelo teclado", async () => {
+    const user = userEvent.setup();
+    render(<Whiteboard />);
+    criaPostIt(400, 400);
+    cliqueNoFundoLimpando();
+
+    // Do zero: focar o post-it, marcá-lo, tabular até o seletor e andar até uma cor.
+    postIt(0).focus();
+    await user.keyboard("{Enter}");
+    expect(postIt(0).dataset.selected).toBe("true");
+
+    await user.tab();
+    expect(screen.getAllByRole("radio").includes(document.activeElement as HTMLElement)).toBe(true);
+
+    await user.keyboard("{ArrowRight}");
+
+    // Sem isto o critério de acessibilidade seria decorativo: o seletor é navegável, mas
+    // nada que dependa de seleção chegaria até ele.
+    expect(corDe(0)).toBe("var(--color-note-pink)");
+  });
+
+  it("esconde o seletor enquanto se arrasta um post-it", () => {
+    render(<Whiteboard />);
+    criaPostIt(400, 400);
+
+    fireEvent.pointerDown(postIt(0), { pointerId: 1, button: 0, clientX: 0, clientY: 0 });
+    fireEvent.pointerMove(postIt(0), { pointerId: 1, clientX: 80, clientY: 80 });
+
+    // A caixa da seleção usa as posições já gravadas: a barra ficaria parada enquanto o
+    // post-it anda por baixo dela.
+    expect(seletor()).toBeNull();
+
+    fireEvent.pointerUp(postIt(0), { pointerId: 1, clientX: 80, clientY: 80 });
+    expect(seletor()).not.toBeNull();
+  });
+
+  it("esconde o seletor enquanto se redimensiona", () => {
+    render(<Whiteboard />);
+    criaPostIt(400, 400);
+    const handle = screen.getByTestId("resize-handle");
+
+    fireEvent.pointerDown(handle, { pointerId: 1, button: 0, clientX: 0, clientY: 0 });
+    fireEvent.pointerMove(handle, { pointerId: 1, clientX: 60, clientY: 60 });
+
+    expect(seletor()).toBeNull();
+
+    fireEvent.pointerUp(handle, { pointerId: 1, clientX: 60, clientY: 60 });
+    expect(seletor()).not.toBeNull();
+  });
+});

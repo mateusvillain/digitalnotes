@@ -106,6 +106,44 @@ export function rectFromCorners(a: Point, b: Point): Rect {
 }
 
 /**
+ * Converte um retângulo do canvas para a tela.
+ *
+ * A posição sai de {@link canvasToScreen} e as dimensões escalam junto. Mora aqui, com o
+ * resto da conversão, para quem posiciona um controle pela caixa de uma seleção não
+ * precisar refazer a multiplicação pela escala na mão.
+ */
+export function rectToScreen(rect: Rect, viewport: Viewport): Rect {
+  const { x, y } = canvasToScreen(rect, viewport);
+  return { x, y, w: rect.w * viewport.scale, h: rect.h * viewport.scale };
+}
+
+/**
+ * Menor retângulo que contém todos os dados, ou `null` para uma lista vazia.
+ *
+ * `null`, e não um retângulo degenerado na origem: "nada selecionado" e "seleção colada no
+ * canto do canvas" são coisas diferentes, e quem posiciona um controle pela caixa precisa
+ * poder distinguir as duas para decidir se desenha alguma coisa.
+ */
+export function boundingRect(rects: readonly Rect[]): Rect | null {
+  const first = rects[0];
+  if (first === undefined) return null;
+
+  let left = first.x;
+  let top = first.y;
+  let right = first.x + first.w;
+  let bottom = first.y + first.h;
+
+  for (const rect of rects.slice(1)) {
+    left = Math.min(left, rect.x);
+    top = Math.min(top, rect.y);
+    right = Math.max(right, rect.x + rect.w);
+    bottom = Math.max(bottom, rect.y + rect.h);
+  }
+
+  return { x: left, y: top, w: right - left, h: bottom - top };
+}
+
+/**
  * Sobreposição entre dois retângulos.
  *
  * Estritamente maior que zero: encostar não é intersectar, e retângulo sem área não toca

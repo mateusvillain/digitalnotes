@@ -475,3 +475,81 @@ describe("PostIt — gestos que não deveriam mover nada", () => {
     expect(screen.getByTestId("post-it").className).toContain("select-none");
   });
 });
+
+describe("PostIt — teclado", () => {
+  function postIt(): HTMLElement {
+    return screen.getByTestId("post-it");
+  }
+
+  it("é alcançável pelo Tab", () => {
+    render(<PostIt note={note()} />);
+
+    expect(postIt().getAttribute("tabindex")).toBe("0");
+  });
+
+  it("sai da ordem de tabulação enquanto se escreve", () => {
+    render(<PostIt note={note()} editing />);
+
+    // Ali o ponto de parada é o editor; um segundo aqui faria o Tab sair do texto para a
+    // caixa em volta.
+    expect(postIt().getAttribute("tabindex")).toBe("-1");
+  });
+
+  it("o Enter seleciona", async () => {
+    const user = userEvent.setup();
+    const onSelect = vi.fn();
+    render(<PostIt note={note()} onSelect={onSelect} />);
+
+    postIt().focus();
+    await user.keyboard("{Enter}");
+
+    expect(onSelect).toHaveBeenCalledWith("abc123", false);
+  });
+
+  it("o espaço seleciona", async () => {
+    const user = userEvent.setup();
+    const onSelect = vi.fn();
+    render(<PostIt note={note()} onSelect={onSelect} />);
+
+    postIt().focus();
+    await user.keyboard(" ");
+
+    expect(onSelect).toHaveBeenCalledWith("abc123", false);
+  });
+
+  it("shift+Enter acrescenta à seleção", async () => {
+    const user = userEvent.setup();
+    const onSelect = vi.fn();
+    render(<PostIt note={note()} onSelect={onSelect} />);
+
+    postIt().focus();
+    await user.keyboard("{Shift>}{Enter}{/Shift}");
+
+    expect(onSelect).toHaveBeenCalledWith("abc123", true);
+  });
+
+  it("o Enter num post-it já marcado abre o texto", async () => {
+    const user = userEvent.setup();
+    const onEditStart = vi.fn();
+    render(<PostIt note={note()} selected onEditStart={onEditStart} />);
+
+    postIt().focus();
+    await user.keyboard("{Enter}");
+
+    // O mesmo que o duplo clique faz com o ponteiro.
+    expect(onEditStart).toHaveBeenCalledWith("abc123");
+  });
+
+  it("não reage ao teclado enquanto se escreve", async () => {
+    const user = userEvent.setup();
+    const onSelect = vi.fn();
+    const onEditStart = vi.fn();
+    render(<PostIt note={note()} editing onSelect={onSelect} onEditStart={onEditStart} />);
+
+    await user.keyboard("{Enter}");
+
+    // Dentro do editor, Enter é quebra de linha.
+    expect(onSelect).not.toHaveBeenCalled();
+    expect(onEditStart).not.toHaveBeenCalled();
+  });
+});

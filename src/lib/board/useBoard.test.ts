@@ -618,3 +618,113 @@ describe("useBoard — o fim do gesto no mesmo evento do último movimento", () 
     expect(defined(result.current.notes[0], "o post-it").h).toBe(note.h + 30);
   });
 });
+
+describe("useBoard — cor da seleção", () => {
+  /** Cria dois post-its e devolve os dois, já fora de edição. */
+  function comDoisPostIts() {
+    const hook = renderHook(() => useBoard());
+    act(() => hook.result.current.createNoteAt({ x: 0, y: 0 }));
+    act(() => hook.result.current.createNoteAt({ x: 500, y: 0 }));
+
+    return {
+      hook,
+      primeiro: defined(hook.result.current.notes[0], "o primeiro post-it"),
+      segundo: defined(hook.result.current.notes[1], "o segundo post-it"),
+    };
+  }
+
+  /** A cor gravada de um post-it, lida da store. */
+  function corDe(hook: ReturnType<typeof comDoisPostIts>["hook"], id: string) {
+    return defined(
+      hook.result.current.notes.find((note) => note.id === id),
+      "o post-it",
+    ).color;
+  }
+
+  it("não tem cor comum com o board vazio", () => {
+    const { result } = renderHook(() => useBoard());
+
+    expect(result.current.selectionColor).toBeNull();
+    expect(result.current.selected).toEqual([]);
+  });
+
+  it("expõe a cor do post-it selecionado", () => {
+    const { hook, primeiro } = comDoisPostIts();
+
+    act(() => hook.result.current.selectNote(primeiro.id));
+
+    expect(hook.result.current.selectionColor).toBe(primeiro.color);
+  });
+
+  it("pinta o post-it selecionado e grava na store", () => {
+    const { hook, primeiro } = comDoisPostIts();
+    act(() => hook.result.current.selectNote(primeiro.id));
+
+    act(() => hook.result.current.colorSelection(4));
+
+    expect(corDe(hook, primeiro.id)).toBe(4);
+    expect(hook.result.current.selectionColor).toBe(4);
+  });
+
+  it("pinta a seleção inteira", () => {
+    const { hook, primeiro, segundo } = comDoisPostIts();
+    act(() => hook.result.current.selectNote(primeiro.id));
+    act(() => hook.result.current.selectNote(segundo.id, true));
+
+    act(() => hook.result.current.colorSelection(2));
+
+    expect(corDe(hook, primeiro.id)).toBe(2);
+    expect(corDe(hook, segundo.id)).toBe(2);
+  });
+
+  it("não pinta quem está fora da seleção", () => {
+    const { hook, primeiro, segundo } = comDoisPostIts();
+    act(() => hook.result.current.selectNote(primeiro.id));
+
+    act(() => hook.result.current.colorSelection(5));
+
+    expect(corDe(hook, segundo.id)).toBe(segundo.color);
+  });
+
+  it("sem cor comum quando a seleção tem cores diferentes", () => {
+    const { hook, primeiro, segundo } = comDoisPostIts();
+    act(() => hook.result.current.selectNote(primeiro.id));
+    act(() => hook.result.current.colorSelection(1));
+
+    act(() => hook.result.current.selectNote(segundo.id, true));
+
+    // O segundo continua na cor padrão: não há uma cor a marcar no seletor.
+    expect(hook.result.current.selectionColor).toBeNull();
+  });
+
+  it("pintar em lote reconcilia a cor comum", () => {
+    const { hook, primeiro, segundo } = comDoisPostIts();
+    act(() => hook.result.current.selectNote(primeiro.id));
+    act(() => hook.result.current.colorSelection(1));
+    act(() => hook.result.current.selectNote(segundo.id, true));
+
+    act(() => hook.result.current.colorSelection(3));
+
+    expect(hook.result.current.selectionColor).toBe(3);
+  });
+
+  it("não faz nada sem seleção", () => {
+    const { hook, primeiro, segundo } = comDoisPostIts();
+    act(() => hook.result.current.clearSelection());
+
+    act(() => hook.result.current.colorSelection(5));
+
+    expect(corDe(hook, primeiro.id)).toBe(primeiro.color);
+    expect(corDe(hook, segundo.id)).toBe(segundo.color);
+  });
+
+  it("aceita toda cor da paleta", () => {
+    const { hook, primeiro } = comDoisPostIts();
+    act(() => hook.result.current.selectNote(primeiro.id));
+
+    for (let color = 0; color < NOTE_COLORS.length; color += 1) {
+      act(() => hook.result.current.colorSelection(color as 0));
+      expect(corDe(hook, primeiro.id)).toBe(color);
+    }
+  });
+});

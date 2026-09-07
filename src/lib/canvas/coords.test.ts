@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
+  boundingRect,
+  rectToScreen,
   canvasToScreen,
   clampScale,
   distance,
@@ -158,5 +160,88 @@ describe("distance", () => {
     const origem = { x: 0, y: 0 };
     // Três passos de dois pixels: nenhum passa de uma folga de 4, mas o gesto andou 6.
     expect(distance(origem, { x: 6, y: 0 })).toBeGreaterThan(4);
+  });
+});
+
+describe("boundingRect", () => {
+  it("devolve null para lista vazia", () => {
+    // "Nada selecionado" e "seleção na origem" precisam ser distinguíveis por quem posiciona
+    // um controle pela caixa.
+    expect(boundingRect([])).toBeNull();
+  });
+
+  it("de um retângulo só, é ele mesmo", () => {
+    expect(boundingRect([{ x: 10, y: 20, w: 30, h: 40 }])).toEqual({ x: 10, y: 20, w: 30, h: 40 });
+  });
+
+  it("envolve retângulos separados", () => {
+    expect(
+      boundingRect([
+        { x: 0, y: 0, w: 10, h: 10 },
+        { x: 90, y: 40, w: 10, h: 10 },
+      ]),
+    ).toEqual({ x: 0, y: 0, w: 100, h: 50 });
+  });
+
+  it("envolve um retângulo contido em outro", () => {
+    expect(
+      boundingRect([
+        { x: 0, y: 0, w: 100, h: 100 },
+        { x: 20, y: 20, w: 10, h: 10 },
+      ]),
+    ).toEqual({ x: 0, y: 0, w: 100, h: 100 });
+  });
+
+  it("lida com coordenadas negativas", () => {
+    expect(
+      boundingRect([
+        { x: -50, y: -30, w: 10, h: 10 },
+        { x: 10, y: 10, w: 10, h: 10 },
+      ]),
+    ).toEqual({ x: -50, y: -30, w: 70, h: 50 });
+  });
+
+  it("não depende da ordem da lista", () => {
+    const a = { x: 5, y: 5, w: 10, h: 10 };
+    const b = { x: -5, y: 40, w: 10, h: 10 };
+
+    expect(boundingRect([a, b])).toEqual(boundingRect([b, a]));
+  });
+});
+
+describe("rectToScreen", () => {
+  it("é identidade no viewport identidade", () => {
+    expect(rectToScreen({ x: 10, y: 20, w: 30, h: 40 }, IDENTITY_VIEWPORT)).toEqual({
+      x: 10,
+      y: 20,
+      w: 30,
+      h: 40,
+    });
+  });
+
+  it("escala posição e dimensões juntas", () => {
+    expect(rectToScreen({ x: 10, y: 20, w: 30, h: 40 }, { x: 0, y: 0, scale: 2 })).toEqual({
+      x: 20,
+      y: 40,
+      w: 60,
+      h: 80,
+    });
+  });
+
+  it("desloca pelo pan sem esticar as dimensões", () => {
+    expect(rectToScreen({ x: 10, y: 20, w: 30, h: 40 }, { x: 100, y: -50, scale: 1 })).toEqual({
+      x: 110,
+      y: -30,
+      w: 30,
+      h: 40,
+    });
+  });
+
+  it("concorda com canvasToScreen no canto", () => {
+    const viewport = { x: 17, y: -3, scale: 1.5 };
+    const rect = { x: 10, y: 20, w: 30, h: 40 };
+
+    const { x, y } = rectToScreen(rect, viewport);
+    expect({ x, y }).toEqual(canvasToScreen(rect, viewport));
   });
 });
