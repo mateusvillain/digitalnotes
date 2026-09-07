@@ -1,9 +1,9 @@
 "use client";
 
 import { useCallback, useState, useSyncExternalStore } from "react";
+import { topLeftCenteredAt, type Point } from "@/lib/canvas/coords";
 import { createBoardStore } from "./store";
 import { NOTE_SIZE, type Board, type Note } from "./types";
-import type { Point } from "@/lib/canvas/coords";
 
 export interface BoardApi {
   /** Notes do board, na ordem em que a store as guarda. */
@@ -38,12 +38,12 @@ export function useBoard(): BoardApi {
 
   const createNoteAt = useCallback(
     (point: Point) => {
-      // Centrado no cursor: o post-it nasce onde se olhou, não com o canto ali. Cor padrão
-      // e z do topo vêm da própria store.
-      const note = store.addNote({
-        x: point.x - NOTE_SIZE.defaultWidth / 2,
-        y: point.y - NOTE_SIZE.defaultHeight / 2,
-      });
+      // O tamanho é dito uma vez e usado duas: para centrar e para criar. Deixar a store
+      // aplicar o padrão dela e centrar por fora daria dois donos da mesma medida, e o
+      // post-it nasceria fora do cursor no dia em que uma das duas mudasse.
+      const size = { w: NOTE_SIZE.defaultWidth, h: NOTE_SIZE.defaultHeight };
+      // Cor padrão e z do topo continuam vindo da store, que é dona deles.
+      const note = store.addNote({ ...topLeftCenteredAt(point, size), ...size });
       // Coordenada impossível não cria nada (a store devolve `null`) e não abre edição de
       // um post-it que não existe.
       if (note !== null) setEditingId(note.id);
@@ -51,7 +51,8 @@ export function useBoard(): BoardApi {
     [store],
   );
 
-  const startEditing = useCallback((id: string) => setEditingId(id), []);
+  // `setEditingId` já é estável: embrulhar em useCallback seria só um intermediário.
+  const startEditing = setEditingId;
 
   const commitText = useCallback(
     (id: string, text: string) => {

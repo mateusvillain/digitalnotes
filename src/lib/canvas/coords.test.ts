@@ -1,16 +1,17 @@
 import { describe, expect, it } from "vitest";
 import {
+  canvasToScreen,
+  clampScale,
   IDENTITY_VIEWPORT,
   MAX_SCALE,
   MIN_SCALE,
-  canvasToScreen,
-  clampScale,
   panBy,
   scaleAsPercent,
   screenToCanvas,
+  topLeftCenteredAt,
+  type Viewport,
   zoomAt,
   zoomByFactor,
-  type Viewport,
 } from "./coords";
 
 const viewport: Viewport = { x: 120, y: -40, scale: 2 };
@@ -96,5 +97,25 @@ describe("scaleAsPercent", () => {
   it("mostra a escala como porcentagem inteira", () => {
     expect(scaleAsPercent(1)).toBe(100);
     expect(scaleAsPercent(0.255)).toBe(26);
+  });
+});
+
+describe("topLeftCenteredAt", () => {
+  it("devolve o canto que põe o centro da caixa no ponto pedido", () => {
+    expect(topLeftCenteredAt({ x: 300, y: 240 }, { w: 200, h: 200 })).toEqual({ x: 200, y: 140 });
+  });
+
+  it("aceita caixa de lado ímpar sem arredondar por conta própria", () => {
+    // Arredondar aqui empurraria o post-it meio pixel para um lado; quem decide inteiros é
+    // quem grava na store (#16), não a geometria.
+    expect(topLeftCenteredAt({ x: 0, y: 0 }, { w: 75, h: 41 })).toEqual({ x: -37.5, y: -20.5 });
+  });
+
+  it("é a inversa de somar meia caixa", () => {
+    const centro = { x: -120.5, y: 88 };
+    const size = { w: 200, h: 160 };
+    const canto = topLeftCenteredAt(centro, size);
+
+    expect({ x: canto.x + size.w / 2, y: canto.y + size.h / 2 }).toEqual(centro);
   });
 });

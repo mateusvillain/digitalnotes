@@ -1,13 +1,13 @@
 "use client";
 
 import { useCallback, useRef } from "react";
+import { AppShell } from "@/components/shell/AppShell";
+import { useBoard } from "@/lib/board/useBoard";
+import type { Point } from "@/lib/canvas/coords";
+import { useViewport } from "@/lib/canvas/useViewport";
 import { Board } from "./Board";
 import { Viewport } from "./Viewport";
 import { ViewportControls } from "./ViewportControls";
-import type { Point } from "@/lib/canvas/coords";
-import { useViewport } from "@/lib/canvas/useViewport";
-import { useBoard } from "@/lib/board/useBoard";
-import { AppShell } from "@/components/shell/AppShell";
 
 /**
  * O quadro: junta o estado de viewport à superfície navegável, aos controles e aos post-its.

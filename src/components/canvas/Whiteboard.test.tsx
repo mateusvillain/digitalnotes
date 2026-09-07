@@ -1,6 +1,6 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { defined } from "@/test-utils/defined";
 import { Whiteboard } from "./Whiteboard";
 
@@ -11,6 +11,19 @@ import { Whiteboard } from "./Whiteboard";
  */
 function duploCliqueNoFundo(x: number, y: number): void {
   fireEvent.doubleClick(screen.getByTestId("viewport-surface"), { clientX: x, clientY: y });
+}
+
+/** Arrasta o fundo, que é como se desloca o quadro. */
+function arrastaOFundo(dx: number, dy: number): void {
+  const surface = screen.getByTestId("viewport-surface");
+  // O jsdom não implementa a API de captura de ponteiro.
+  surface.setPointerCapture = vi.fn();
+  surface.releasePointerCapture = vi.fn();
+  surface.hasPointerCapture = vi.fn(() => true);
+
+  fireEvent.pointerDown(surface, { pointerId: 1, button: 0, clientX: 0, clientY: 0 });
+  fireEvent.pointerMove(surface, { pointerId: 1, clientX: dx, clientY: dy });
+  fireEvent.pointerUp(surface, { pointerId: 1 });
 }
 
 function postIts(): HTMLElement[] {
@@ -50,6 +63,38 @@ describe("Whiteboard", () => {
     expect(
       Number.parseFloat(postIt(0).style.top) + Number.parseFloat(postIt(0).style.height) / 2,
     ).toBe(240);
+  });
+
+  it("nasce sob o cursor mesmo com o quadro afastado e deslocado", async () => {
+    const user = userEvent.setup();
+    render(<Whiteboard />);
+
+    // Zoom por botão, que ancora no centro da área — e no jsdom a área mede zero, então o
+    // resultado é um viewport com escala diferente de 1. O que este teste guarda é que a
+    // conversão desfaz a transformação seja ela qual for.
+    await user.click(screen.getByLabelText("Aumentar zoom"));
+    arrastaOFundo(70, -35);
+    duploCliqueNoFundo(320, 260);
+
+    const centroX =
+      Number.parseFloat(postIt(0).style.left) + Number.parseFloat(postIt(0).style.width) / 2;
+    const centroY =
+      Number.parseFloat(postIt(0).style.top) + Number.parseFloat(postIt(0).style.height) / 2;
+    const camada = screen.getByTestId("viewport-layer");
+    const transform = camada.style.transform;
+    const escala = Number(transform.match(/scale\(([^)]+)\)/)?.[1]);
+    const [deslocX, deslocY] = (transform.match(/translate\(([^)]+)\)/)?.[1] ?? "")
+      .split(",")
+      .map(Number.parseFloat);
+
+    // O post-it é descrito em coordenadas de canvas: onde ele cai na tela é o centro dele
+    // vezes a escala, mais o deslocamento — a mesma transformação da camada. Tem que dar o
+    // ponto onde o cursor estava.
+    expect(escala).not.toBe(1);
+    expect(deslocX).toBe(70);
+    expect(deslocY).toBe(-35);
+    expect(centroX * escala + (deslocX ?? 0)).toBeCloseTo(320);
+    expect(centroY * escala + (deslocY ?? 0)).toBeCloseTo(260);
   });
 
   it("guarda o texto escrito ao sair da edição", async () => {

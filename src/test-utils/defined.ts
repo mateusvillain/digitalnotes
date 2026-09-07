@@ -6,7 +6,7 @@
  * `undefined?.x` compara `undefined` com `undefined` e passa. Aqui o teste quebra na linha
  * certa, dizendo o que não estava lá.
  */
-export function defined<T>(value: T | undefined, oQueFalta: string): T {
-  if (value === undefined) throw new Error(`Esperava ${oQueFalta}, e não havia nada.`);
+export function defined<T>(value: T | undefined, what: string): T {
+  if (value === undefined) throw new Error(`Esperava ${what}, e não havia nada.`);
   return value;
 }

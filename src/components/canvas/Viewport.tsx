@@ -103,9 +103,12 @@ export function Viewport({
   }, [zoomBy, localPoint]);
 
   /** Verdadeiro só para eventos nascidos no fundo, e não em algo desenhado sobre ele. */
-  const isBackground = useCallback((target: EventTarget, surface: EventTarget): boolean => {
-    return target === surface || target === layerRef.current;
-  }, []);
+  const isBackground = useCallback(
+    (event: { target: EventTarget; currentTarget: EventTarget }): boolean => {
+      return event.target === event.currentTarget || event.target === layerRef.current;
+    },
+    [],
+  );
 
   /**
    * Duplo clique no fundo: o gesto que cria um post-it (#13).
@@ -116,8 +119,14 @@ export function Viewport({
    */
   const handleDoubleClick = useCallback(
     (event: MouseEvent<HTMLDivElement>) => {
-      if (!isBackground(event.target, event.currentTarget)) return;
+      if (!isBackground(event)) return;
+      // Mesma guarda do pan logo abaixo: só o botão primário age sobre o quadro. Os
+      // browsers atuais só disparam dblclick nele, mas depender disso deixa a regra
+      // implícita num handler cujo vizinho a declara.
+      if (event.button !== 0) return;
 
+      // Sem isto, o gesto começa selecionando o texto do fundo antes de o post-it aparecer.
+      event.preventDefault();
       onBackgroundDoubleClick?.(screenToCanvas(localPoint(event), viewport));
     },
     [isBackground, localPoint, onBackgroundDoubleClick, viewport],
@@ -127,7 +136,7 @@ export function Viewport({
     (event: PointerEvent<HTMLDivElement>) => {
       // Arrasta o quadro pelo fundo ou pela camada do canvas; um post-it (issue #15) para o
       // evento antes de chegar aqui.
-      if (!isBackground(event.target, event.currentTarget)) return;
+      if (!isBackground(event)) return;
       if (event.button !== 0) return;
 
       panPointerId.current = event.pointerId;

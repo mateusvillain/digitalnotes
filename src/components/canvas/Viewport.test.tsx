@@ -200,6 +200,25 @@ describe("Viewport — duplo clique no fundo", () => {
     expect(onBackgroundDoubleClick).toHaveBeenCalledOnce();
   });
 
+  it("só age no botão primário", () => {
+    const { onBackgroundDoubleClick } = renderComDuploClique();
+
+    // Mesma regra do pan. Os browsers atuais só disparam dblclick no primário, mas a
+    // guarda existir aqui e não ali seria assimetria sem razão.
+    fireEvent.doubleClick(screen.getByTestId("viewport-surface"), { button: 2 });
+
+    expect(onBackgroundDoubleClick).not.toHaveBeenCalled();
+  });
+
+  it("impede a seleção nativa de texto que o gesto dispararia", () => {
+    renderComDuploClique();
+    const evento = new MouseEvent("dblclick", { bubbles: true, cancelable: true });
+
+    screen.getByTestId("viewport-surface").dispatchEvent(evento);
+
+    expect(evento.defaultPrevented).toBe(true);
+  });
+
   it("ignora o duplo clique nascido em algo desenhado sobre o fundo", () => {
     const { onBackgroundDoubleClick } = renderComDuploClique();
 

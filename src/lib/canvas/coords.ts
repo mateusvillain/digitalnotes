@@ -15,6 +15,12 @@ export interface Point {
   y: number;
 }
 
+/** Dimensões de uma caixa, em unidades de canvas. */
+export interface Size {
+  w: number;
+  h: number;
+}
+
 export interface Viewport {
   /** Deslocamento, em pixels de tela, do ponto (0,0) do canvas. */
   x: number;
@@ -58,6 +64,16 @@ export function canvasToScreen(point: Point, viewport: Viewport): Point {
     x: point.x * viewport.scale + viewport.x,
     y: point.y * viewport.scale + viewport.y,
   };
+}
+
+/**
+ * Canto superior esquerdo de uma caixa de `size` centrada em `center`.
+ *
+ * Existe porque o board guarda o canto, mas todo gesto aponta para o meio: criar no ponto
+ * do duplo clique é colocar o *centro* ali, não o canto.
+ */
+export function topLeftCenteredAt(center: Point, size: Size): Point {
+  return { x: center.x - size.w / 2, y: center.y - size.h / 2 };
 }
 
 /** Desloca o viewport em pixels de tela. */
