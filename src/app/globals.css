@@ -16,6 +16,8 @@
   --color-border: #e4e4e7;
   --color-ink: #18181b;
   --color-ink-muted: #52525b;
+  /* Contorno de seleção. É cor de sistema, por isso fica fora da paleta de post-it. */
+  --color-selection: #4f46e5;
 
   /*
    * Post-its. Os índices seguem NOTE_COLORS em src/lib/board/types.ts — a ordem aqui e lá

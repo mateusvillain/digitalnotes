@@ -18,3 +18,13 @@ export type NoteBackgroundVar = `--color-note-${NoteColorName}`;
 export function noteBackgroundVar(color: NoteColor): NoteBackgroundVar {
   return `--color-note-${NOTE_COLORS[color]}`;
 }
+
+/**
+ * Valor de cor pronto para um estilo inline.
+ *
+ * Existe para a sintaxe do `var()` não vazar para dentro de cada componente que pinta um
+ * post-it: quem é dono do token é este módulo.
+ */
+export function noteBackgroundColor(color: NoteColor): string {
+  return `var(${noteBackgroundVar(color)})`;
+}
