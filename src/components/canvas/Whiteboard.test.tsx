@@ -500,6 +500,35 @@ describe("Whiteboard — redimensionamento", () => {
     expect(posicao()).toEqual(antes);
   });
 
+  it("acompanha o cursor também com o quadro afastado", async () => {
+    const user = userEvent.setup();
+    render(<Whiteboard />);
+    criaPostIt(400, 400);
+    const antes = tamanho();
+
+    await user.click(screen.getByLabelText("Diminuir zoom"));
+    const escala = Number(
+      screen.getByTestId("viewport-layer").style.transform.match(/scale\(([^)]+)\)/)?.[1],
+    );
+    puxaAlca(100, 0);
+
+    // Afastado, cada pixel de tela vale mais de um de canvas: o post-it cresce **mais** que
+    // os cem pixels do cursor. É o lado da conversão em que o arredondamento é mais grosso.
+    expect(escala).toBeLessThan(1);
+    expect(tamanho().w).toBe(antes.w + Math.round(100 / escala));
+  });
+
+  it("duplo clique na alça não abre o editor", () => {
+    render(<Whiteboard />);
+    criaPostIt(400, 400);
+
+    fireEvent.doubleClick(alca(), { button: 0 });
+
+    // A alça é para ajustar o tamanho; abrir o editor ali cobriria justamente o que se
+    // estava ajustando.
+    expect(screen.queryByTestId("post-it-editor")).toBeNull();
+  });
+
   it("puxar a alça não arrasta o post-it junto", () => {
     render(<Whiteboard />);
     criaPostIt(400, 400);

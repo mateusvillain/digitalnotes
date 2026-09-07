@@ -48,6 +48,8 @@ export interface NewNote {
 export interface BoardStore {
   /** Board atual. A referência muda a cada alteração, para comparação por identidade. */
   getBoard: () => Board;
+  /** A note de um id, ou `undefined`. Poupa quem só quer uma de varrer a lista inteira. */
+  getNote: (id: string) => Note | undefined;
   /** Registra um ouvinte de mudanças; devolve a função que cancela a inscrição. */
   subscribe: (listener: () => void) => () => void;
   /** Cria um post-it na frente dos demais. Devolve `null` se a posição for impossível. */
@@ -203,8 +205,12 @@ export function createBoardStore(initial: Board = createEmptyBoard()): BoardStor
     removeNotes([id]);
   }
 
+  function getNote(id: string): Note | undefined {
+    return board.notes.find((candidate) => candidate.id === id);
+  }
+
   function bringToFront(id: string): void {
-    const note = board.notes.find((candidate) => candidate.id === id);
+    const note = getNote(id);
     if (note === undefined) return;
 
     const top = topZ(board.notes);
@@ -227,6 +233,7 @@ export function createBoardStore(initial: Board = createEmptyBoard()): BoardStor
   // `this` quebraria calado nesse uso.
   return {
     getBoard,
+    getNote,
     subscribe,
     addNote,
     updateNote,

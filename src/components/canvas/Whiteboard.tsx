@@ -41,22 +41,23 @@ export function Whiteboard() {
    *
    * É o delta de tela dividido pela escala, e não o delta bruto: a 200%, dois pixels de
    * mouse são um pixel de canvas, e sem a divisão o post-it andaria o dobro do cursor.
+   *
+   * Arrastar e redimensionar fazem a mesma conta porque é a mesma pergunta: quantas
+   * unidades de canvas o cursor andou.
    */
+  const toCanvasDelta = useCallback((delta: Point): Point => {
+    const scale = scaleRef.current;
+    return { x: delta.x / scale, y: delta.y / scale };
+  }, []);
+
   const dragBy = useCallback(
-    (delta: Point) => {
-      const scale = scaleRef.current;
-      dragOffsetBy({ x: delta.x / scale, y: delta.y / scale });
-    },
-    [dragOffsetBy],
+    (delta: Point) => dragOffsetBy(toCanvasDelta(delta)),
+    [dragOffsetBy, toCanvasDelta],
   );
 
-  /** Mesma conversão do arraste: a alça segue o cursor, não os pixels de tela. */
   const resizeBy = useCallback(
-    (delta: Point) => {
-      const scale = scaleRef.current;
-      resizeOffsetBy({ x: delta.x / scale, y: delta.y / scale });
-    },
-    [resizeOffsetBy],
+    (delta: Point) => resizeOffsetBy(toCanvasDelta(delta)),
+    [resizeOffsetBy, toCanvasDelta],
   );
 
   /** Centro da área visível, usado como âncora do zoom por botão. */

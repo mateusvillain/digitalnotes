@@ -1,6 +1,6 @@
 "use client";
 
-import type { PointerEvent } from "react";
+import type { MouseEvent, PointerEvent } from "react";
 import type { DragHandlers } from "@/lib/canvas/useDrag";
 
 interface ResizeHandleProps {
@@ -34,6 +34,16 @@ export function ResizeHandle({ handlers, alwaysVisible }: ResizeHandleProps) {
     handlers.onPointerDown(event);
   }
 
+  /**
+   * O duplo clique também para aqui.
+   *
+   * Sem isto ele chegaria ao post-it, que o lê como o pedido de editar o texto: dois
+   * cliques para ajustar o tamanho abririam o editor em cima do que se estava ajustando.
+   */
+  function handleDoubleClick(event: MouseEvent<HTMLDivElement>): void {
+    event.stopPropagation();
+  }
+
   return (
     <div
       className={`absolute right-0 bottom-0 h-6 w-6 cursor-nwse-resize touch-none transition-opacity ${
@@ -43,6 +53,7 @@ export function ResizeHandle({ handlers, alwaysVisible }: ResizeHandleProps) {
       data-visible={alwaysVisible}
       aria-hidden="true"
       onPointerDown={handlePointerDown}
+      onDoubleClick={handleDoubleClick}
       onPointerMove={handlers.onPointerMove}
       onPointerUp={handlers.onPointerUp}
       onPointerCancel={handlers.onPointerCancel}

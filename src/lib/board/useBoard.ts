@@ -7,6 +7,12 @@ import { clampNoteSize } from "./schema";
 import { createBoardStore } from "./store";
 import { NOTE_SIZE, type Board, type Note } from "./types";
 
+/** Um post-it em redimensionamento e o tamanho que ele tem agora, durante o gesto. */
+export interface Resizing {
+  id: string;
+  size: Size;
+}
+
 export interface BoardApi {
   /** Notes do board, na ordem em que a store as guarda. */
   notes: readonly Note[];
@@ -33,7 +39,7 @@ export interface BoardApi {
   /** Desfaz o arraste sem gravar nada. */
   cancelDrag: () => void;
   /** Post-it sendo redimensionado e o tamanho que ele tem agora, ou `null`. */
-  resizing: { id: string; size: Size } | null;
+  resizing: Resizing | null;
   /** Começa a redimensionar um post-it. */
   startResize: (id: string) => void;
   /** Cresce ou encolhe o post-it em curso, em coordenadas de canvas. */
@@ -67,7 +73,7 @@ export function useBoard(): BoardApi {
   /** A seleção de antes do retângulo começar, para o gesto poder ser refeito enquanto anda. */
   const selectionBeforeRect = useRef<Selection>(EMPTY_SELECTION);
   const [dragOffset, setDragOffset] = useState<Point | null>(null);
-  const [resizing, setResizing] = useState<{ id: string; size: Size } | null>(null);
+  const [resizing, setResizing] = useState<Resizing | null>(null);
 
   /**
    * Cópias em ref do que os callbacks de gesto precisam ler.
@@ -82,7 +88,7 @@ export function useBoard(): BoardApi {
    */
   const selectionRef = useRef<Selection>(EMPTY_SELECTION);
   const dragOffsetRef = useRef<Point | null>(null);
-  const resizingRef = useRef<{ id: string; size: Size } | null>(null);
+  const resizingRef = useRef<Resizing | null>(null);
 
   /**
    * Publica a seleção na ref e no estado, nessa ordem.
@@ -105,7 +111,7 @@ export function useBoard(): BoardApi {
   }, []);
 
   /** Publica o tamanho em curso na ref e no estado, nessa ordem. */
-  const publishResizing = useCallback((next: { id: string; size: Size } | null) => {
+  const publishResizing = useCallback((next: Resizing | null) => {
     resizingRef.current = next;
     setResizing(next);
   }, []);
@@ -214,7 +220,7 @@ export function useBoard(): BoardApi {
 
   const startResize = useCallback(
     (id: string) => {
-      const note = store.getBoard().notes.find((candidate) => candidate.id === id);
+      const note = store.getNote(id);
       if (note === undefined) return;
 
       publishResizing({ id, size: { w: note.w, h: note.h } });
@@ -230,7 +236,7 @@ export function useBoard(): BoardApi {
       // Medido a partir do tamanho de quando o gesto começou, e não do quadro anterior: o
       // deslocamento já vem acumulado desde a origem, e somá-lo ao tamanho atual faria o
       // post-it crescer o dobro.
-      const note = store.getBoard().notes.find((candidate) => candidate.id === current.id);
+      const note = store.getNote(current.id);
       if (note === undefined) return;
 
       // O limite é aplicado enquanto se arrasta, e não só ao gravar: deixar encolher além
