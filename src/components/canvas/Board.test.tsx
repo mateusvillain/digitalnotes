@@ -95,10 +95,8 @@ describe("Board — seleção", () => {
     const onSelect = vi.fn();
     render(<Board notes={[note({ id: "aaa111" }), note({ id: "bbb222" })]} onSelect={onSelect} />);
 
-    fireEvent.pointerDown(defined(screen.getAllByTestId("post-it")[1], "o segundo post-it"), {
-      button: 0,
-      shiftKey: true,
-    });
+    const segundo = defined(screen.getAllByTestId("post-it")[1], "o segundo post-it");
+    fireEvent.pointerDown(segundo, { button: 0, shiftKey: true });
 
     expect(onSelect).toHaveBeenCalledExactlyOnceWith("bbb222", true);
   });

@@ -35,6 +35,14 @@ export interface Viewport {
   scale: number;
 }
 
+/**
+ * Distância, em pixels de tela, abaixo da qual um gesto de ponteiro ainda é um clique.
+ *
+ * Medida sempre desde a origem do gesto, nunca passo a passo: um arrasto lento anda dois ou
+ * três pixels por evento e nunca passaria de uma folga aplicada a cada passo.
+ */
+export const CLICK_SLOP = 4;
+
 export const MIN_SCALE = 0.25;
 export const MAX_SCALE = 4;
 

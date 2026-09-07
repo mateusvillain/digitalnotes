@@ -11,6 +11,7 @@ import {
   type ReactNode,
 } from "react";
 import {
+  CLICK_SLOP,
   canvasToScreen,
   distance,
   rectFromCorners,
@@ -18,6 +19,7 @@ import {
   type Point,
   type Rect,
 } from "@/lib/canvas/coords";
+import { releaseCapture } from "@/lib/canvas/pointer-capture";
 import { SelectionBox } from "./SelectionBox";
 import type { ViewportApi } from "@/lib/canvas/useViewport";
 
@@ -34,15 +36,6 @@ const DOT_GAP = 24;
  * escala, o que dá a mesma sensação em trackpad e em mouse de roda travada.
  */
 const WHEEL_SENSITIVITY = 0.002;
-
-/**
- * Distância, em pixels de tela, abaixo da qual soltar o botão ainda conta como clique.
- *
- * Medida sempre **desde a origem do gesto**, nunca passo a passo: um arrasto lento anda dois
- * ou três pixels por evento e nunca passaria de uma folga aplicada a cada passo — o pan
- * terminaria limpando a seleção.
- */
-const CLICK_SLOP = 4;
 
 /** Pixels equivalentes a uma unidade de `deltaY` em cada modo de rolagem do browser. */
 const DELTA_MODE_TO_PIXELS = { line: 16, page: 100 } as const;
@@ -238,11 +231,7 @@ export function Viewport({
 
     drag.current = null;
     setMarquee(null);
-    // Depois de um pointercancel o ponteiro já não está ativo, e soltar a captura de um id
-    // inativo lança.
-    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
-      event.currentTarget.releasePointerCapture(event.pointerId);
-    }
+    releaseCapture(event);
 
     return state;
   }, []);

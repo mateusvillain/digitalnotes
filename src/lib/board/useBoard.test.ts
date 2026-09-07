@@ -271,3 +271,187 @@ describe("useBoard — seleção", () => {
     }
   });
 });
+
+describe("useBoard — arraste", () => {
+  function comDoisPostIts() {
+    const hook = renderHook(() => useBoard());
+    act(() => hook.result.current.createNoteAt({ x: 0, y: 0 }));
+    act(() => hook.result.current.createNoteAt({ x: 500, y: 0 }));
+
+    return {
+      hook,
+      primeiro: defined(hook.result.current.notes[0], "o primeiro post-it"),
+      segundo: defined(hook.result.current.notes[1], "o segundo post-it"),
+    };
+  }
+
+  function posicaoDe(hook: ReturnType<typeof comDoisPostIts>["hook"], id: string) {
+    const note = defined(
+      hook.result.current.notes.find((candidata) => candidata.id === id),
+      `o post-it ${id}`,
+    );
+    return { x: note.x, y: note.y };
+  }
+
+  it("não tem deslocamento fora de um arraste", () => {
+    const { result } = renderHook(() => useBoard());
+
+    expect(result.current.dragOffset).toBeNull();
+  });
+
+  it("não toca na store enquanto o gesto acontece", () => {
+    const { hook, primeiro } = comDoisPostIts();
+    const antes = posicaoDe(hook, primeiro.id);
+
+    act(() => hook.result.current.selectNote(primeiro.id));
+    act(() => hook.result.current.startDrag(primeiro.id));
+    act(() => hook.result.current.dragBy({ x: 120, y: 80 }));
+
+    // A posição final é gravada só ao soltar: quem escuta a store é a persistência, que
+    // reescreveria a URL a cada quadro do arraste.
+    expect(hook.result.current.dragOffset).toEqual({ x: 120, y: 80 });
+    expect(posicaoDe(hook, primeiro.id)).toEqual(antes);
+  });
+
+  it("grava a posição final ao soltar", () => {
+    const { hook, primeiro } = comDoisPostIts();
+    const antes = posicaoDe(hook, primeiro.id);
+
+    act(() => hook.result.current.selectNote(primeiro.id));
+    act(() => hook.result.current.startDrag(primeiro.id));
+    act(() => hook.result.current.dragBy({ x: 120, y: 80 }));
+    act(() => hook.result.current.endDrag());
+
+    expect(posicaoDe(hook, primeiro.id)).toEqual({ x: antes.x + 120, y: antes.y + 80 });
+    expect(hook.result.current.dragOffset).toBeNull();
+  });
+
+  it("grava inteiros, mesmo com o deslocamento chegando fracionado pelo zoom", () => {
+    const { hook, primeiro } = comDoisPostIts();
+    const antes = posicaoDe(hook, primeiro.id);
+
+    act(() => hook.result.current.selectNote(primeiro.id));
+    act(() => hook.result.current.startDrag(primeiro.id));
+    act(() => hook.result.current.dragBy({ x: 10.4, y: -3.7 }));
+    act(() => hook.result.current.endDrag());
+
+    // Cada casa decimal custa caracteres de link.
+    expect(posicaoDe(hook, primeiro.id)).toEqual({ x: antes.x + 10, y: antes.y - 4 });
+  });
+
+  it("move junto todos os post-its selecionados", () => {
+    const { hook, primeiro, segundo } = comDoisPostIts();
+    const antesPrimeiro = posicaoDe(hook, primeiro.id);
+    const antesSegundo = posicaoDe(hook, segundo.id);
+
+    act(() => hook.result.current.selectNote(primeiro.id));
+    act(() => hook.result.current.selectNote(segundo.id, true));
+    act(() => hook.result.current.startDrag(primeiro.id));
+    act(() => hook.result.current.dragBy({ x: 50, y: 50 }));
+    act(() => hook.result.current.endDrag());
+
+    expect(posicaoDe(hook, primeiro.id)).toEqual({
+      x: antesPrimeiro.x + 50,
+      y: antesPrimeiro.y + 50,
+    });
+    expect(posicaoDe(hook, segundo.id)).toEqual({ x: antesSegundo.x + 50, y: antesSegundo.y + 50 });
+  });
+
+  it("move exatamente a seleção, e nada além dela", () => {
+    const { hook, primeiro, segundo } = comDoisPostIts();
+    const antesSegundo = posicaoDe(hook, segundo.id);
+
+    // Quem decide o que está selecionado é o gesto no post-it; o arraste só move o que
+    // encontra marcado. Duas fontes para a mesma regra dariam duas respostas.
+    act(() => hook.result.current.selectNote(primeiro.id));
+    act(() => hook.result.current.startDrag(primeiro.id));
+    act(() => hook.result.current.dragBy({ x: 50, y: 0 }));
+    act(() => hook.result.current.endDrag());
+
+    expect(posicaoDe(hook, segundo.id)).toEqual(antesSegundo);
+  });
+
+  it("não mexe na seleção ao começar um arraste", () => {
+    const { hook, primeiro, segundo } = comDoisPostIts();
+    act(() => hook.result.current.selectNote(primeiro.id));
+    act(() => hook.result.current.selectNote(segundo.id, true));
+
+    act(() => hook.result.current.startDrag(segundo.id));
+
+    expect([...hook.result.current.selection]).toHaveLength(2);
+  });
+
+  it("traz para a frente o post-it que foi pego", () => {
+    const { hook, primeiro, segundo } = comDoisPostIts();
+    act(() => hook.result.current.selectNote(primeiro.id));
+    act(() => hook.result.current.selectNote(segundo.id, true));
+
+    act(() => hook.result.current.startDrag(primeiro.id));
+
+    // Numa seleção que já existia, nenhum clique promoveu ninguém: sem isto, arrastar um
+    // post-it de dentro do grupo o deixaria atrás dos outros.
+    const pego = defined(
+      hook.result.current.notes.find((note) => note.id === primeiro.id),
+      "o post-it pego",
+    );
+    const outro = defined(
+      hook.result.current.notes.find((note) => note.id === segundo.id),
+      "o outro post-it",
+    );
+    expect(pego.z).toBeGreaterThan(outro.z);
+  });
+
+  it("cancelar devolve os post-its para onde estavam", () => {
+    const { hook, primeiro } = comDoisPostIts();
+    const antes = posicaoDe(hook, primeiro.id);
+
+    act(() => hook.result.current.selectNote(primeiro.id));
+    act(() => hook.result.current.startDrag(primeiro.id));
+    act(() => hook.result.current.dragBy({ x: 200, y: 200 }));
+    act(() => hook.result.current.cancelDrag());
+
+    expect(hook.result.current.dragOffset).toBeNull();
+    expect(posicaoDe(hook, primeiro.id)).toEqual(antes);
+  });
+});
+
+describe("useBoard — estabilidade dos callbacks", () => {
+  it("mantém a identidade dos callbacks de arraste ao longo do gesto", () => {
+    const { result } = renderHook(() => useBoard());
+    act(() => result.current.createNoteAt({ x: 0, y: 0 }));
+    const antes = {
+      startDrag: result.current.startDrag,
+      dragBy: result.current.dragBy,
+      endDrag: result.current.endDrag,
+      cancelDrag: result.current.cancelDrag,
+      selectNote: result.current.selectNote,
+    };
+
+    act(() => result.current.startDrag(defined(result.current.notes[0], "o post-it").id));
+    act(() => result.current.dragBy({ x: 10, y: 10 }));
+    act(() => result.current.dragBy({ x: 20, y: 20 }));
+
+    // Esses callbacks descem até cada post-it. Se mudassem de identidade a cada movimento
+    // do ponteiro, a memoização cairia e o quadro inteiro re-renderizaria por evento — que
+    // é exatamente o que o critério de fluidez proíbe.
+    expect(result.current.startDrag).toBe(antes.startDrag);
+    expect(result.current.dragBy).toBe(antes.dragBy);
+    expect(result.current.endDrag).toBe(antes.endDrag);
+    expect(result.current.cancelDrag).toBe(antes.cancelDrag);
+    expect(result.current.selectNote).toBe(antes.selectNote);
+  });
+
+  it("grava o deslocamento atual mesmo com o endDrag lendo de ref", () => {
+    const { result } = renderHook(() => useBoard());
+    act(() => result.current.createNoteAt({ x: 300, y: 300 }));
+    const note = defined(result.current.notes[0], "o post-it");
+
+    act(() => result.current.startDrag(note.id));
+    act(() => result.current.dragBy({ x: 10, y: 10 }));
+    act(() => result.current.dragBy({ x: 90, y: 40 }));
+    act(() => result.current.endDrag());
+
+    // Estável não é obsoleto: o callback é o mesmo, e o valor que ele lê é o último.
+    expect(defined(result.current.notes[0], "o post-it").x).toBe(note.x + 90);
+  });
+});

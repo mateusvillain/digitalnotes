@@ -18,7 +18,31 @@ import { ViewportControls } from "./ViewportControls";
 export function Whiteboard() {
   const controls = useViewport();
   const board = useBoard();
+  const dragOffsetBy = board.dragBy;
+  /**
+   * A escala atual, lida por ref dentro do conversor de arraste.
+   *
+   * O conversor é passado a cada post-it. Se mudasse de identidade quando o zoom muda, a
+   * memoização dos post-its cairia junto — e é ela que impede o quadro inteiro de
+   * re-renderizar a cada movimento do ponteiro.
+   */
+  const scaleRef = useRef(controls.viewport.scale);
+  scaleRef.current = controls.viewport.scale;
   const areaRef = useRef<HTMLDivElement>(null);
+
+  /**
+   * Converte o deslocamento do ponteiro para unidades de canvas.
+   *
+   * É o delta de tela dividido pela escala, e não o delta bruto: a 200%, dois pixels de
+   * mouse são um pixel de canvas, e sem a divisão o post-it andaria o dobro do cursor.
+   */
+  const dragBy = useCallback(
+    (delta: Point) => {
+      const scale = scaleRef.current;
+      dragOffsetBy({ x: delta.x / scale, y: delta.y / scale });
+    },
+    [dragOffsetBy],
+  );
 
   /** Centro da área visível, usado como âncora do zoom por botão. */
   const center = useCallback((): Point => {
@@ -55,6 +79,11 @@ export function Whiteboard() {
             onEditStart={board.startEditing}
             onEditCommit={board.commitText}
             onSelect={board.selectNote}
+            dragOffset={board.dragOffset}
+            onDragStart={board.startDrag}
+            onDragMove={dragBy}
+            onDragEnd={board.endDrag}
+            onDragCancel={board.cancelDrag}
           />
         </Viewport>
       </div>

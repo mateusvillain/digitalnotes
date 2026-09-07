@@ -1,6 +1,6 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 import { defined } from "@/test-utils/defined";
 import { Whiteboard } from "./Whiteboard";
 
@@ -16,10 +16,6 @@ function duploCliqueNoFundo(x: number, y: number): void {
 /** Arrasta o fundo, que é como se desloca o quadro. */
 function arrastaOFundo(dx: number, dy: number): void {
   const surface = screen.getByTestId("viewport-surface");
-  // O jsdom não implementa a API de captura de ponteiro.
-  surface.setPointerCapture = vi.fn();
-  surface.releasePointerCapture = vi.fn();
-  surface.hasPointerCapture = vi.fn(() => true);
 
   fireEvent.pointerDown(surface, { pointerId: 1, button: 0, clientX: 0, clientY: 0 });
   fireEvent.pointerMove(surface, { pointerId: 1, clientX: dx, clientY: dy });
@@ -162,9 +158,6 @@ describe("Whiteboard — seleção", () => {
   /** Aperta e solta no fundo sem andar: o clique que limpa a seleção. */
   function cliqueNoFundo(): void {
     const surface = screen.getByTestId("viewport-surface");
-    surface.setPointerCapture = vi.fn();
-    surface.releasePointerCapture = vi.fn();
-    surface.hasPointerCapture = vi.fn(() => true);
 
     fireEvent.pointerDown(surface, { pointerId: 1, button: 0, clientX: 700, clientY: 500 });
     fireEvent.pointerUp(surface, { pointerId: 1, clientX: 700, clientY: 500 });
@@ -173,9 +166,6 @@ describe("Whiteboard — seleção", () => {
   /** Shift + arrastar no fundo, de um canto de tela ao outro. */
   function retanguloDeSelecao(de: [number, number], ate: [number, number]): void {
     const surface = screen.getByTestId("viewport-surface");
-    surface.setPointerCapture = vi.fn();
-    surface.releasePointerCapture = vi.fn();
-    surface.hasPointerCapture = vi.fn(() => true);
 
     fireEvent.pointerDown(surface, {
       pointerId: 1,
@@ -267,9 +257,6 @@ describe("Whiteboard — seleção", () => {
     cliqueNoFundo();
 
     const surface = screen.getByTestId("viewport-surface");
-    surface.setPointerCapture = vi.fn();
-    surface.releasePointerCapture = vi.fn();
-    surface.hasPointerCapture = vi.fn(() => true);
 
     fireEvent.pointerDown(surface, {
       pointerId: 1,
@@ -308,5 +295,98 @@ describe("Whiteboard — seleção", () => {
     arrastaOFundo(120, 80);
 
     expect(selecionados()).toHaveLength(1);
+  });
+});
+
+describe("Whiteboard — arraste", () => {
+  /** Cria um post-it e sai da edição, como no bloco de seleção. */
+  function criaPostIt(x: number, y: number): void {
+    duploCliqueNoFundo(x, y);
+    fireEvent.keyDown(screen.getByTestId("post-it-editor"), { key: "Escape" });
+  }
+
+  /** Arrasta um post-it pelo deslocamento pedido, em pixels de tela. */
+  function arrastaPostIt(indice: number, dx: number, dy: number): void {
+    const element = postIt(indice);
+    fireEvent.pointerDown(element, { pointerId: 1, button: 0, clientX: 0, clientY: 0 });
+    fireEvent.pointerMove(element, { pointerId: 1, clientX: dx, clientY: dy });
+    fireEvent.pointerUp(element, { pointerId: 1, clientX: dx, clientY: dy });
+  }
+
+  function posicao(indice: number): { x: number; y: number } {
+    const element = postIt(indice);
+    return {
+      x: Number.parseFloat(element.style.left),
+      y: Number.parseFloat(element.style.top),
+    };
+  }
+
+  it("move o post-it, e não o quadro", () => {
+    render(<Whiteboard />);
+    criaPostIt(300, 300);
+    const antes = posicao(0);
+    const camadaAntes = screen.getByTestId("viewport-layer").style.transform;
+
+    arrastaPostIt(0, 120, 80);
+
+    expect(posicao(0)).toEqual({ x: antes.x + 120, y: antes.y + 80 });
+    // O quadro ficou onde estava: o gesto começou no post-it, não no fundo.
+    expect(screen.getByTestId("viewport-layer").style.transform).toBe(camadaAntes);
+  });
+
+  it("acompanha o cursor com precisão em qualquer zoom", async () => {
+    const user = userEvent.setup();
+    render(<Whiteboard />);
+    criaPostIt(300, 300);
+    const antes = posicao(0);
+
+    await user.click(screen.getByLabelText("Aumentar zoom"));
+    const escala = Number(
+      screen.getByTestId("viewport-layer").style.transform.match(/scale\(([^)]+)\)/)?.[1],
+    );
+    arrastaPostIt(0, 100, 0);
+
+    // Cem pixels de tela valem menos de cem unidades de canvas quando o quadro está
+    // aproximado; sem dividir pela escala, o post-it andaria mais que o cursor.
+    expect(escala).toBeGreaterThan(1);
+    expect(posicao(0).x).toBe(antes.x + Math.round(100 / escala));
+  });
+
+  it("não grava nada enquanto o gesto acontece", () => {
+    render(<Whiteboard />);
+    criaPostIt(300, 300);
+    const antes = posicao(0);
+    const element = postIt(0);
+
+    fireEvent.pointerDown(element, { pointerId: 1, button: 0, clientX: 0, clientY: 0 });
+    fireEvent.pointerMove(element, { pointerId: 1, clientX: 120, clientY: 80 });
+
+    // Durante o arraste o post-it se move por transform; a posição só muda ao soltar.
+    expect(posicao(0)).toEqual(antes);
+    expect(postIt(0).style.transform).toBe("translate(120px, 80px)");
+  });
+
+  it("move junto os post-its selecionados", () => {
+    render(<Whiteboard />);
+    criaPostIt(200, 200);
+    criaPostIt(700, 200);
+    fireEvent.pointerDown(postIt(0), { button: 0 });
+    fireEvent.pointerDown(postIt(1), { button: 0, shiftKey: true });
+    const antesPrimeiro = posicao(0);
+    const antesSegundo = posicao(1);
+
+    arrastaPostIt(0, 60, 40);
+
+    expect(posicao(0)).toEqual({ x: antesPrimeiro.x + 60, y: antesPrimeiro.y + 40 });
+    expect(posicao(1)).toEqual({ x: antesSegundo.x + 60, y: antesSegundo.y + 40 });
+  });
+
+  it("arrastar não abre a edição de texto", () => {
+    render(<Whiteboard />);
+    criaPostIt(300, 300);
+
+    arrastaPostIt(0, 150, 150);
+
+    expect(screen.queryByTestId("post-it-editor")).toBeNull();
   });
 });
