@@ -3,6 +3,7 @@
 import type { CSSProperties, MouseEvent } from "react";
 import type { Note } from "@/lib/board/types";
 import { noteBackgroundColor } from "@/lib/theme/note-colors";
+import { NOTE_TEXT_CLASS } from "./note-text";
 import { PostItEditor } from "./PostItEditor";
 
 interface PostItProps {
@@ -13,8 +14,8 @@ interface PostItProps {
   editing?: boolean;
   /** Duplo clique sobre o post-it: o pedido de entrar em edição. */
   onEditStart?: (id: string) => void;
-  /** Fim da edição, com o texto final. Quem recebe é que escreve na store. */
-  onEditEnd?: (id: string, text: string) => void;
+  /** Fim da edição, com o texto final. Sair confirma, e quem recebe é que escreve na store. */
+  onEditCommit?: (id: string, text: string) => void;
 }
 
 /** Contorno por fora da caixa, para selecionar não empurrar o texto. */
@@ -28,7 +29,7 @@ const SELECTED_CLASS = "outline outline-2 outline-offset-2 outline-selection";
  * porque ela acontece *dentro* da caixa e precisa das mesmas medidas do texto em leitura.
  *
  * Estado de interface não entra na note: quem está em edição é decidido por quem desenha a
- * lista, um post-it de cada vez, e chega aqui como prop. O texto sobe pelo `onEditEnd` em
+ * lista, um post-it de cada vez, e chega aqui como prop. O texto sobe pelo `onEditCommit` em
  * vez de ser escrito direto na store — a store é a mesma que a persistência escuta, e a
  * decisão de quando publicar é de quem coordena, não de um post-it isolado.
  *
@@ -45,7 +46,7 @@ export function PostIt({
   selected = false,
   editing = false,
   onEditStart,
-  onEditEnd,
+  onEditCommit,
 }: PostItProps) {
   const style: CSSProperties = {
     left: note.x,
@@ -68,7 +69,7 @@ export function PostIt({
       // `note` em vez de `article`: um `article` com nome acessível vira região navegável,
       // e um quadro com dezenas de post-its viraria um quadro com dezenas de regiões.
       role="note"
-      className={`absolute overflow-hidden rounded-note p-3 text-sm break-words whitespace-pre-wrap text-note-ink shadow-note ${selected ? SELECTED_CLASS : ""}`}
+      className={`absolute overflow-hidden shadow-note ${NOTE_TEXT_CLASS} ${selected ? SELECTED_CLASS : ""}`}
       style={style}
       onDoubleClick={handleDoubleClick}
       data-testid="post-it"
@@ -85,7 +86,7 @@ export function PostIt({
           // sem chave nova o React reaproveitaria o textarea com o texto do anterior.
           key={note.id}
           initialText={note.text}
-          onFinish={(text) => onEditEnd?.(note.id, text)}
+          onCommit={(text) => onEditCommit?.(note.id, text)}
         />
       ) : (
         note.text

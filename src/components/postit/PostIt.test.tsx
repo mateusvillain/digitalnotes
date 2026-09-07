@@ -4,6 +4,7 @@ import { describe, expect, it, vi } from "vitest";
 import { Viewport } from "@/components/canvas/Viewport";
 import { NOTE_COLORS, NOTE_MAX_TEXT_LENGTH, type Note } from "@/lib/board/types";
 import { noteBackgroundColor } from "@/lib/theme/note-colors";
+import { NOTE_TEXT_CLASS } from "./note-text";
 import { PostIt } from "./PostIt";
 
 function note(overrides: Partial<Note> = {}): Note {
@@ -195,22 +196,22 @@ describe("PostIt em edição", () => {
     rerender(<PostIt note={note()} editing />);
     const edicao = screen.getByTestId("post-it-editor").className;
 
-    // Asserção de classe, não de layout: jsdom não calcula CSS. Medidas diferentes fariam o
-    // texto "pular" ao entrar na edição.
-    for (const medida of ["p-3", "text-sm", "break-words", "whitespace-pre-wrap"]) {
-      expect(leitura).toContain(medida);
-      expect(edicao).toContain(medida);
-    }
+    // As medidas vêm de uma constante só; o que este teste guarda é que os dois lados
+    // continuam bebendo dela, porque medida divergente faz o texto "pular" ao editar.
+    expect(leitura).toContain(NOTE_TEXT_CLASS);
+    expect(edicao).toContain(NOTE_TEXT_CLASS);
   });
 
   it("devolve o texto final com o id da note ao terminar", async () => {
     const user = userEvent.setup();
-    const onEditEnd = vi.fn();
-    render(<PostIt note={note({ id: "xyz789", text: "antes" })} editing onEditEnd={onEditEnd} />);
+    const onEditCommit = vi.fn();
+    render(
+      <PostIt note={note({ id: "xyz789", text: "antes" })} editing onEditCommit={onEditCommit} />,
+    );
 
     await user.keyboard(" e depois{Escape}");
 
-    expect(onEditEnd).toHaveBeenCalledExactlyOnceWith("xyz789", "antes e depois");
+    expect(onEditCommit).toHaveBeenCalledExactlyOnceWith("xyz789", "antes e depois");
   });
 
   it("remonta o editor ao mudar o post-it em edição", () => {
