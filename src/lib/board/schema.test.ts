@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 import { parseBoard } from "./schema";
-import { CANVAS_LIMIT, NOTE_MAX_TEXT_LENGTH, NOTE_SIZE, SCHEMA_VERSION } from "./types";
+import {
+  CANVAS_MAX_ABS_COORDINATE,
+  NOTE_MAX_TEXT_LENGTH,
+  NOTE_SIZE,
+  SCHEMA_VERSION,
+} from "./types";
 
 function note(overrides: Record<string, unknown> = {}) {
   return { id: "a", x: 10, y: 20, w: 200, h: 200, color: 0, text: "oi", z: 1, ...overrides };
@@ -61,14 +66,27 @@ describe("parseBoard", () => {
     expect(result.ok && result.warnings).toHaveLength(4);
   });
 
-  it("descarta notes com id duplicado, mantendo a primeira", () => {
+  it("renomeia id duplicado em vez de descartar o post-it", () => {
     const result = parseBoard({
       version: SCHEMA_VERSION,
-      notes: [note({ text: "primeira" }), note({ text: "segunda" })],
+      notes: [note({ text: "primeira" }), note({ text: "segunda" }), note({ text: "terceira" })],
     });
 
-    expect(result.ok && result.board.notes).toHaveLength(1);
-    expect(result.ok && result.board.notes[0]?.text).toBe("primeira");
+    expect(result.ok && result.board.notes.map((n) => [n.id, n.text])).toEqual([
+      ["a", "primeira"],
+      ["a-2", "segunda"],
+      ["a-3", "terceira"],
+    ]);
+    expect(result.ok && result.warnings).toHaveLength(2);
+  });
+
+  it("não colide ao renomear com um id que já existe no board", () => {
+    const result = parseBoard({
+      version: SCHEMA_VERSION,
+      notes: [note(), note({ id: "a-2" }), note({ text: "renomeada" })],
+    });
+
+    expect(result.ok && result.board.notes.map((n) => n.id)).toEqual(["a", "a-2", "a-3"]);
   });
 
   it("aplica tamanho padrão quando largura e altura faltam ou não são números", () => {
@@ -86,8 +104,8 @@ describe("parseBoard", () => {
       version: SCHEMA_VERSION,
       notes: [
         note({
-          x: -CANVAS_LIMIT * 10,
-          y: CANVAS_LIMIT * 10,
+          x: -CANVAS_MAX_ABS_COORDINATE * 10,
+          y: CANVAS_MAX_ABS_COORDINATE * 10,
           w: 1,
           h: NOTE_SIZE.maxHeight * 10,
           text: "x".repeat(NOTE_MAX_TEXT_LENGTH + 50),
@@ -96,8 +114,8 @@ describe("parseBoard", () => {
     });
 
     const parsed = result.ok ? result.board.notes[0] : undefined;
-    expect(parsed?.x).toBe(-CANVAS_LIMIT);
-    expect(parsed?.y).toBe(CANVAS_LIMIT);
+    expect(parsed?.x).toBe(-CANVAS_MAX_ABS_COORDINATE);
+    expect(parsed?.y).toBe(CANVAS_MAX_ABS_COORDINATE);
     expect(parsed?.w).toBe(NOTE_SIZE.minWidth);
     expect(parsed?.h).toBe(NOTE_SIZE.maxHeight);
     expect(parsed?.text).toHaveLength(NOTE_MAX_TEXT_LENGTH);

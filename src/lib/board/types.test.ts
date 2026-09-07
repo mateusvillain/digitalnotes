@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { NOTE_COLORS, createEmptyBoard, isNoteColor, noteColorName, SCHEMA_VERSION } from "./types";
+import { NOTE_COLORS, SCHEMA_VERSION, createEmptyBoard, isNoteColor } from "./types";
 
 describe("cores do post-it", () => {
   it("expõe exatamente 6 cores", () => {
@@ -11,9 +11,9 @@ describe("cores do post-it", () => {
     expect([-1, 6, 1.5, "0", null, undefined].some(isNoteColor)).toBe(false);
   });
 
-  it("traduz o índice para o nome da cor", () => {
-    expect(noteColorName(0)).toBe(NOTE_COLORS[0]);
-    expect(noteColorName(5)).toBe(NOTE_COLORS[5]);
+  it("aceita todo índice da paleta, sem sobrar nem faltar", () => {
+    expect(NOTE_COLORS.every((_, index) => isNoteColor(index))).toBe(true);
+    expect(isNoteColor(NOTE_COLORS.length)).toBe(false);
   });
 });
 

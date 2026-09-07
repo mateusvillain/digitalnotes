@@ -8,7 +8,7 @@
  */
 
 import {
-  CANVAS_LIMIT,
+  CANVAS_MAX_ABS_COORDINATE,
   NOTE_MAX_TEXT_LENGTH,
   NOTE_SIZE,
   SCHEMA_VERSION,
@@ -20,8 +20,9 @@ import {
 export type ParseBoardResult =
   { ok: true; board: Board; warnings: string[] } | { ok: false; error: string };
 
-/** Limita `value` ao intervalo fechado [min, max]. */
-function clamp(value: number, min: number, max: number): number {
+/** Limita `value` a [min, max]; devolve `fallback` quando não é um número utilizável. */
+function clampOr(value: unknown, min: number, max: number, fallback: number): number {
+  if (!isFiniteNumber(value)) return fallback;
   return Math.min(Math.max(value, min), max);
 }
 
@@ -36,26 +37,26 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
 /**
  * Normaliza uma note. Devolve `null` quando os campos obrigatórios não têm como ser
  * recuperados — id, posição e cor. Tamanho, z e texto têm padrão ou são ajustáveis.
+ *
+ * Exportada para quem precisa validar uma note isolada (um post-it colado, por exemplo)
+ * sem passar um board inteiro.
  */
-function normalizeNote(input: unknown): Note | null {
+export function normalizeNote(input: unknown): Note | null {
   if (!isPlainObject(input)) return null;
 
   const { id, x, y, w, h, color, text, z } = input;
 
   if (typeof id !== "string" || id.length === 0) return null;
   if (!isFiniteNumber(x) || !isFiniteNumber(y)) return null;
+
   if (!isNoteColor(color)) return null;
 
   return {
     id,
-    x: clamp(x, -CANVAS_LIMIT, CANVAS_LIMIT),
-    y: clamp(y, -CANVAS_LIMIT, CANVAS_LIMIT),
-    w: isFiniteNumber(w)
-      ? clamp(w, NOTE_SIZE.minWidth, NOTE_SIZE.maxWidth)
-      : NOTE_SIZE.defaultWidth,
-    h: isFiniteNumber(h)
-      ? clamp(h, NOTE_SIZE.minHeight, NOTE_SIZE.maxHeight)
-      : NOTE_SIZE.defaultHeight,
+    x: clampOr(x, -CANVAS_MAX_ABS_COORDINATE, CANVAS_MAX_ABS_COORDINATE, 0),
+    y: clampOr(y, -CANVAS_MAX_ABS_COORDINATE, CANVAS_MAX_ABS_COORDINATE, 0),
+    w: clampOr(w, NOTE_SIZE.minWidth, NOTE_SIZE.maxWidth, NOTE_SIZE.defaultWidth),
+    h: clampOr(h, NOTE_SIZE.minHeight, NOTE_SIZE.maxHeight, NOTE_SIZE.defaultHeight),
     color,
     text: typeof text === "string" ? text.slice(0, NOTE_MAX_TEXT_LENGTH) : "",
     z: isFiniteNumber(z) ? Math.trunc(z) : 0,
@@ -69,6 +70,14 @@ function normalizeNote(input: unknown): Note | null {
  * de significado, e abrir um link novo numa versão antiga do app com dados silenciosamente
  * errados é pior do que avisar.
  */
+/** Deriva um id livre a partir de `id`, sufixando até não colidir com `taken`. */
+function uniqueId(id: string, taken: ReadonlySet<string>): string {
+  for (let suffix = 2; ; suffix += 1) {
+    const candidate = `${id}-${suffix}`;
+    if (!taken.has(candidate)) return candidate;
+  }
+}
+
 export function parseBoard(input: unknown): ParseBoardResult {
   if (!isPlainObject(input)) {
     return { ok: false, error: "Board inválido: esperava um objeto." };
@@ -100,8 +109,13 @@ export function parseBoard(input: unknown): ParseBoardResult {
       continue;
     }
     if (seenIds.has(note.id)) {
-      warnings.push(`Post-it na posição ${index} descartado: id "${note.id}" duplicado.`);
-      continue;
+      // Id duplicado é dado recuperável: o conteúdo do post-it está intacto, só o
+      // identificador colide. Renomear preserva o que o usuário escreveu; descartar não.
+      const id = uniqueId(note.id, seenIds);
+      warnings.push(
+        `Post-it na posição ${index}: id "${note.id}" duplicado, renomeado para "${id}".`,
+      );
+      note.id = id;
     }
     seenIds.add(note.id);
     normalized.push(note);
