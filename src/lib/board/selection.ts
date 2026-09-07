@@ -8,7 +8,7 @@
  * inventar a sua.
  */
 
-import type { Rect } from "@/lib/canvas/coords";
+import { rectsIntersect, type Rect } from "@/lib/canvas/coords";
 import type { Note } from "./types";
 
 /** Ids marcados. Conjunto, e não lista: pertencer é a única pergunta que se faz a ela. */
@@ -28,30 +28,14 @@ export function toggle(selection: Selection, id: string): Selection {
   return next;
 }
 
-/** Tira da seleção ids que não existem mais no board, depois de uma remoção (#19). */
-export function keepExisting(selection: Selection, notes: readonly Note[]): Selection {
-  const alive = new Set(notes.map((note) => note.id));
-  return new Set([...selection].filter((id) => alive.has(id)));
-}
-
 /**
  * Sobreposição entre um post-it e um retângulo.
  *
- * Estritamente maior que zero: encostar não é intersectar. Sem isso, um retângulo de área
- * nula — o que um clique sem arrasto produz — selecionaria todo post-it cuja borda passasse
- * pelo ponto clicado.
+ * Uma note *é* um retângulo em coordenadas de canvas; a conta em si mora na geometria, com
+ * os outros usos que ela vai ter em arrastar (#15) e redimensionar (#16).
  */
 export function intersects(note: Note, rect: Rect): boolean {
-  // Retângulo sem área é um ponto ou uma linha, e não toca nada — nem o post-it sobre o
-  // qual ele por acaso caiu. É o que um arrasto de um eixo só, ou um clique, produz.
-  if (rect.w <= 0 || rect.h <= 0) return false;
-
-  return (
-    note.x < rect.x + rect.w &&
-    note.x + note.w > rect.x &&
-    note.y < rect.y + rect.h &&
-    note.y + note.h > rect.y
-  );
+  return rectsIntersect(note, rect);
 }
 
 /** Ids dos post-its que o retângulo toca. */

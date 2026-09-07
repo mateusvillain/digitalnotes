@@ -375,9 +375,38 @@ describe("Viewport — clique no fundo", () => {
 
     fireEvent.pointerDown(surface, { pointerId: 1, button: 0, clientX: 30, clientY: 30 });
     fireEvent.pointerMove(surface, { pointerId: 1, clientX: 32, clientY: 31 });
-    fireEvent.pointerUp(surface, { pointerId: 1 });
+    fireEvent.pointerUp(surface, { pointerId: 1, clientX: 32, clientY: 31 });
 
     expect(onBackgroundClick).toHaveBeenCalledOnce();
+  });
+
+  it("não confunde arrasto lento com clique", () => {
+    const { surface, onBackgroundClick } = setupClique();
+
+    fireEvent.pointerDown(surface, { pointerId: 1, button: 0, clientX: 30, clientY: 30 });
+    // Passos de dois pixels, o caso normal de mouse. Uma folga aplicada passo a passo nunca
+    // veria movimento nenhum, e o arrasto terminaria limpando a seleção.
+    for (let passo = 1; passo <= 10; passo += 1) {
+      fireEvent.pointerMove(surface, {
+        pointerId: 1,
+        clientX: 30 + passo * 2,
+        clientY: 30 + passo * 2,
+      });
+    }
+    fireEvent.pointerUp(surface, { pointerId: 1, clientX: 50, clientY: 50 });
+
+    expect(onBackgroundClick).not.toHaveBeenCalled();
+  });
+
+  it("cancelamento do sistema não é clique", () => {
+    const { surface, onBackgroundClick } = setupClique();
+
+    fireEvent.pointerDown(surface, { pointerId: 1, button: 0, clientX: 30, clientY: 30 });
+    fireEvent.pointerCancel(surface, { pointerId: 1 });
+
+    // Um gesto interrompido pelo SO não decidiu nada; limpar a seleção por causa dele seria
+    // uma ação que o usuário não pediu.
+    expect(onBackgroundClick).not.toHaveBeenCalled();
   });
 
   it("não confunde navegar pelo quadro com clicar no fundo", () => {
@@ -391,15 +420,17 @@ describe("Viewport — clique no fundo", () => {
     expect(onBackgroundClick).not.toHaveBeenCalled();
   });
 
-  it("continua sendo arrasto mesmo se o ponteiro voltar ao ponto de partida", () => {
+  it("trata como clique o arrasto que volta exatamente ao ponto de partida", () => {
     const { surface, onBackgroundClick } = setupClique();
 
     fireEvent.pointerDown(surface, { pointerId: 1, button: 0, clientX: 30, clientY: 30 });
     fireEvent.pointerMove(surface, { pointerId: 1, clientX: 200, clientY: 200 });
     fireEvent.pointerMove(surface, { pointerId: 1, clientX: 30, clientY: 30 });
-    fireEvent.pointerUp(surface, { pointerId: 1 });
+    fireEvent.pointerUp(surface, { pointerId: 1, clientX: 30, clientY: 30 });
 
-    expect(onBackgroundClick).not.toHaveBeenCalled();
+    // Voltar ao ponto de partida devolve o gesto à condição de clique: o quadro terminou
+    // onde começou, e limpar a seleção é o que o usuário veria como resultado do clique.
+    expect(onBackgroundClick).toHaveBeenCalledOnce();
   });
 
   it("ignora o clique nascido em algo desenhado sobre o fundo", () => {

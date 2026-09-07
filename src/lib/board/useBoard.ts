@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useState, useSyncExternalStore } from "react";
+import { useCallback, useRef, useState, useSyncExternalStore } from "react";
 import { topLeftCenteredAt, type Point, type Rect } from "@/lib/canvas/coords";
 import { EMPTY_SELECTION, notesInRect, selectOnly, toggle, type Selection } from "./selection";
 import { createBoardStore } from "./store";
@@ -18,7 +18,9 @@ export interface BoardApi {
   startEditing: (id: string) => void;
   /** Marca um post-it. Com `additive`, acrescenta ou tira em vez de trocar a seleção. */
   selectNote: (id: string, additive?: boolean) => void;
-  /** Troca a seleção pelos post-its que o retângulo toca. */
+  /** Marca o começo de um retângulo de seleção, guardando o que já estava marcado. */
+  beginRectSelection: () => void;
+  /** Acrescenta ao que já estava marcado os post-its que o retângulo toca. */
   selectInRect: (rect: Rect) => void;
   clearSelection: () => void;
   /** Grava o texto e fecha a edição. */
@@ -40,6 +42,8 @@ export function useBoard(): BoardApi {
   const [store] = useState(createBoardStore);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [selection, setSelection] = useState<Selection>(EMPTY_SELECTION);
+  /** A seleção de antes do retângulo começar, para o gesto poder ser refeito enquanto anda. */
+  const selectionBeforeRect = useRef<Selection>(EMPTY_SELECTION);
 
   // O mesmo `getBoard` nos dois argumentos: o board inicial no servidor é o mesmo objeto do
   // primeiro render no cliente, então não há divergência de hidratação a conciliar.
@@ -69,22 +73,38 @@ export function useBoard(): BoardApi {
 
   const selectNote = useCallback(
     (id: string, additive = false) => {
+      let promoted = true;
+
       if (additive) {
-        setSelection((current) => toggle(current, id));
-        return;
+        setSelection((current) => {
+          // Shift-clique tira tanto quanto põe, e tirar não é motivo para promover.
+          promoted = !current.has(id);
+          return toggle(current, id);
+        });
+      } else {
+        setSelection(selectOnly(id));
       }
 
-      setSelection(selectOnly(id));
       // Selecionar traz para a frente, e isso **é** do board: a ordem de empilhamento vai
-      // serializada. Só na seleção simples — promover em lote reordenaria post-its que o
-      // usuário não escolheu, um a um, numa ordem que ele não pediu.
-      store.bringToFront(id);
+      // serializada. Vale para o clique e para o shift-clique, porque nos dois o usuário
+      // apontou para aquele post-it, naquela ordem.
+      if (promoted) store.bringToFront(id);
     },
     [store],
   );
 
+  const beginRectSelection = useCallback(() => {
+    selectionBeforeRect.current = selection;
+  }, [selection]);
+
   const selectInRect = useCallback(
-    (rect: Rect) => setSelection(notesInRect(store.getBoard().notes, rect)),
+    (rect: Rect) => {
+      // Soma ao que já estava marcado, como o shift-clique — é o mesmo Shift que abre o
+      // gesto. Redesenhar o retângulo recalcula a partir do que havia antes dele, senão
+      // encolher o retângulo nunca desmarcaria ninguém.
+      const tocados = notesInRect(store.getBoard().notes, rect);
+      setSelection(new Set([...selectionBeforeRect.current, ...tocados]));
+    },
     [store],
   );
 
@@ -106,6 +126,7 @@ export function useBoard(): BoardApi {
     startEditing,
     commitText,
     selectNote,
+    beginRectSelection,
     selectInRect,
     clearSelection,
   };

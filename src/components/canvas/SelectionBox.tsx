@@ -1,3 +1,5 @@
+"use client";
+
 import type { Rect } from "@/lib/canvas/coords";
 
 interface SelectionBoxProps {

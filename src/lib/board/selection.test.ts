@@ -1,13 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Rect } from "@/lib/canvas/coords";
-import {
-  EMPTY_SELECTION,
-  intersects,
-  keepExisting,
-  notesInRect,
-  selectOnly,
-  toggle,
-} from "./selection";
+import { EMPTY_SELECTION, intersects, notesInRect, selectOnly, toggle } from "./selection";
 import type { Note } from "./types";
 
 function note(overrides: Partial<Note> = {}): Note {
@@ -40,15 +33,6 @@ describe("toggle", () => {
 
     // A seleção é valor, não caixa: quem a segura não pode vê-la mudar por baixo.
     expect([...antes]).toEqual(["aaa111"]);
-  });
-});
-
-describe("keepExisting", () => {
-  it("esquece ids que sumiram do board", () => {
-    const selecao = new Set(["aaa111", "bbb222"]);
-
-    // Depois de apagar (#19), a seleção não pode continuar apontando para o que não existe.
-    expect([...keepExisting(selecao, [note({ id: "bbb222" })])]).toEqual(["bbb222"]);
   });
 });
 

@@ -23,7 +23,7 @@ function arrastaOFundo(dx: number, dy: number): void {
 
   fireEvent.pointerDown(surface, { pointerId: 1, button: 0, clientX: 0, clientY: 0 });
   fireEvent.pointerMove(surface, { pointerId: 1, clientX: dx, clientY: dy });
-  fireEvent.pointerUp(surface, { pointerId: 1 });
+  fireEvent.pointerUp(surface, { pointerId: 1, clientX: dx, clientY: dy });
 }
 
 function postIts(): HTMLElement[] {
@@ -237,10 +237,54 @@ describe("Whiteboard — seleção", () => {
     criaPostIt(150, 150);
     criaPostIt(900, 150);
     const perto = postIt(0).dataset.noteId;
+    cliqueNoFundo();
 
     // Os post-its têm 200 de lado, então o primeiro ocupa de 50 a 250 e o segundo, de 800 a
     // 1000. O retângulo só alcança o primeiro.
     retanguloDeSelecao([0, 0], [400, 400]);
+
+    expect(selecionados()).toEqual([perto]);
+  });
+
+  it("o retângulo soma ao que já estava selecionado", () => {
+    render(<Whiteboard />);
+    criaPostIt(150, 150);
+    criaPostIt(900, 150);
+
+    // O segundo continua selecionado desde que nasceu; o retângulo alcança só o primeiro.
+    retanguloDeSelecao([0, 0], [400, 400]);
+
+    // O Shift acrescenta à seleção no clique; abrir o retângulo com ele e substituir tudo
+    // seria o mesmo modificador com dois significados.
+    expect(selecionados()).toHaveLength(2);
+  });
+
+  it("encolher o retângulo desmarca quem ele deixou de tocar", () => {
+    render(<Whiteboard />);
+    criaPostIt(150, 150);
+    criaPostIt(900, 150);
+    const perto = postIt(0).dataset.noteId;
+    cliqueNoFundo();
+
+    const surface = screen.getByTestId("viewport-surface");
+    surface.setPointerCapture = vi.fn();
+    surface.releasePointerCapture = vi.fn();
+    surface.hasPointerCapture = vi.fn(() => true);
+
+    fireEvent.pointerDown(surface, {
+      pointerId: 1,
+      button: 0,
+      shiftKey: true,
+      clientX: 0,
+      clientY: 0,
+    });
+    fireEvent.pointerMove(surface, { pointerId: 1, clientX: 1100, clientY: 400 });
+    expect(selecionados()).toHaveLength(2);
+
+    // Recalcula a partir do que havia antes do gesto, e não do quadro anterior: sem isso o
+    // retângulo só cresceria.
+    fireEvent.pointerMove(surface, { pointerId: 1, clientX: 400, clientY: 400 });
+    fireEvent.pointerUp(surface, { pointerId: 1, clientX: 400, clientY: 400 });
 
     expect(selecionados()).toEqual([perto]);
   });

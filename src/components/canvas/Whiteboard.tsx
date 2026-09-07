@@ -45,6 +45,7 @@ export function Whiteboard() {
           zoomBy={controls.zoomBy}
           onBackgroundDoubleClick={board.createNoteAt}
           onBackgroundClick={board.clearSelection}
+          onSelectionStart={board.beginRectSelection}
           onSelectionRect={board.selectInRect}
         >
           <Board

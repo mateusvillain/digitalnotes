@@ -170,21 +170,69 @@ describe("useBoard — seleção", () => {
     expect(promovido.z).toBeGreaterThan(zDoSegundo);
   });
 
-  it("não reordena o board ao acrescentar à seleção", () => {
+  it("também traz para a frente o post-it acrescentado com shift", () => {
     const { hook, primeiro, segundo } = comDoisPostIts();
+
+    act(() => hook.result.current.selectNote(segundo.id));
+    act(() => hook.result.current.selectNote(primeiro.id, true));
+
+    // Shift-clique também é apontar para um post-it, e numa ordem que o usuário escolheu.
+    const promovido = defined(
+      hook.result.current.notes.find((note) => note.id === primeiro.id),
+      "o post-it promovido",
+    );
+    expect(promovido.z).toBeGreaterThan(
+      defined(
+        hook.result.current.notes.find((note) => note.id === segundo.id),
+        "o outro post-it",
+      ).z,
+    );
+  });
+
+  it("não reordena o board ao tirar um post-it da seleção", () => {
+    const { hook, primeiro, segundo } = comDoisPostIts();
+    act(() => hook.result.current.selectNote(primeiro.id));
+    act(() => hook.result.current.selectNote(segundo.id, true));
     const zAntes = hook.result.current.notes.map((note) => note.z);
 
-    act(() => hook.result.current.selectNote(primeiro.id, true));
     act(() => hook.result.current.selectNote(segundo.id, true));
+
+    // Desmarcar não é apontar: trazer para a frente o que se acabou de tirar da seleção
+    // seria o gesto fazendo o contrário do que diz.
+    expect([...hook.result.current.selection]).toEqual([primeiro.id]);
+    expect(hook.result.current.notes.map((note) => note.z)).toEqual(zAntes);
+  });
+
+  it("o retângulo não reordena o board", () => {
+    const { hook } = comDoisPostIts();
+    const zAntes = hook.result.current.notes.map((note) => note.z);
+
+    act(() => hook.result.current.selectInRect({ x: -1000, y: -1000, w: 3000, h: 3000 }));
 
     // Promover em lote reordenaria, um a um, post-its que o usuário não escolheu — numa
     // ordem que ele não pediu.
+    expect([...hook.result.current.selection]).toHaveLength(2);
     expect(hook.result.current.notes.map((note) => note.z)).toEqual(zAntes);
+  });
+
+  it("o retângulo soma ao que já estava marcado, a partir do começo do gesto", () => {
+    const { hook, primeiro, segundo } = comDoisPostIts();
+    act(() => hook.result.current.selectNote(segundo.id));
+
+    act(() => hook.result.current.beginRectSelection());
+    act(() => hook.result.current.selectInRect({ x: -150, y: -150, w: 300, h: 300 }));
+    expect([...hook.result.current.selection].sort()).toEqual([primeiro.id, segundo.id].sort());
+
+    // Encolher o retângulo até não tocar mais ninguém devolve a seleção ao que ela era.
+    act(() => hook.result.current.selectInRect({ x: 5000, y: 5000, w: 10, h: 10 }));
+    expect([...hook.result.current.selection]).toEqual([segundo.id]);
   });
 
   it("seleciona pelo retângulo quem ele toca, e só", () => {
     const { hook, primeiro, segundo } = comDoisPostIts();
 
+    act(() => hook.result.current.clearSelection());
+    act(() => hook.result.current.beginRectSelection());
     // O primeiro nasce centrado em (0,0), o segundo em (500,0).
     act(() => hook.result.current.selectInRect({ x: -150, y: -150, w: 300, h: 300 }));
 
@@ -192,9 +240,10 @@ describe("useBoard — seleção", () => {
     expect(hook.result.current.selection.has(segundo.id)).toBe(false);
   });
 
-  it("retângulo que não toca nada esvazia a seleção", () => {
-    const { hook, primeiro } = comDoisPostIts();
-    act(() => hook.result.current.selectNote(primeiro.id));
+  it("retângulo que não toca nada não marca ninguém", () => {
+    const { hook } = comDoisPostIts();
+    act(() => hook.result.current.clearSelection());
+    act(() => hook.result.current.beginRectSelection());
 
     act(() => hook.result.current.selectInRect({ x: 5000, y: 5000, w: 10, h: 10 }));
 

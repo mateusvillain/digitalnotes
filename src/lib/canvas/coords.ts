@@ -97,6 +97,30 @@ export function rectFromCorners(a: Point, b: Point): Rect {
   };
 }
 
+/**
+ * Sobreposição entre dois retângulos.
+ *
+ * Estritamente maior que zero: encostar não é intersectar, e retângulo sem área não toca
+ * nada — nem aquele sobre o qual ele por acaso caiu. É o que um arrasto de um eixo só, ou
+ * um clique, produz.
+ */
+export function rectsIntersect(a: Rect, b: Rect): boolean {
+  if (a.w <= 0 || a.h <= 0 || b.w <= 0 || b.h <= 0) return false;
+
+  return a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y;
+}
+
+/**
+ * Distância entre dois pontos, em linha reta.
+ *
+ * Existe para separar clicar de arrastar: a conta precisa ser sobre o deslocamento desde a
+ * origem do gesto, e não sobre o passo de cada evento — um arrasto lento anda três pixels
+ * por vez e nunca passaria de uma folga aplicada passo a passo.
+ */
+export function distance(a: Point, b: Point): number {
+  return Math.hypot(a.x - b.x, a.y - b.y);
+}
+
 /** Desloca o viewport em pixels de tela. */
 export function panBy(viewport: Viewport, dx: number, dy: number): Viewport {
   return { ...viewport, x: viewport.x + dx, y: viewport.y + dy };
