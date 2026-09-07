@@ -63,7 +63,7 @@ export function Whiteboard() {
   );
 
   /** Um gesto de ponteiro em curso sobre um post-it: arrastar ou redimensionar. */
-  const emGesto = board.dragOffset !== null || board.resizing !== null;
+  const inGesture = board.dragOffset !== null || board.resizing !== null;
 
   /** Centro da área visível, usado como âncora do zoom por botão. */
   const center = useCallback((): Point => {
@@ -122,7 +122,7 @@ export function Whiteboard() {
           então uma barra visível durante um arraste ficaria parada enquanto os post-its
           andam por baixo dela.
         */}
-        {emGesto ? null : (
+        {inGesture ? null : (
           <div className="pointer-events-none absolute inset-0">
             <SelectionToolbar rects={board.selected} viewport={controls.viewport}>
               <ColorPicker value={board.selectionColor} onChange={board.colorSelection} />

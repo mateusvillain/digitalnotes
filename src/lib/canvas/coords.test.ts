@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   boundingRect,
+  rectToScreen,
   canvasToScreen,
   clampScale,
   distance,
@@ -205,5 +206,42 @@ describe("boundingRect", () => {
     const b = { x: -5, y: 40, w: 10, h: 10 };
 
     expect(boundingRect([a, b])).toEqual(boundingRect([b, a]));
+  });
+});
+
+describe("rectToScreen", () => {
+  it("é identidade no viewport identidade", () => {
+    expect(rectToScreen({ x: 10, y: 20, w: 30, h: 40 }, IDENTITY_VIEWPORT)).toEqual({
+      x: 10,
+      y: 20,
+      w: 30,
+      h: 40,
+    });
+  });
+
+  it("escala posição e dimensões juntas", () => {
+    expect(rectToScreen({ x: 10, y: 20, w: 30, h: 40 }, { x: 0, y: 0, scale: 2 })).toEqual({
+      x: 20,
+      y: 40,
+      w: 60,
+      h: 80,
+    });
+  });
+
+  it("desloca pelo pan sem esticar as dimensões", () => {
+    expect(rectToScreen({ x: 10, y: 20, w: 30, h: 40 }, { x: 100, y: -50, scale: 1 })).toEqual({
+      x: 110,
+      y: -30,
+      w: 30,
+      h: 40,
+    });
+  });
+
+  it("concorda com canvasToScreen no canto", () => {
+    const viewport = { x: 17, y: -3, scale: 1.5 };
+    const rect = { x: 10, y: 20, w: 30, h: 40 };
+
+    const { x, y } = rectToScreen(rect, viewport);
+    expect({ x, y }).toEqual(canvasToScreen(rect, viewport));
   });
 });

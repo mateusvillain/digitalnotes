@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useState, type ReactNode } from "react";
-import { boundingRect, canvasToScreen, type Rect, type Viewport } from "@/lib/canvas/coords";
+import { boundingRect, rectToScreen, type Rect, type Viewport } from "@/lib/canvas/coords";
 
 interface SelectionToolbarProps {
   /** Caixas dos post-its marcados, em coordenadas de canvas. Vazio esconde a barra. */
@@ -37,23 +37,22 @@ export function SelectionToolbar({ rects, viewport, children }: SelectionToolbar
   const bounds = boundingRect(rects);
   if (bounds === null) return null;
 
-  const topLeft = canvasToScreen(bounds, viewport);
-  const width = bounds.w * viewport.scale;
-  const acima = topLeft.y - GAP - height >= 0;
+  const box = rectToScreen(bounds, viewport);
+  const above = box.y - GAP - height >= 0;
 
   return (
     <div
       ref={measure}
       className="pointer-events-auto absolute z-20 w-max rounded-control border border-border bg-surface p-1 shadow-control"
       style={{
-        left: topLeft.x + width / 2,
-        top: acima ? topLeft.y - GAP : topLeft.y + bounds.h * viewport.scale + GAP,
+        left: box.x + box.w / 2,
+        top: above ? box.y - GAP : box.y + box.h + GAP,
         // Centrar pela largura própria, que só o browser conhece; para cima, a barra sobe a
         // própria altura para o `top` valer como a borda de baixo dela.
-        transform: acima ? "translate(-50%, -100%)" : "translate(-50%, 0)",
+        transform: above ? "translate(-50%, -100%)" : "translate(-50%, 0)",
       }}
       data-testid="selection-toolbar"
-      data-placement={acima ? "above" : "below"}
+      data-placement={above ? "above" : "below"}
     >
       {children}
     </div>

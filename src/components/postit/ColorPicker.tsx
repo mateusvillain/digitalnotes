@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, type KeyboardEvent } from "react";
+import { useRef, useState, type KeyboardEvent } from "react";
 import { NOTE_COLORS, type NoteColor } from "@/lib/board/types";
 import { noteBackgroundColor, noteColorLabel } from "@/lib/theme/note-colors";
 
@@ -18,62 +18,67 @@ function wrap(index: number, length: number): number {
 /**
  * Os seis quadradinhos de cor da paleta.
  *
- * É um `radiogroup`, e não uma fila de botões: a pergunta é "qual destas seis", exatamente
- * o que o papel descreve. Um leitor de tela anuncia "1 de 6" e o estado marcado sem que
- * seja preciso inventar rótulo para isso.
+ * É um `radiogroup`, e não uma fila de botões soltos: a pergunta é "qual destas seis",
+ * exatamente o que o papel descreve. Um leitor de tela anuncia "1 de 6" e o estado marcado
+ * sem que seja preciso inventar rótulo para isso.
  *
  * Por ser um radiogroup, a navegação é a que o papel exige: **um só** ponto de parada de Tab
- * para o grupo inteiro, e as setas andando entre as cores. Uma fila de seis botões
- * tabuláveis obrigaria a passar por todas as cores para sair do seletor.
+ * para o grupo inteiro, e as setas andando entre as cores. Uma fila de seis itens tabuláveis
+ * obrigaria a passar por todas as cores para sair do seletor.
+ *
+ * Cada quadradinho é um `button` de verdade, com `role="radio"` por cima. Um `div` com o
+ * papel teria exigido reimplementar à mão o que o botão já dá: ativar por Enter, ativar por
+ * espaço, e o anel de foco que o navegador desenha sozinho.
  *
  * Não sabe nada sobre post-it nem sobre seleção: recebe a cor marcada e avisa quando outra
  * foi escolhida. É o que o deixa testável sem um quadro em volta.
  */
 export function ColorPicker({ value, onChange }: ColorPickerProps) {
   const groupRef = useRef<HTMLDivElement>(null);
+  /**
+   * Onde o foco esteve por último dentro do grupo.
+   *
+   * O ponto de parada de Tab segue o foco, e não a cor marcada, porque o papel pede isso e
+   * porque as duas coisas se separam: marcar dois post-its de cores diferentes deixa a
+   * seleção sem cor comum, e um ponto de parada preso ao valor saltaria para o primeiro
+   * quadradinho enquanto o foco continua onde estava.
+   */
+  const [focused, setFocused] = useState<NoteColor | null>(null);
 
   /**
-   * Onde o Tab entra no grupo.
-   *
-   * Sem cor marcada — seleção de cores diferentes — o ponto de parada é o primeiro item, ou
-   * o grupo inteiro ficaria fora da ordem de tabulação e inalcançável pelo teclado.
+   * Sem foco nem cor marcada o ponto de parada é o primeiro item, ou o grupo inteiro ficaria
+   * fora da ordem de tabulação e inalcançável pelo teclado.
    */
-  const tabStop = value ?? 0;
+  const tabStop = focused ?? value ?? 0;
 
   /** Move o foco e já escolhe a cor: num radiogroup, andar com a seta é escolher. */
-  function focusColor(color: NoteColor): void {
+  function selectColor(color: NoteColor): void {
     const radios = groupRef.current?.querySelectorAll<HTMLElement>('[role="radio"]');
     radios?.[color]?.focus();
     onChange(color);
   }
 
-  function handleKeyDown(event: KeyboardEvent<HTMLDivElement>, color: NoteColor): void {
-    const last = NOTE_COLORS.length - 1;
+  function handleKeyDown(event: KeyboardEvent<HTMLButtonElement>, color: NoteColor): void {
+    const next = wrap(color + 1, NOTE_COLORS.length);
+    const previous = wrap(color - 1, NOTE_COLORS.length);
 
     // As quatro setas, e não só as horizontais: os quadradinhos ficam numa linha só, mas
     // quem navega por teclado não vê a disposição, e o papel aceita os dois eixos.
-    const destino: Record<string, number | undefined> = {
-      ArrowRight: wrap(color + 1, NOTE_COLORS.length),
-      ArrowDown: wrap(color + 1, NOTE_COLORS.length),
-      ArrowLeft: wrap(color - 1, NOTE_COLORS.length),
-      ArrowUp: wrap(color - 1, NOTE_COLORS.length),
+    const target: Record<string, number | undefined> = {
+      ArrowRight: next,
+      ArrowDown: next,
+      ArrowLeft: previous,
+      ArrowUp: previous,
       Home: 0,
-      End: last,
+      End: NOTE_COLORS.length - 1,
     };
 
-    const proximo = destino[event.key];
-    if (proximo !== undefined) {
-      // Sem isto a seta rola o quadro por baixo do seletor, e Home salta para o topo.
-      event.preventDefault();
-      focusColor(proximo as NoteColor);
-      return;
-    }
+    const destination = target[event.key];
+    if (destination === undefined) return;
 
-    // Espaço escolhe sem mover, para quem chegou ao grupo pelo Tab e não quer andar.
-    if (event.key === " ") {
-      event.preventDefault();
-      onChange(color);
-    }
+    // Sem isto a seta rola o quadro por baixo do seletor, e Home salta para o topo da página.
+    event.preventDefault();
+    selectColor(destination as NoteColor);
   }
 
   return (
@@ -89,17 +94,17 @@ export function ColorPicker({ value, onChange }: ColorPickerProps) {
         const selected = value === color;
 
         return (
-          <div
+          <button
             key={color}
+            type="button"
             role="radio"
             aria-checked={selected}
             aria-label={noteColorLabel(color)}
             tabIndex={color === tabStop ? 0 : -1}
-            // O clique escolhe, mas não leva o foco junto: o ponteiro já disse o que queria,
-            // e mover o foco daqui roubaria o cursor de quem está escrevendo num post-it.
             onClick={() => onChange(color)}
             onKeyDown={(event) => handleKeyDown(event, color)}
-            className={`h-6 w-6 cursor-pointer rounded-control border transition-shadow ${
+            onFocus={() => setFocused(color)}
+            className={`h-6 w-6 rounded-control border transition-shadow ${
               selected
                 ? "border-selection ring-2 ring-selection"
                 : "border-border hover:border-ink-muted"

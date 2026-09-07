@@ -106,6 +106,18 @@ export function rectFromCorners(a: Point, b: Point): Rect {
 }
 
 /**
+ * Converte um retângulo do canvas para a tela.
+ *
+ * A posição sai de {@link canvasToScreen} e as dimensões escalam junto. Mora aqui, com o
+ * resto da conversão, para quem posiciona um controle pela caixa de uma seleção não
+ * precisar refazer a multiplicação pela escala na mão.
+ */
+export function rectToScreen(rect: Rect, viewport: Viewport): Rect {
+  const { x, y } = canvasToScreen(rect, viewport);
+  return { x, y, w: rect.w * viewport.scale, h: rect.h * viewport.scale };
+}
+
+/**
  * Menor retângulo que contém todos os dados, ou `null` para uma lista vazia.
  *
  * `null`, e não um retângulo degenerado na origem: "nada selecionado" e "seleção colada no

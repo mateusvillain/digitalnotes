@@ -651,6 +651,27 @@ describe("Whiteboard — cor do post-it", () => {
     expect(seletor()).not.toBeNull();
   });
 
+  it("dá para chegar ao seletor e trocar a cor só pelo teclado", async () => {
+    const user = userEvent.setup();
+    render(<Whiteboard />);
+    criaPostIt(400, 400);
+    cliqueNoFundoLimpando();
+
+    // Do zero: focar o post-it, marcá-lo, tabular até o seletor e andar até uma cor.
+    postIt(0).focus();
+    await user.keyboard("{Enter}");
+    expect(postIt(0).dataset.selected).toBe("true");
+
+    await user.tab();
+    expect(screen.getAllByRole("radio").includes(document.activeElement as HTMLElement)).toBe(true);
+
+    await user.keyboard("{ArrowRight}");
+
+    // Sem isto o critério de acessibilidade seria decorativo: o seletor é navegável, mas
+    // nada que dependa de seleção chegaria até ele.
+    expect(corDe(0)).toBe("var(--color-note-pink)");
+  });
+
   it("esconde o seletor enquanto se arrasta um post-it", () => {
     render(<Whiteboard />);
     criaPostIt(400, 400);

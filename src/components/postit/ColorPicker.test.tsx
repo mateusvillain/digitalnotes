@@ -73,6 +73,64 @@ describe("ColorPicker — teclado", () => {
     expect(cores().filter((cor) => cor.getAttribute("tabindex") === "0")).toHaveLength(1);
   });
 
+  it("o Tab alcança o grupo vindo de fora", async () => {
+    const user = userEvent.setup();
+    render(
+      <>
+        <button type="button">antes</button>
+        <ColorPicker value={2} onChange={vi.fn()} />
+      </>,
+    );
+    screen.getByRole("button", { name: "antes" }).focus();
+
+    await user.tab();
+
+    // Uma parada só, e ela existe: sem isto o seletor inteiro ficaria inalcançável.
+    expect(document.activeElement).toBe(cores()[2]);
+  });
+
+  it("o Tab sai do grupo pela outra ponta", async () => {
+    const user = userEvent.setup();
+    render(
+      <>
+        <ColorPicker value={2} onChange={vi.fn()} />
+        <button type="button">depois</button>
+      </>,
+    );
+    cores()[2]?.focus();
+
+    await user.tab();
+
+    // Não passa pelas outras cinco cores no caminho.
+    expect(document.activeElement).toBe(screen.getByRole("button", { name: "depois" }));
+  });
+
+  it("o ponto de parada segue o foco, e não a cor marcada", async () => {
+    const user = userEvent.setup();
+    const { rerender } = render(<ColorPicker value={0} onChange={vi.fn()} />);
+    cores()[0]?.focus();
+    await user.keyboard("{ArrowRight}{ArrowRight}");
+
+    // Marcar um segundo post-it de outra cor deixa a seleção sem cor comum.
+    rerender(<ColorPicker value={null} onChange={vi.fn()} />);
+
+    // O foco continua onde estava; prender o ponto de parada ao valor o deixaria com
+    // tabIndex -1, e o Tab seguinte sairia do grupo por uma porta que não existe.
+    expect(cores()[2]?.getAttribute("tabindex")).toBe("0");
+    expect(document.activeElement).toBe(cores()[2]);
+  });
+
+  it("o Enter escolhe a cor focada", async () => {
+    const user = userEvent.setup();
+    const onChange = vi.fn();
+    render(<ColorPicker value={0} onChange={onChange} />);
+
+    cores()[3]?.focus();
+    await user.keyboard("{Enter}");
+
+    expect(onChange).toHaveBeenCalledWith(3);
+  });
+
   it("o Tab entra na cor marcada", () => {
     render(<ColorPicker value={4} onChange={vi.fn()} />);
 

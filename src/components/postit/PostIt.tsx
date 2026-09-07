@@ -1,6 +1,13 @@
 "use client";
 
-import { memo, useRef, type CSSProperties, type MouseEvent, type PointerEvent } from "react";
+import {
+  memo,
+  useRef,
+  type CSSProperties,
+  type KeyboardEvent,
+  type MouseEvent,
+  type PointerEvent,
+} from "react";
 import type { Note } from "@/lib/board/types";
 import type { Point, Size } from "@/lib/canvas/coords";
 import { useDrag } from "@/lib/canvas/useDrag";
@@ -171,6 +178,24 @@ function PostItComponent({
     pendingCollapse.current = false;
   }
 
+  /**
+   * Teclado: selecionar e entrar em edição sem ponteiro.
+   *
+   * Sem isto a seleção seria só do mouse, e tudo que depende dela — o seletor de cor (#17)
+   * à frente — ficaria inalcançável para quem navega por teclado. Enter e espaço marcam,
+   * como o clique; Enter num post-it já marcado abre o texto, como o duplo clique.
+   */
+  function handleKeyDown(event: KeyboardEvent<HTMLDivElement>): void {
+    if (editing) return;
+
+    if (event.key === "Enter" || event.key === " ") {
+      // Espaço rolaria a página, e Enter dispararia o clique padrão do navegador por cima.
+      event.preventDefault();
+      if (event.key === "Enter" && selected) onEditStart?.(note.id);
+      else onSelect?.(note.id, event.shiftKey);
+    }
+  }
+
   function handleDoubleClick(event: MouseEvent<HTMLDivElement>): void {
     // O evento para aqui: no fundo do canvas, duplo clique cria um post-it (#13), e editar
     // um existente não pode criar outro atrás dele.
@@ -190,6 +215,10 @@ function PostItComponent({
       onPointerUp={handlePointerUp}
       onPointerCancel={handlePointerCancel}
       onDoubleClick={handleDoubleClick}
+      onKeyDown={handleKeyDown}
+      // Tabulável para o teclado alcançar o post-it. Enquanto se escreve o ponto de parada é
+      // o próprio editor, e um segundo aqui faria o Tab sair do texto para a caixa em volta.
+      tabIndex={editing ? -1 : 0}
       data-testid="post-it"
       data-note-id={note.id}
       data-selected={selected}
