@@ -1,8 +1,8 @@
 import { render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { Viewport } from "@/components/canvas/Viewport";
-import { NOTE_COLORS, type Note } from "@/lib/board/types";
-import { noteBackgroundVar } from "@/lib/theme/note-colors";
+import { NOTE_COLORS, NOTE_MAX_TEXT_LENGTH, type Note } from "@/lib/board/types";
+import { noteBackgroundColor } from "@/lib/theme/note-colors";
 import { PostIt } from "./PostIt";
 
 function note(overrides: Partial<Note> = {}): Note {
@@ -41,9 +41,7 @@ describe("PostIt", () => {
     (color) => {
       render(<PostIt note={note({ color })} />);
 
-      expect(screen.getByTestId("post-it").style.backgroundColor).toBe(
-        `var(${noteBackgroundVar(color)})`,
-      );
+      expect(screen.getByTestId("post-it").style.backgroundColor).toBe(noteBackgroundColor(color));
     },
   );
 
@@ -55,12 +53,22 @@ describe("PostIt", () => {
     expect(element.className).toContain("whitespace-pre-wrap");
   });
 
-  it("contém texto longo dentro do post-it, sem vazar", () => {
-    render(<PostIt note={note({ text: "palavra".repeat(300) })} />);
+  it("mantém o texto inteiro no board mesmo quando não cabe na caixa", () => {
+    const texto = "palavra ".repeat(NOTE_MAX_TEXT_LENGTH / 8).slice(0, NOTE_MAX_TEXT_LENGTH);
+
+    render(<PostIt note={note({ text: texto, w: 80, h: 80 })} />);
+
+    // O corte é visual: nada é truncado no dado, e o texto inteiro reaparece ao editar
+    // (#14). O que jsdom consegue afirmar é isto; o recorte em si depende de layout real.
+    expect(screen.getByTestId("post-it").textContent).toBe(texto);
+  });
+
+  it("declara o recorte e a quebra de palavra que impedem o vazamento", () => {
+    render(<PostIt note={note({ text: "a".repeat(500) })} />);
     const element = screen.getByTestId("post-it");
 
-    // Sem quebra de palavra o texto empurraria a caixa; sem overflow escondido, escorreria
-    // por cima dos post-its vizinhos.
+    // Asserção de classe, não de layout: jsdom não calcula CSS. Sem quebra de palavra uma
+    // palavra longa empurraria a caixa; sem recorte, escorreria sobre os vizinhos.
     expect(element.className).toContain("break-words");
     expect(element.className).toContain("overflow-hidden");
   });
@@ -103,9 +111,20 @@ describe("PostIt", () => {
     );
   });
 
-  it("dá um rótulo acessível ao post-it vazio", () => {
-    render(<PostIt note={note({ text: "" })} />);
-
+  it("dá um rótulo acessível ao post-it sem conteúdo visível", () => {
+    const { rerender } = render(<PostIt note={note({ text: "" })} />);
     expect(screen.getByLabelText("Post-it vazio")).toBeDefined();
+
+    // Texto só de espaços não nomeia nada: sem isto o post-it ficaria sem nome acessível.
+    rerender(<PostIt note={note({ text: "   \n  " })} />);
+    expect(screen.getByLabelText("Post-it vazio")).toBeDefined();
+  });
+
+  it("deixa o próprio texto nomear o post-it, sem duplicar o conteúdo no rótulo", () => {
+    render(<PostIt note={note({ text: "comprar pão" })} />);
+    const element = screen.getByTestId("post-it");
+
+    expect(element.getAttribute("aria-label")).toBeNull();
+    expect(element.getAttribute("role")).toBe("note");
   });
 });
