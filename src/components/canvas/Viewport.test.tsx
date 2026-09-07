@@ -156,3 +156,57 @@ describe("Viewport", () => {
     expect(zoomBy.mock.calls[0]?.[0]).toBeCloseTo(zoomBy.mock.calls[1]?.[0] as number, 10);
   });
 });
+
+describe("Viewport — duplo clique no fundo", () => {
+  function renderComDuploClique(viewport = IDENTITY_VIEWPORT) {
+    const onBackgroundDoubleClick = vi.fn();
+    render(
+      <Viewport
+        viewport={viewport}
+        pan={vi.fn()}
+        zoomBy={vi.fn()}
+        onBackgroundDoubleClick={onBackgroundDoubleClick}
+      >
+        <span data-testid="conteudo">post-it</span>
+      </Viewport>,
+    );
+
+    return { onBackgroundDoubleClick };
+  }
+
+  it("avisa com o ponto já convertido para coordenadas de canvas", () => {
+    const { onBackgroundDoubleClick } = renderComDuploClique();
+
+    fireEvent.doubleClick(screen.getByTestId("viewport-surface"), { clientX: 120, clientY: 90 });
+
+    expect(onBackgroundDoubleClick).toHaveBeenCalledExactlyOnceWith({ x: 120, y: 90 });
+  });
+
+  it("desfaz o pan e o zoom na conversão, para o ponto cair sob o cursor", () => {
+    const { onBackgroundDoubleClick } = renderComDuploClique({ x: 40, y: 20, scale: 2 });
+
+    fireEvent.doubleClick(screen.getByTestId("viewport-surface"), { clientX: 140, clientY: 120 });
+
+    // Sem dividir pela escala e descontar o deslocamento, o post-it nasceria longe do
+    // cursor em qualquer zoom diferente de 100%.
+    expect(onBackgroundDoubleClick).toHaveBeenCalledExactlyOnceWith({ x: 50, y: 50 });
+  });
+
+  it("também aceita o duplo clique na camada do canvas, que é fundo igual", () => {
+    const { onBackgroundDoubleClick } = renderComDuploClique();
+
+    fireEvent.doubleClick(screen.getByTestId("viewport-layer"), { clientX: 10, clientY: 10 });
+
+    expect(onBackgroundDoubleClick).toHaveBeenCalledOnce();
+  });
+
+  it("ignora o duplo clique nascido em algo desenhado sobre o fundo", () => {
+    const { onBackgroundDoubleClick } = renderComDuploClique();
+
+    // O conteúdo do canvas não é fundo: criar um post-it atrás do que se clicou é
+    // exatamente o que o critério da #13 proíbe.
+    fireEvent.doubleClick(screen.getByTestId("conteudo"), { clientX: 10, clientY: 10 });
+
+    expect(onBackgroundDoubleClick).not.toHaveBeenCalled();
+  });
+});
