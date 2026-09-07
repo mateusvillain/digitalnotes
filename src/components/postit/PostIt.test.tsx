@@ -1,8 +1,10 @@
 import { render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import { Viewport } from "@/components/canvas/Viewport";
 import { NOTE_COLORS, NOTE_MAX_TEXT_LENGTH, type Note } from "@/lib/board/types";
 import { noteBackgroundColor } from "@/lib/theme/note-colors";
+import { NOTE_TEXT_CLASS } from "./note-text";
 import { PostIt } from "./PostIt";
 
 function note(overrides: Partial<Note> = {}): Note {
@@ -126,5 +128,108 @@ describe("PostIt", () => {
 
     expect(element.getAttribute("aria-label")).toBeNull();
     expect(element.getAttribute("role")).toBe("note");
+  });
+});
+
+describe("PostIt em edição", () => {
+  it("pede a edição ao receber duplo clique", async () => {
+    const user = userEvent.setup();
+    const onEditStart = vi.fn();
+    render(<PostIt note={note({ id: "xyz789" })} onEditStart={onEditStart} />);
+
+    await user.dblClick(screen.getByTestId("post-it"));
+
+    expect(onEditStart).toHaveBeenCalledExactlyOnceWith("xyz789");
+  });
+
+  it("não deixa o duplo clique chegar ao canvas, que criaria outro post-it", async () => {
+    const user = userEvent.setup();
+    const noCanvas = vi.fn();
+    render(
+      <div onDoubleClick={noCanvas}>
+        <PostIt note={note()} onEditStart={vi.fn()} />
+      </div>,
+    );
+
+    await user.dblClick(screen.getByTestId("post-it"));
+
+    expect(noCanvas).not.toHaveBeenCalled();
+  });
+
+  it("não pede edição de novo quando já está editando", async () => {
+    const user = userEvent.setup();
+    const onEditStart = vi.fn();
+    render(<PostIt note={note()} editing onEditStart={onEditStart} />);
+
+    await user.dblClick(screen.getByTestId("post-it"));
+
+    expect(onEditStart).not.toHaveBeenCalled();
+  });
+
+  it("troca o texto pelo editor, sem desenhar os dois ao mesmo tempo", () => {
+    const { rerender } = render(<PostIt note={note({ text: "comprar pão" })} />);
+    expect(screen.queryByTestId("post-it-editor")).toBeNull();
+    expect(screen.getByTestId("post-it").textContent).toBe("comprar pão");
+
+    rerender(<PostIt note={note({ text: "comprar pão" })} editing />);
+    const editor = screen.getByTestId("post-it-editor") as HTMLTextAreaElement;
+
+    expect(editor.value).toBe("comprar pão");
+    // O texto em leitura sai da caixa: mantê-lo desenharia uma segunda cópia atrás do
+    // editor, visível pelo fundo transparente do textarea.
+    const caixa = screen.getByTestId("post-it");
+    expect([...caixa.childNodes]).toEqual([editor]);
+  });
+
+  it("mostra ao editar o texto inteiro que não cabia na caixa", () => {
+    const texto = "palavra ".repeat(NOTE_MAX_TEXT_LENGTH / 8).slice(0, NOTE_MAX_TEXT_LENGTH);
+
+    render(<PostIt note={note({ text: texto, w: 80, h: 80 })} editing />);
+
+    expect((screen.getByTestId("post-it-editor") as HTMLTextAreaElement).value).toBe(texto);
+  });
+
+  it("alinha o texto em edição com o texto em leitura", () => {
+    const { rerender } = render(<PostIt note={note()} />);
+    const leitura = screen.getByTestId("post-it").className;
+
+    rerender(<PostIt note={note()} editing />);
+    const edicao = screen.getByTestId("post-it-editor").className;
+
+    // As medidas vêm de uma constante só; o que este teste guarda é que os dois lados
+    // continuam bebendo dela, porque medida divergente faz o texto "pular" ao editar.
+    expect(leitura).toContain(NOTE_TEXT_CLASS);
+    expect(edicao).toContain(NOTE_TEXT_CLASS);
+  });
+
+  it("devolve o texto final com o id da note ao terminar", async () => {
+    const user = userEvent.setup();
+    const onEditCommit = vi.fn();
+    render(
+      <PostIt note={note({ id: "xyz789", text: "antes" })} editing onEditCommit={onEditCommit} />,
+    );
+
+    await user.keyboard(" e depois{Escape}");
+
+    expect(onEditCommit).toHaveBeenCalledExactlyOnceWith("xyz789", "antes e depois");
+  });
+
+  it("remonta o editor ao mudar o post-it em edição", () => {
+    const { rerender } = render(<PostIt note={note({ id: "aaa111", text: "primeiro" })} editing />);
+    expect((screen.getByTestId("post-it-editor") as HTMLTextAreaElement).value).toBe("primeiro");
+
+    // O editor é não controlado: sem chave por note, o textarea seria reaproveitado e
+    // continuaria mostrando o texto do post-it anterior.
+    rerender(<PostIt note={note({ id: "bbb222", text: "segundo" })} editing />);
+
+    expect((screen.getByTestId("post-it-editor") as HTMLTextAreaElement).value).toBe("segundo");
+  });
+
+  it("expõe o estado de edição para as interações vizinhas", () => {
+    const { rerender } = render(<PostIt note={note()} />);
+    expect(screen.getByTestId("post-it").dataset.editing).toBe("false");
+
+    rerender(<PostIt note={note()} editing />);
+    expect(screen.getByTestId("post-it").dataset.editing).toBe("true");
   });
 });
