@@ -25,7 +25,7 @@ export function AppShell({ children, controls }: AppShellProps) {
         </p>
       </header>
 
-      <main className="whiteboard-surface relative min-h-0 flex-1">
+      <main className="relative min-h-0 flex-1 bg-canvas">
         {children}
         {controls === undefined ? null : (
           <div className="pointer-events-none absolute inset-x-0 bottom-0 flex justify-center p-4">

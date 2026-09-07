@@ -1,5 +1,5 @@
-import { AppShell } from "@/components/shell/AppShell";
+import { Whiteboard } from "@/components/canvas/Whiteboard";
 
 export default function Home() {
-  return <AppShell />;
+  return <Whiteboard />;
 }
