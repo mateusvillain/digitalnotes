@@ -110,7 +110,12 @@ export function Viewport({
    * handlers que dependessem dele seriam recriados na mesma frequência.
    */
   const viewportRef = useRef(viewport);
-  viewportRef.current = viewport;
+  // Sincronizada por efeito, e não no render: escrever uma ref enquanto se renderiza é
+  // inseguro sob render concorrente, e aqui não é preciso — quem lê são os handlers de
+  // ponteiro, e o viewport não muda no meio de um gesto de marquee.
+  useEffect(() => {
+    viewportRef.current = viewport;
+  }, [viewport]);
   /**
    * O retângulo em desenho.
    *

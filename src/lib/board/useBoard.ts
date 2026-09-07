@@ -76,14 +76,27 @@ export function useBoard(): BoardApi {
    * gesto, todo post-it re-renderizaria a cada movimento do ponteiro, e é justamente isso
    * que o critério de fluidez proíbe. Lendo de ref, eles ficam estáveis para sempre.
    *
-   * O deslocamento e o tamanho são escritos na ref **junto com** o estado, e não durante o
+   * Todas são escritas **junto com** o estado, pelos `publish*` abaixo, e não durante o
    * render: soltar o ponteiro reporta o último movimento e o fim do gesto no mesmo evento,
    * e uma ref atualizada só no render seguinte faria o fim gravar o valor anterior.
    */
-  const selectionRef = useRef<Selection>(selection);
-  selectionRef.current = selection;
+  const selectionRef = useRef<Selection>(EMPTY_SELECTION);
   const dragOffsetRef = useRef<Point | null>(null);
   const resizingRef = useRef<{ id: string; size: Size } | null>(null);
+
+  /**
+   * Publica a seleção na ref e no estado, nessa ordem.
+   *
+   * Aceita a forma de atualização do `useState`, mas resolve-a **aqui**, contra a ref: quem
+   * chama precisa saber na hora o que a seleção virou — `selectNote` decide pela resposta
+   * se promove o post-it —, e um updater executado lá adiante, no render, responderia tarde
+   * demais.
+   */
+  const publishSelection = useCallback((next: Selection | ((current: Selection) => Selection)) => {
+    const value = typeof next === "function" ? next(selectionRef.current) : next;
+    selectionRef.current = value;
+    setSelection(value);
+  }, []);
 
   /** Publica o deslocamento do arraste na ref e no estado, nessa ordem. */
   const publishDragOffset = useCallback((offset: Point | null) => {
@@ -115,9 +128,9 @@ export function useBoard(): BoardApi {
 
       setEditingId(note.id);
       // Criar é selecionar: o post-it recém-nascido é sobre o que as próximas ações agem.
-      setSelection(selectOnly(note.id));
+      publishSelection(selectOnly(note.id));
     },
-    [store],
+    [publishSelection, store],
   );
 
   // `setEditingId` já é estável: embrulhar em useCallback seria só um intermediário.
@@ -128,13 +141,13 @@ export function useBoard(): BoardApi {
       let promoted = true;
 
       if (additive) {
-        setSelection((current) => {
+        publishSelection((current) => {
           // Shift-clique tira tanto quanto põe, e tirar não é motivo para promover.
           promoted = !current.has(id);
           return toggle(current, id);
         });
       } else {
-        setSelection(selectOnly(id));
+        publishSelection(selectOnly(id));
       }
 
       // Selecionar traz para a frente, e isso **é** do board: a ordem de empilhamento vai
@@ -142,12 +155,12 @@ export function useBoard(): BoardApi {
       // apontou para aquele post-it, naquela ordem.
       if (promoted) store.bringToFront(id);
     },
-    [store],
+    [publishSelection, store],
   );
 
   const beginRectSelection = useCallback(() => {
-    selectionBeforeRect.current = selection;
-  }, [selection]);
+    selectionBeforeRect.current = selectionRef.current;
+  }, []);
 
   const selectInRect = useCallback(
     (rect: Rect) => {
@@ -155,12 +168,12 @@ export function useBoard(): BoardApi {
       // gesto. Redesenhar o retângulo recalcula a partir do que havia antes dele, senão
       // encolher o retângulo nunca desmarcaria ninguém.
       const tocados = notesInRect(store.getBoard().notes, rect);
-      setSelection(new Set([...selectionBeforeRect.current, ...tocados]));
+      publishSelection(new Set([...selectionBeforeRect.current, ...tocados]));
     },
-    [store],
+    [publishSelection, store],
   );
 
-  const clearSelection = useCallback(() => setSelection(EMPTY_SELECTION), []);
+  const clearSelection = useCallback(() => publishSelection(EMPTY_SELECTION), [publishSelection]);
 
   const startDrag = useCallback(
     (id: string) => {

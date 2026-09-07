@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useRef } from "react";
+import { useCallback, useEffect, useRef } from "react";
 import { AppShell } from "@/components/shell/AppShell";
 import { useBoard } from "@/lib/board/useBoard";
 import type { Point } from "@/lib/canvas/coords";
@@ -28,7 +28,12 @@ export function Whiteboard() {
    * re-renderizar a cada movimento do ponteiro.
    */
   const scaleRef = useRef(controls.viewport.scale);
-  scaleRef.current = controls.viewport.scale;
+  // Sincronizada por efeito, e não no render: escrever uma ref enquanto se renderiza é
+  // inseguro sob render concorrente. Quem lê são os conversores, chamados dentro de um
+  // gesto de ponteiro — e o zoom não muda enquanto um post-it está sendo arrastado.
+  useEffect(() => {
+    scaleRef.current = controls.viewport.scale;
+  }, [controls.viewport.scale]);
   const areaRef = useRef<HTMLDivElement>(null);
 
   /**
