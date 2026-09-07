@@ -59,7 +59,7 @@ type ViewportProps = Pick<ViewportApi, "viewport" | "pan" | "zoomBy"> & {
  * O Firefox reporta rolagem em linhas e alguns dispositivos em páginas; sem normalizar, o
  * mesmo gesto andaria dezenas de vezes menos nesses casos.
  */
-function inPixels(delta: number, deltaMode: number): number {
+function wheelDeltaToPixels(delta: number, deltaMode: number): number {
   if (deltaMode === WheelEvent.DOM_DELTA_LINE) return delta * DELTA_MODE_TO_PIXELS.line;
   if (deltaMode === WheelEvent.DOM_DELTA_PAGE) return delta * DELTA_MODE_TO_PIXELS.page;
   return delta;
@@ -76,8 +76,8 @@ function inPixels(delta: number, deltaMode: number): number {
  * desvio só acontece quando não veio deslocamento horizontal nenhum.
  */
 function wheelPan(event: WheelEvent): Point {
-  const x = inPixels(event.deltaX, event.deltaMode);
-  const y = inPixels(event.deltaY, event.deltaMode);
+  const x = wheelDeltaToPixels(event.deltaX, event.deltaMode);
+  const y = wheelDeltaToPixels(event.deltaY, event.deltaMode);
 
   if (event.shiftKey && x === 0) return { x: -y, y: 0 };
   return { x: -x, y: -y };
@@ -86,12 +86,13 @@ function wheelPan(event: WheelEvent): Point {
 /**
  * Gesto em curso sobre o fundo.
  *
- * Arrastar o fundo navega pelo quadro, como o PRD descreve; com Shift, o mesmo arrasto
- * desenha o retângulo de seleção. Um estado só, e não uma flag por gesto, porque os dois
- * são exclusivos por natureza: um ponteiro faz uma coisa de cada vez.
+ * Um estado só, e não uma flag por gesto, porque os dois são exclusivos por natureza: um
+ * ponteiro faz uma coisa de cada vez. Qual deles nasce é decidido no `pointerdown`, pelo
+ * espaço e pelo tipo de ponteiro, e não muda no meio do caminho.
  *
- * O pan guarda a origem além da última posição: a última serve para o passo do
- * deslocamento, a origem para decidir se o gesto foi clique ou arrasto.
+ * Só o `marquee` guarda a origem em tela e o `started`: é ele que precisa separar clique de
+ * arrasto. O `pan` não tem essa dúvida — quem segurou espaço já disse o que queria, e
+ * navegar nunca é um clique.
  */
 type DragState =
   | { kind: "pan"; pointerId: number; last: Point }
@@ -191,7 +192,7 @@ export function Viewport({
       // mesma tecla que o pinch do trackpad emite, então o gesto de pinçar cai aqui sozinho,
       // sem ramo próprio.
       if (event.ctrlKey || event.metaKey) {
-        const delta = inPixels(event.deltaY, event.deltaMode);
+        const delta = wheelDeltaToPixels(event.deltaY, event.deltaMode);
         zoomBy(Math.exp(-delta * WHEEL_SENSITIVITY), localPoint(event));
         return;
       }
@@ -263,10 +264,24 @@ export function Viewport({
       // antes de chegar aqui.
       if (!isBackground(event)) return;
       if (event.button !== 0) return;
-      // Com espaço, a captura acima já reivindicou o gesto.
+      // Cada handler declara a própria condição: com espaço, o gesto é da captura acima.
+      if (spaceHeld) return;
+      // Defesa contra um `pointerup` perdido, que deixaria um gesto pendurado.
       if (drag.current !== null) return;
 
       event.currentTarget.setPointerCapture(event.pointerId);
+
+      // No toque não há espaço para segurar, e o pinch do sistema não chega como wheel: um
+      // dedo navega, que é a única forma de mover o quadro por lá. Selecionar por retângulo
+      // fica para quem tem ponteiro.
+      if (event.pointerType === "touch") {
+        drag.current = {
+          kind: "pan",
+          pointerId: event.pointerId,
+          last: { x: event.clientX, y: event.clientY },
+        };
+        return;
+      }
 
       // Arrastar o fundo **seleciona**. Navegar é o gesto com espaço, ou a roda.
       drag.current = {
@@ -278,7 +293,7 @@ export function Viewport({
         started: false,
       };
     },
-    [isBackground, localPoint],
+    [isBackground, localPoint, spaceHeld],
   );
 
   const handlePointerMove = useCallback(
@@ -334,8 +349,11 @@ export function Viewport({
       if (state === null || state.kind !== "marquee") return;
 
       // Um retângulo que nunca chegou a começar foi um clique, e clique no fundo limpa a
-      // seleção. Navegar com espaço não passa por aqui: mover o quadro não desmarca nada.
-      if (!state.started) onBackgroundClick?.();
+      // seleção. Navegar não passa por aqui: mover o quadro não desmarca nada.
+      //
+      // Com Shift, não: ali o Shift **acrescenta**, como faz no post-it e no retângulo. Um
+      // shift-clique que errou o alvo não pode desfazer a seleção que ele ia ampliar.
+      if (!state.started && !state.additive) onBackgroundClick?.();
     },
     [endDrag, onBackgroundClick],
   );

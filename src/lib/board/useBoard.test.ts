@@ -232,7 +232,7 @@ describe("useBoard — seleção", () => {
     const { hook, primeiro, segundo } = comDoisPostIts();
     act(() => hook.result.current.selectNote(segundo.id));
 
-    act(() => hook.result.current.beginRectSelection());
+    act(() => hook.result.current.beginRectSelection(false));
     act(() => hook.result.current.selectInRect({ x: -150, y: -150, w: 100, h: 100 }));
 
     // Só o primeiro é tocado, e o segundo sai — arrastar é o gesto padrão de seleção desde
@@ -244,7 +244,7 @@ describe("useBoard — seleção", () => {
     const { hook, segundo } = comDoisPostIts();
     act(() => hook.result.current.selectNote(segundo.id));
 
-    act(() => hook.result.current.beginRectSelection());
+    act(() => hook.result.current.beginRectSelection(false));
     act(() => hook.result.current.selectInRect({ x: 5000, y: 5000, w: 10, h: 10 }));
 
     // É isto que faz arrastar no vazio desmarcar tudo, sem um caminho próprio para isso.
@@ -255,7 +255,7 @@ describe("useBoard — seleção", () => {
     const { hook, primeiro, segundo } = comDoisPostIts();
 
     act(() => hook.result.current.clearSelection());
-    act(() => hook.result.current.beginRectSelection());
+    act(() => hook.result.current.beginRectSelection(false));
     // O primeiro nasce centrado em (0,0), o segundo em (500,0).
     act(() => hook.result.current.selectInRect({ x: -150, y: -150, w: 300, h: 300 }));
 
@@ -266,7 +266,7 @@ describe("useBoard — seleção", () => {
   it("retângulo que não toca nada não marca ninguém", () => {
     const { hook } = comDoisPostIts();
     act(() => hook.result.current.clearSelection());
-    act(() => hook.result.current.beginRectSelection());
+    act(() => hook.result.current.beginRectSelection(false));
 
     act(() => hook.result.current.selectInRect({ x: 5000, y: 5000, w: 10, h: 10 }));
 

@@ -6,7 +6,10 @@
  * sobre o estado da aplicação: perguntar ao quadro "há alguém em edição?" responderia por um
  * campo e ignoraria todos os outros que vierem a existir.
  *
- * Mora fora de `board/` e de `canvas/` porque os dois precisam, e nenhum é dono disto.
+ * Mora fora de `board/` e de `canvas/` porque os dois precisam. Não é neutro de verdade:
+ * `INTERACTIVE_SELECTOR` cita `[role="note"]`, que só o post-it emite. É acoplamento
+ * assumido — a alternativa seria o post-it carregar um marcador próprio só para ser
+ * reconhecido aqui, o que troca uma dependência por uma convenção invisível.
  */
 
 /** Seletor dos elementos que consomem a barra de espaço como ativação. */

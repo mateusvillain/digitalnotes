@@ -924,6 +924,89 @@ describe("Whiteboard — seleção por arrasto no fundo", () => {
     expect(selecionados()).toEqual(antes);
   });
 
+  it("shift+clique no fundo não desmarca", () => {
+    render(<Whiteboard />);
+    criaPostIt(300, 300);
+    const surface = screen.getByTestId("viewport-surface");
+
+    fireEvent.pointerDown(surface, {
+      pointerId: 1,
+      button: 0,
+      shiftKey: true,
+      clientX: 900,
+      clientY: 700,
+    });
+    fireEvent.pointerUp(surface, { pointerId: 1, clientX: 900, clientY: 700 });
+
+    // O Shift acrescenta, no post-it e no retângulo; errar o alvo não pode desfazer a
+    // seleção que o gesto ia ampliar.
+    expect(selecionados()).toHaveLength(1);
+  });
+
+  it("clique sem Shift no fundo desmarca", () => {
+    render(<Whiteboard />);
+    criaPostIt(300, 300);
+    const surface = screen.getByTestId("viewport-surface");
+
+    fireEvent.pointerDown(surface, { pointerId: 1, button: 0, clientX: 900, clientY: 700 });
+    fireEvent.pointerUp(surface, { pointerId: 1, clientX: 900, clientY: 700 });
+
+    expect(selecionados()).toEqual([]);
+  });
+
+  it("um dedo navega, já que no toque não há espaço para segurar", () => {
+    render(<Whiteboard />);
+    criaPostIt(300, 300);
+    const surface = screen.getByTestId("viewport-surface");
+    const antes = screen.getByTestId("viewport-layer").style.transform;
+
+    fireEvent.pointerDown(surface, {
+      pointerId: 1,
+      button: 0,
+      pointerType: "touch",
+      clientX: 100,
+      clientY: 100,
+    });
+    fireEvent.pointerMove(surface, {
+      pointerId: 1,
+      pointerType: "touch",
+      clientX: 160,
+      clientY: 140,
+    });
+    fireEvent.pointerUp(surface, {
+      pointerId: 1,
+      pointerType: "touch",
+      clientX: 160,
+      clientY: 140,
+    });
+
+    // O quadro andou, e a seleção ficou de pé: no toque, arrastar não desenha retângulo.
+    expect(screen.getByTestId("viewport-layer").style.transform).not.toBe(antes);
+    expect(selecionados()).toHaveLength(1);
+  });
+
+  it("com espaço, arrastar a partir de um post-it navega em vez de movê-lo", () => {
+    render(<Whiteboard />);
+    criaPostIt(300, 300);
+    const posicaoAntes = postIt(0).style.left;
+    const camadaAntes = screen.getByTestId("viewport-layer").style.transform;
+
+    fireEvent.keyDown(document, { key: " " });
+    // O gesto nasce **no post-it**, que para o pointerdown antes da superfície: só a captura
+    // chega antes dele.
+    fireEvent.pointerDown(postIt(0), { pointerId: 1, button: 0, clientX: 100, clientY: 100 });
+    fireEvent.pointerMove(screen.getByTestId("viewport-surface"), {
+      pointerId: 1,
+      clientX: 180,
+      clientY: 150,
+    });
+    fireEvent.pointerUp(screen.getByTestId("viewport-surface"), { pointerId: 1 });
+    fireEvent.keyUp(document, { key: " " });
+
+    expect(screen.getByTestId("viewport-layer").style.transform).not.toBe(camadaAntes);
+    expect(postIt(0).style.left).toBe(posicaoAntes);
+  });
+
   it("o cursor conta qual gesto o arrasto vai virar", () => {
     render(<Whiteboard />);
     const surface = screen.getByTestId("viewport-surface");

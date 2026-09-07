@@ -60,8 +60,8 @@ export interface BoardApi {
    * Com `additive`, o retângulo soma ao que já estava marcado; sem, ele substitui — que é o
    * que faz um retângulo desenhado no vazio limpar a seleção.
    */
-  beginRectSelection: (additive?: boolean) => void;
-  /** Acrescenta ao que já estava marcado os post-its que o retângulo toca. */
+  beginRectSelection: (additive: boolean) => void;
+  /** Marca os post-its que o retângulo toca, somados à base guardada por `beginRectSelection`. */
   selectInRect: (rect: Rect) => void;
   clearSelection: () => void;
   /** As notes marcadas. É por elas que passam as ações em lote — colorir, e apagar (#19). */
@@ -185,7 +185,7 @@ export function useBoard(): BoardApi {
     [publishSelection, store],
   );
 
-  const beginRectSelection = useCallback((additive = false) => {
+  const beginRectSelection = useCallback((additive: boolean) => {
     // A base sobre a qual o retângulo soma. Vazia quando ele substitui, e é isso que faz
     // arrastar no vazio desmarcar tudo, sem precisar de um caminho próprio para isso.
     selectionBeforeRect.current = additive ? selectionRef.current : EMPTY_SELECTION;
