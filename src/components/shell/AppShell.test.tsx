@@ -3,10 +3,36 @@ import { describe, expect, it } from "vitest";
 import { AppShell } from "./AppShell";
 
 describe("AppShell", () => {
-  it("mostra o nome do app na barra superior", () => {
+  it("não desenha barra superior nenhuma", () => {
+    const { container } = render(<AppShell />);
+
+    // O quadro é a interface inteira: uma faixa fixa no topo custaria altura de tela.
+    expect(container.querySelector("header")).toBeNull();
+  });
+
+  it("mantém o nome do app para leitor de tela", () => {
     render(<AppShell />);
 
-    expect(screen.getByRole("heading", { name: "digitalnotes" })).toBeDefined();
+    // Invisível, mas presente: uma página sem cabeçalho nenhum não tem como ser anunciada.
+    expect(screen.getByRole("heading", { name: "digitalnotes" }).className).toContain("sr-only");
+  });
+
+  it("põe os controles no canto superior direito, fora da borda", () => {
+    const { container } = render(<AppShell controls={<button type="button">zoom</button>} />);
+    const faixa = container.querySelector(".shadow-control")?.parentElement;
+
+    expect(faixa?.className).toContain("top-0");
+    expect(faixa?.className).toContain("justify-end");
+    // O respiro da borda vem do padding da faixa, não de um deslocamento do próprio bloco.
+    expect(faixa?.className).toContain("p-4");
+  });
+
+  it("mantém os controles acima da barra de seleção", () => {
+    const { container } = render(<AppShell controls={<button type="button">zoom</button>} />);
+    const faixa = container.querySelector(".shadow-control")?.parentElement;
+
+    // A SelectionToolbar é z-20 e segue os post-its: pode cair justamente sob os controles.
+    expect(faixa?.className).toContain("z-30");
   });
 
   it("renderiza o conteúdo do canvas", () => {
