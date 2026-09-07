@@ -24,4 +24,8 @@ Scripts disponíveis:
 | `npm run format:write` | Aplica formatação           |
 | `npm test`             | Testes unitários (Vitest)   |
 
+> Os tipos de rota (`LayoutProps`, `PageProps`) são gerados pelo Next. Em um clone novo,
+> rode `npm run typecheck` (que já executa `next typegen`) ou `npm run dev` antes de confiar
+> no TypeScript do editor.
+
 Stack: Next.js (App Router) · TypeScript · Tailwind CSS · Vitest · deploy na Vercel.
