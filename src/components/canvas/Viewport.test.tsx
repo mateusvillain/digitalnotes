@@ -1,6 +1,7 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { IDENTITY_VIEWPORT } from "@/lib/canvas/coords";
+import { stubPointerCapture } from "@/test-utils/pointer";
 import { Viewport } from "./Viewport";
 
 /**
@@ -22,10 +23,7 @@ function setup() {
   );
 
   const surface = screen.getByTestId("viewport-surface");
-  // jsdom não implementa a API de captura de ponteiro.
-  surface.setPointerCapture = vi.fn();
-  surface.releasePointerCapture = vi.fn();
-  surface.hasPointerCapture = vi.fn(() => true);
+  stubPointerCapture(surface);
 
   return { surface, pan, zoomBy };
 }
@@ -246,10 +244,7 @@ describe("Viewport — retângulo de seleção", () => {
     );
 
     const surface = screen.getByTestId("viewport-surface");
-    // jsdom não implementa a API de captura de ponteiro.
-    surface.setPointerCapture = vi.fn();
-    surface.releasePointerCapture = vi.fn();
-    surface.hasPointerCapture = vi.fn(() => true);
+    stubPointerCapture(surface);
 
     return { surface, onSelectionRect, onBackgroundClick, pan };
   }
@@ -354,9 +349,7 @@ describe("Viewport — clique no fundo", () => {
     );
 
     const surface = screen.getByTestId("viewport-surface");
-    surface.setPointerCapture = vi.fn();
-    surface.releasePointerCapture = vi.fn();
-    surface.hasPointerCapture = vi.fn(() => true);
+    stubPointerCapture(surface);
 
     return { surface, onBackgroundClick };
   }

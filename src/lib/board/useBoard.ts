@@ -18,6 +18,19 @@ export interface BoardApi {
   startEditing: (id: string) => void;
   /** Marca um post-it. Com `additive`, acrescenta ou tira em vez de trocar a seleção. */
   selectNote: (id: string, additive?: boolean) => void;
+  /**
+   * Deslocamento em curso da seleção, em coordenadas de canvas, ou `null` fora de um
+   * arraste. É otimista: mora fora da store até o gesto terminar.
+   */
+  dragOffset: Point | null;
+  /** Começa a arrastar a partir de um post-it, garantindo que ele esteja selecionado. */
+  startDrag: (id: string) => void;
+  /** Move a seleção enquanto o gesto acontece, sem tocar na store. */
+  dragBy: (offset: Point) => void;
+  /** Grava as posições finais numa publicação só, e encerra o arraste. */
+  endDrag: () => void;
+  /** Desfaz o arraste sem gravar nada. */
+  cancelDrag: () => void;
   /** Marca o começo de um retângulo de seleção, guardando o que já estava marcado. */
   beginRectSelection: () => void;
   /** Acrescenta ao que já estava marcado os post-its que o retângulo toca. */
@@ -44,6 +57,7 @@ export function useBoard(): BoardApi {
   const [selection, setSelection] = useState<Selection>(EMPTY_SELECTION);
   /** A seleção de antes do retângulo começar, para o gesto poder ser refeito enquanto anda. */
   const selectionBeforeRect = useRef<Selection>(EMPTY_SELECTION);
+  const [dragOffset, setDragOffset] = useState<Point | null>(null);
 
   // O mesmo `getBoard` nos dois argumentos: o board inicial no servidor é o mesmo objeto do
   // primeiro render no cliente, então não há divergência de hidratação a conciliar.
@@ -110,6 +124,39 @@ export function useBoard(): BoardApi {
 
   const clearSelection = useCallback(() => setSelection(EMPTY_SELECTION), []);
 
+  const startDrag = useCallback((id: string) => {
+    // Arrastar um post-it de fora da seleção move só ele: quem pega um post-it solto não
+    // está pedindo para levar junto o que estava marcado antes.
+    setSelection((current) => (current.has(id) ? current : selectOnly(id)));
+    setDragOffset({ x: 0, y: 0 });
+  }, []);
+
+  const dragBy = useCallback((offset: Point) => setDragOffset(offset), []);
+
+  const endDrag = useCallback(() => {
+    const offset = dragOffset;
+    setDragOffset(null);
+    if (offset === null) return;
+
+    // Uma publicação só para a seleção inteira: quem escuta é a persistência, que reescreve
+    // a URL a cada aviso. E inteiros, porque cada casa decimal custa caracteres de link — e
+    // porque o zoom faz o deslocamento chegar aqui fracionado.
+    store.updateNotes(
+      store
+        .getBoard()
+        .notes.filter((note) => selection.has(note.id))
+        .map((note) => ({
+          id: note.id,
+          patch: {
+            x: Math.round(note.x + offset.x),
+            y: Math.round(note.y + offset.y),
+          },
+        })),
+    );
+  }, [dragOffset, selection, store]);
+
+  const cancelDrag = useCallback(() => setDragOffset(null), []);
+
   const commitText = useCallback(
     (id: string, text: string) => {
       store.updateNote(id, { text });
@@ -125,6 +172,11 @@ export function useBoard(): BoardApi {
     createNoteAt,
     startEditing,
     commitText,
+    dragOffset,
+    startDrag,
+    dragBy,
+    endDrag,
+    cancelDrag,
     selectNote,
     beginRectSelection,
     selectInRect,

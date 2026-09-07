@@ -2,6 +2,7 @@
 
 import { PostIt } from "@/components/postit/PostIt";
 import type { Selection } from "@/lib/board/selection";
+import type { Point } from "@/lib/canvas/coords";
 import type { Note } from "@/lib/board/types";
 
 interface BoardProps {
@@ -13,6 +14,12 @@ interface BoardProps {
   onEditStart?: (id: string) => void;
   onEditCommit?: (id: string, text: string) => void;
   onSelect?: (id: string, additive: boolean) => void;
+  /** Deslocamento em curso, aplicado a todo post-it selecionado. */
+  dragOffset?: Point | null;
+  onDragStart?: (id: string) => void;
+  onDragMove?: (delta: Point) => void;
+  onDragEnd?: () => void;
+  onDragCancel?: () => void;
 }
 
 /**
@@ -32,20 +39,36 @@ export function Board({
   onEditStart,
   onEditCommit,
   onSelect,
+  dragOffset = null,
+  onDragStart,
+  onDragMove,
+  onDragEnd,
+  onDragCancel,
 }: BoardProps) {
   return (
     <>
-      {notes.map((note) => (
-        <PostIt
-          key={note.id}
-          note={note}
-          editing={note.id === editingId}
-          selected={selection?.has(note.id) ?? false}
-          onEditStart={onEditStart}
-          onEditCommit={onEditCommit}
-          onSelect={onSelect}
-        />
-      ))}
+      {notes.map((note) => {
+        const selected = selection?.has(note.id) ?? false;
+
+        return (
+          <PostIt
+            key={note.id}
+            note={note}
+            editing={note.id === editingId}
+            selected={selected}
+            // Arrastar move a seleção inteira junto: o gesto começa num post-it, mas o
+            // deslocamento vale para todos os que estavam marcados.
+            offset={selected ? dragOffset : null}
+            onEditStart={onEditStart}
+            onEditCommit={onEditCommit}
+            onSelect={onSelect}
+            onDragStart={onDragStart}
+            onDragMove={onDragMove}
+            onDragEnd={onDragEnd}
+            onDragCancel={onDragCancel}
+          />
+        );
+      })}
     </>
   );
 }

@@ -18,7 +18,19 @@ import { ViewportControls } from "./ViewportControls";
 export function Whiteboard() {
   const controls = useViewport();
   const board = useBoard();
+  const scale = controls.viewport.scale;
   const areaRef = useRef<HTMLDivElement>(null);
+
+  /**
+   * Converte o deslocamento do ponteiro para unidades de canvas.
+   *
+   * É o delta de tela dividido pela escala, e não o delta bruto: a 200%, dois pixels de
+   * mouse são um pixel de canvas, e sem a divisão o post-it andaria o dobro do cursor.
+   */
+  const dragBy = useCallback(
+    (delta: Point) => board.dragBy({ x: delta.x / scale, y: delta.y / scale }),
+    [board, scale],
+  );
 
   /** Centro da área visível, usado como âncora do zoom por botão. */
   const center = useCallback((): Point => {
@@ -55,6 +67,11 @@ export function Whiteboard() {
             onEditStart={board.startEditing}
             onEditCommit={board.commitText}
             onSelect={board.selectNote}
+            dragOffset={board.dragOffset}
+            onDragStart={board.startDrag}
+            onDragMove={dragBy}
+            onDragEnd={board.endDrag}
+            onDragCancel={board.cancelDrag}
           />
         </Viewport>
       </div>

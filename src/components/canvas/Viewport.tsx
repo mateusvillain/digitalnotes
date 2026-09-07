@@ -11,6 +11,7 @@ import {
   type ReactNode,
 } from "react";
 import {
+  CLICK_SLOP,
   canvasToScreen,
   distance,
   rectFromCorners,
@@ -34,15 +35,6 @@ const DOT_GAP = 24;
  * escala, o que dá a mesma sensação em trackpad e em mouse de roda travada.
  */
 const WHEEL_SENSITIVITY = 0.002;
-
-/**
- * Distância, em pixels de tela, abaixo da qual soltar o botão ainda conta como clique.
- *
- * Medida sempre **desde a origem do gesto**, nunca passo a passo: um arrasto lento anda dois
- * ou três pixels por evento e nunca passaria de uma folga aplicada a cada passo — o pan
- * terminaria limpando a seleção.
- */
-const CLICK_SLOP = 4;
 
 /** Pixels equivalentes a uma unidade de `deltaY` em cada modo de rolagem do browser. */
 const DELTA_MODE_TO_PIXELS = { line: 16, page: 100 } as const;

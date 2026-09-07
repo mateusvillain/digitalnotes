@@ -1,6 +1,7 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
+import { stubPointerCapture } from "@/test-utils/pointer";
 import { Viewport } from "@/components/canvas/Viewport";
 import { NOTE_COLORS, NOTE_MAX_TEXT_LENGTH, type Note } from "@/lib/board/types";
 import { noteBackgroundColor } from "@/lib/theme/note-colors";
@@ -241,6 +242,7 @@ describe("PostIt — seleção", () => {
 
     // Arrastar (#15) começa no pointerdown: o post-it precisa já estar marcado quando o
     // movimento começa, senão arrasta-se algo que ainda não foi selecionado.
+    stubPointerCapture(screen.getByTestId("post-it"));
     fireEvent.pointerDown(screen.getByTestId("post-it"), { button: 0 });
 
     expect(onSelect).toHaveBeenCalledExactlyOnceWith("xyz789", false);
@@ -250,6 +252,7 @@ describe("PostIt — seleção", () => {
     const onSelect = vi.fn();
     render(<PostIt note={note({ id: "xyz789" })} onSelect={onSelect} />);
 
+    stubPointerCapture(screen.getByTestId("post-it"));
     fireEvent.pointerDown(screen.getByTestId("post-it"), { button: 0, shiftKey: true });
 
     expect(onSelect).toHaveBeenCalledExactlyOnceWith("xyz789", true);
@@ -272,5 +275,149 @@ describe("PostIt — seleção", () => {
     fireEvent.pointerDown(screen.getByTestId("post-it-editor"), { button: 0 });
 
     expect(onSelect).not.toHaveBeenCalled();
+  });
+});
+
+describe("PostIt — arraste", () => {
+  /** Aperta, anda e (opcionalmente) solta sobre o post-it. */
+  function arrasta(element: HTMLElement, ate: [number, number], solta = true): void {
+    stubPointerCapture(element);
+    fireEvent.pointerDown(element, { pointerId: 1, button: 0, clientX: 0, clientY: 0 });
+    fireEvent.pointerMove(element, { pointerId: 1, clientX: ate[0], clientY: ate[1] });
+    if (solta) fireEvent.pointerUp(element, { pointerId: 1, clientX: ate[0], clientY: ate[1] });
+  }
+
+  it("avisa o começo do arraste com o id do post-it pego", () => {
+    const onDragStart = vi.fn();
+    render(<PostIt note={note({ id: "xyz789" })} onDragStart={onDragStart} />);
+
+    arrasta(screen.getByTestId("post-it"), [100, 50], false);
+
+    expect(onDragStart).toHaveBeenCalledExactlyOnceWith("xyz789");
+  });
+
+  it("reporta o deslocamento em pixels de tela, deixando o zoom para quem o conhece", () => {
+    const onDragMove = vi.fn();
+    render(<PostIt note={note()} onDragMove={onDragMove} />);
+
+    arrasta(screen.getByTestId("post-it"), [100, 50], false);
+
+    expect(onDragMove).toHaveBeenLastCalledWith({ x: 100, y: 50 });
+  });
+
+  it("desenha o deslocamento por transform, sem mexer na posição da note", () => {
+    render(<PostIt note={note({ x: 40, y: 80 })} offset={{ x: 30, y: -10 }} />);
+    const element = screen.getByTestId("post-it");
+
+    // Mover por transform deixa o browser compor a translação sem recalcular layout — é o
+    // que mantém o gesto fluido com dezenas de post-its no quadro.
+    expect(element.style.transform).toBe("translate(30px, -10px)");
+    expect(element.style.left).toBe("40px");
+    expect(element.style.top).toBe("80px");
+    expect(element.dataset.dragging).toBe("true");
+  });
+
+  it("não carrega transform nenhuma fora do arraste", () => {
+    render(<PostIt note={note()} />);
+    const element = screen.getByTestId("post-it");
+
+    expect(element.style.transform).toBe("");
+    expect(element.dataset.dragging).toBe("false");
+  });
+
+  it("avisa o fim ao soltar", () => {
+    const onDragEnd = vi.fn();
+    render(<PostIt note={note()} onDragEnd={onDragEnd} />);
+
+    arrasta(screen.getByTestId("post-it"), [100, 50]);
+
+    expect(onDragEnd).toHaveBeenCalledOnce();
+  });
+
+  it("não arrasta quem está sendo escrito", () => {
+    const onDragStart = vi.fn();
+    render(<PostIt note={note()} editing onDragStart={onDragStart} />);
+
+    arrasta(screen.getByTestId("post-it"), [100, 50], false);
+
+    // Dentro do editor o ponteiro seleciona texto; arrastar a caixa junto seria o gesto
+    // fazendo duas coisas.
+    expect(onDragStart).not.toHaveBeenCalled();
+  });
+
+  it("um clique parado não vira arraste, nem grava posição", () => {
+    const onDragStart = vi.fn();
+    const onDragEnd = vi.fn();
+    render(<PostIt note={note()} onDragStart={onDragStart} onDragEnd={onDragEnd} />);
+    const element = screen.getByTestId("post-it");
+    stubPointerCapture(element);
+
+    fireEvent.pointerDown(element, { pointerId: 1, button: 0, clientX: 10, clientY: 10 });
+    fireEvent.pointerUp(element, { pointerId: 1, clientX: 10, clientY: 10 });
+
+    expect(onDragStart).not.toHaveBeenCalled();
+    expect(onDragEnd).not.toHaveBeenCalled();
+  });
+
+  it("começar a arrastar não abre o modo de edição", () => {
+    const onEditStart = vi.fn();
+    render(<PostIt note={note()} onEditStart={onEditStart} />);
+
+    arrasta(screen.getByTestId("post-it"), [150, 150]);
+
+    expect(onEditStart).not.toHaveBeenCalled();
+    expect(screen.queryByTestId("post-it-editor")).toBeNull();
+  });
+});
+
+describe("PostIt — seleção adiada ao arrastar um grupo", () => {
+  it("não desmarca os outros ao apertar num post-it já selecionado", () => {
+    const onSelect = vi.fn();
+    render(<PostIt note={note({ id: "xyz789" })} selected onSelect={onSelect} />);
+    const element = screen.getByTestId("post-it");
+    stubPointerCapture(element);
+
+    fireEvent.pointerDown(element, { pointerId: 1, button: 0, clientX: 0, clientY: 0 });
+
+    // O gesto mais provável a partir daqui é arrastar o grupo inteiro; desmarcar antes do
+    // movimento tornaria o arraste em grupo impossível.
+    expect(onSelect).not.toHaveBeenCalled();
+  });
+
+  it("desmarca os outros se o gesto terminar sem arrastar", () => {
+    const onSelect = vi.fn();
+    render(<PostIt note={note({ id: "xyz789" })} selected onSelect={onSelect} />);
+    const element = screen.getByTestId("post-it");
+    stubPointerCapture(element);
+
+    fireEvent.pointerDown(element, { pointerId: 1, button: 0, clientX: 0, clientY: 0 });
+    fireEvent.pointerUp(element, { pointerId: 1, clientX: 0, clientY: 0 });
+
+    // Era um clique afinal, e clique desmarca os demais.
+    expect(onSelect).toHaveBeenCalledExactlyOnceWith("xyz789", false);
+  });
+
+  it("não desmarca ninguém quando o gesto virou arraste", () => {
+    const onSelect = vi.fn();
+    render(<PostIt note={note({ id: "xyz789" })} selected onSelect={onSelect} />);
+    const element = screen.getByTestId("post-it");
+    stubPointerCapture(element);
+
+    fireEvent.pointerDown(element, { pointerId: 1, button: 0, clientX: 0, clientY: 0 });
+    fireEvent.pointerMove(element, { pointerId: 1, clientX: 100, clientY: 0 });
+    fireEvent.pointerUp(element, { pointerId: 1, clientX: 100, clientY: 0 });
+
+    expect(onSelect).not.toHaveBeenCalled();
+  });
+
+  it("seleciona na hora o post-it que ainda não estava marcado", () => {
+    const onSelect = vi.fn();
+    render(<PostIt note={note({ id: "xyz789" })} onSelect={onSelect} />);
+    const element = screen.getByTestId("post-it");
+    stubPointerCapture(element);
+
+    fireEvent.pointerDown(element, { pointerId: 1, button: 0, clientX: 0, clientY: 0 });
+
+    expect(onSelect).toHaveBeenCalledExactlyOnceWith("xyz789", false);
   });
 });

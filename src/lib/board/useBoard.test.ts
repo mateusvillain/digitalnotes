@@ -271,3 +271,122 @@ describe("useBoard — seleção", () => {
     }
   });
 });
+
+describe("useBoard — arraste", () => {
+  function comDoisPostIts() {
+    const hook = renderHook(() => useBoard());
+    act(() => hook.result.current.createNoteAt({ x: 0, y: 0 }));
+    act(() => hook.result.current.createNoteAt({ x: 500, y: 0 }));
+
+    return {
+      hook,
+      primeiro: defined(hook.result.current.notes[0], "o primeiro post-it"),
+      segundo: defined(hook.result.current.notes[1], "o segundo post-it"),
+    };
+  }
+
+  function posicaoDe(hook: ReturnType<typeof comDoisPostIts>["hook"], id: string) {
+    const note = defined(
+      hook.result.current.notes.find((candidata) => candidata.id === id),
+      `o post-it ${id}`,
+    );
+    return { x: note.x, y: note.y };
+  }
+
+  it("não tem deslocamento fora de um arraste", () => {
+    const { result } = renderHook(() => useBoard());
+
+    expect(result.current.dragOffset).toBeNull();
+  });
+
+  it("não toca na store enquanto o gesto acontece", () => {
+    const { hook, primeiro } = comDoisPostIts();
+    const antes = posicaoDe(hook, primeiro.id);
+
+    act(() => hook.result.current.startDrag(primeiro.id));
+    act(() => hook.result.current.dragBy({ x: 120, y: 80 }));
+
+    // A posição final é gravada só ao soltar: quem escuta a store é a persistência, que
+    // reescreveria a URL a cada quadro do arraste.
+    expect(hook.result.current.dragOffset).toEqual({ x: 120, y: 80 });
+    expect(posicaoDe(hook, primeiro.id)).toEqual(antes);
+  });
+
+  it("grava a posição final ao soltar", () => {
+    const { hook, primeiro } = comDoisPostIts();
+    const antes = posicaoDe(hook, primeiro.id);
+
+    act(() => hook.result.current.startDrag(primeiro.id));
+    act(() => hook.result.current.dragBy({ x: 120, y: 80 }));
+    act(() => hook.result.current.endDrag());
+
+    expect(posicaoDe(hook, primeiro.id)).toEqual({ x: antes.x + 120, y: antes.y + 80 });
+    expect(hook.result.current.dragOffset).toBeNull();
+  });
+
+  it("grava inteiros, mesmo com o deslocamento chegando fracionado pelo zoom", () => {
+    const { hook, primeiro } = comDoisPostIts();
+    const antes = posicaoDe(hook, primeiro.id);
+
+    act(() => hook.result.current.startDrag(primeiro.id));
+    act(() => hook.result.current.dragBy({ x: 10.4, y: -3.7 }));
+    act(() => hook.result.current.endDrag());
+
+    // Cada casa decimal custa caracteres de link.
+    expect(posicaoDe(hook, primeiro.id)).toEqual({ x: antes.x + 10, y: antes.y - 4 });
+  });
+
+  it("move junto todos os post-its selecionados", () => {
+    const { hook, primeiro, segundo } = comDoisPostIts();
+    const antesPrimeiro = posicaoDe(hook, primeiro.id);
+    const antesSegundo = posicaoDe(hook, segundo.id);
+
+    act(() => hook.result.current.selectNote(primeiro.id));
+    act(() => hook.result.current.selectNote(segundo.id, true));
+    act(() => hook.result.current.startDrag(primeiro.id));
+    act(() => hook.result.current.dragBy({ x: 50, y: 50 }));
+    act(() => hook.result.current.endDrag());
+
+    expect(posicaoDe(hook, primeiro.id)).toEqual({
+      x: antesPrimeiro.x + 50,
+      y: antesPrimeiro.y + 50,
+    });
+    expect(posicaoDe(hook, segundo.id)).toEqual({ x: antesSegundo.x + 50, y: antesSegundo.y + 50 });
+  });
+
+  it("arrastar um post-it de fora da seleção move só ele", () => {
+    const { hook, primeiro, segundo } = comDoisPostIts();
+    const antesSegundo = posicaoDe(hook, segundo.id);
+
+    act(() => hook.result.current.selectNote(segundo.id));
+    // Quem pega um post-it solto não está pedindo para levar junto o que estava marcado.
+    act(() => hook.result.current.startDrag(primeiro.id));
+    act(() => hook.result.current.dragBy({ x: 50, y: 0 }));
+    act(() => hook.result.current.endDrag());
+
+    expect([...hook.result.current.selection]).toEqual([primeiro.id]);
+    expect(posicaoDe(hook, segundo.id)).toEqual(antesSegundo);
+  });
+
+  it("não desfaz a seleção ao arrastar um post-it que já estava nela", () => {
+    const { hook, primeiro, segundo } = comDoisPostIts();
+    act(() => hook.result.current.selectNote(primeiro.id));
+    act(() => hook.result.current.selectNote(segundo.id, true));
+
+    act(() => hook.result.current.startDrag(segundo.id));
+
+    expect([...hook.result.current.selection]).toHaveLength(2);
+  });
+
+  it("cancelar devolve os post-its para onde estavam", () => {
+    const { hook, primeiro } = comDoisPostIts();
+    const antes = posicaoDe(hook, primeiro.id);
+
+    act(() => hook.result.current.startDrag(primeiro.id));
+    act(() => hook.result.current.dragBy({ x: 200, y: 200 }));
+    act(() => hook.result.current.cancelDrag());
+
+    expect(hook.result.current.dragOffset).toBeNull();
+    expect(posicaoDe(hook, primeiro.id)).toEqual(antes);
+  });
+});
