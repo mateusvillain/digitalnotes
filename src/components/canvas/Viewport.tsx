@@ -5,10 +5,11 @@ import {
   useEffect,
   useRef,
   type CSSProperties,
+  type MouseEvent,
   type PointerEvent,
   type ReactNode,
 } from "react";
-import { canvasToScreen, type Point } from "@/lib/canvas/coords";
+import { canvasToScreen, screenToCanvas, type Point } from "@/lib/canvas/coords";
 import type { ViewportApi } from "@/lib/canvas/useViewport";
 
 /**
@@ -29,6 +30,8 @@ const WHEEL_SENSITIVITY = 0.002;
 const DELTA_MODE_TO_PIXELS = { line: 16, page: 100 } as const;
 
 type ViewportProps = Pick<ViewportApi, "viewport" | "pan" | "zoomBy"> & {
+  /** Duplo clique no fundo vazio, já convertido para coordenadas de canvas. */
+  onBackgroundDoubleClick?: (point: Point) => void;
   children?: ReactNode;
 };
 
@@ -56,7 +59,13 @@ function wheelDeltaInPixels(event: WheelEvent): number {
  * posicionados um a um: com dezenas de post-its, o browser compõe uma transform só em vez
  * de recalcular layout de cada elemento a cada quadro.
  */
-export function Viewport({ viewport, pan, zoomBy, children }: ViewportProps) {
+export function Viewport({
+  viewport,
+  pan,
+  zoomBy,
+  onBackgroundDoubleClick,
+  children,
+}: ViewportProps) {
   const surfaceRef = useRef<HTMLDivElement>(null);
   const layerRef = useRef<HTMLDivElement>(null);
   const panPointerId = useRef<number | null>(null);
@@ -93,17 +102,49 @@ export function Viewport({ viewport, pan, zoomBy, children }: ViewportProps) {
     return () => surface.removeEventListener("wheel", handleWheel);
   }, [zoomBy, localPoint]);
 
-  const handlePointerDown = useCallback((event: PointerEvent<HTMLDivElement>) => {
-    // Arrasta o quadro pelo fundo ou pela camada do canvas; um post-it (issue #15) para o
-    // evento antes de chegar aqui.
-    const target = event.target;
-    if (target !== event.currentTarget && target !== layerRef.current) return;
-    if (event.button !== 0) return;
+  /** Verdadeiro só para eventos nascidos no fundo, e não em algo desenhado sobre ele. */
+  const isBackground = useCallback(
+    (event: { target: EventTarget; currentTarget: EventTarget }): boolean => {
+      return event.target === event.currentTarget || event.target === layerRef.current;
+    },
+    [],
+  );
 
-    panPointerId.current = event.pointerId;
-    lastPointer.current = { x: event.clientX, y: event.clientY };
-    event.currentTarget.setPointerCapture(event.pointerId);
-  }, []);
+  /**
+   * Duplo clique no fundo: o gesto que cria um post-it (#13).
+   *
+   * A conversão para coordenadas de canvas acontece aqui porque é aqui que o viewport é
+   * conhecido; quem recebe o evento não deveria precisar saber o zoom para colocar algo
+   * sob o cursor.
+   */
+  const handleDoubleClick = useCallback(
+    (event: MouseEvent<HTMLDivElement>) => {
+      if (!isBackground(event)) return;
+      // Mesma guarda do pan logo abaixo: só o botão primário age sobre o quadro. Os
+      // browsers atuais só disparam dblclick nele, mas depender disso deixa a regra
+      // implícita num handler cujo vizinho a declara.
+      if (event.button !== 0) return;
+
+      // Sem isto, o gesto começa selecionando o texto do fundo antes de o post-it aparecer.
+      event.preventDefault();
+      onBackgroundDoubleClick?.(screenToCanvas(localPoint(event), viewport));
+    },
+    [isBackground, localPoint, onBackgroundDoubleClick, viewport],
+  );
+
+  const handlePointerDown = useCallback(
+    (event: PointerEvent<HTMLDivElement>) => {
+      // Arrasta o quadro pelo fundo ou pela camada do canvas; um post-it (issue #15) para o
+      // evento antes de chegar aqui.
+      if (!isBackground(event)) return;
+      if (event.button !== 0) return;
+
+      panPointerId.current = event.pointerId;
+      lastPointer.current = { x: event.clientX, y: event.clientY };
+      event.currentTarget.setPointerCapture(event.pointerId);
+    },
+    [isBackground],
+  );
 
   const handlePointerMove = useCallback(
     (event: PointerEvent<HTMLDivElement>) => {
@@ -144,6 +185,7 @@ export function Viewport({ viewport, pan, zoomBy, children }: ViewportProps) {
           backgroundPosition: `${origin.x}px ${origin.y}px`,
         } as CSSProperties
       }
+      onDoubleClick={handleDoubleClick}
       onPointerDown={handlePointerDown}
       onPointerMove={handlePointerMove}
       onPointerUp={handlePointerUp}

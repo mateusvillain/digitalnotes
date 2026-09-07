@@ -1,20 +1,23 @@
 "use client";
 
 import { useCallback, useRef } from "react";
-import { Viewport } from "./Viewport";
-import { ViewportControls } from "./ViewportControls";
+import { AppShell } from "@/components/shell/AppShell";
+import { useBoard } from "@/lib/board/useBoard";
 import type { Point } from "@/lib/canvas/coords";
 import { useViewport } from "@/lib/canvas/useViewport";
-import { AppShell } from "@/components/shell/AppShell";
+import { Board } from "./Board";
+import { Viewport } from "./Viewport";
+import { ViewportControls } from "./ViewportControls";
 
 /**
- * O quadro: junta o estado de viewport à superfície navegável e aos controles.
+ * O quadro: junta o estado de viewport à superfície navegável, aos controles e aos post-its.
  *
- * O canvas ainda não tem conteúdo — os post-its chegam na Epic de ciclo de vida. Pan e zoom
- * já se enxergam pela malha de pontos, que acompanha o viewport.
+ * A composição é a fiação, e só ela: o viewport sabe navegar, o `useBoard` sabe o que é o
+ * board, e o `Board` sabe desenhar. Nenhum dos três precisa do outro para ser testado.
  */
 export function Whiteboard() {
   const controls = useViewport();
+  const board = useBoard();
   const areaRef = useRef<HTMLDivElement>(null);
 
   /** Centro da área visível, usado como âncora do zoom por botão. */
@@ -36,7 +39,19 @@ export function Whiteboard() {
       }
     >
       <div ref={areaRef} className="absolute inset-0">
-        <Viewport viewport={controls.viewport} pan={controls.pan} zoomBy={controls.zoomBy} />
+        <Viewport
+          viewport={controls.viewport}
+          pan={controls.pan}
+          zoomBy={controls.zoomBy}
+          onBackgroundDoubleClick={board.createNoteAt}
+        >
+          <Board
+            notes={board.notes}
+            editingId={board.editingId}
+            onEditStart={board.startEditing}
+            onEditCommit={board.commitText}
+          />
+        </Viewport>
       </div>
     </AppShell>
   );
