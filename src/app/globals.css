@@ -25,6 +25,9 @@
    * mínima do conjunto é 10,5:1 (azul), bem acima dos 4,5:1 que a WCAG AA pede para texto
    * normal. A verificação roda em src/lib/theme/note-colors.test.ts.
    */
+  /* Contorno de seleção — cor de sistema, não de post-it. */
+  --color-selection: #4f46e5;
+
   --color-note-ink: #27272a;
   --color-note-yellow: #fde68a;
   --color-note-pink: #fbcfe8;
