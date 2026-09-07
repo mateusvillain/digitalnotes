@@ -1,10 +1,12 @@
+import { AppShell } from "@/components/shell/AppShell";
+
 export default function Home() {
   return (
-    <main className="flex flex-1 flex-col items-center justify-center gap-2 p-8 text-center">
-      <h1 className="text-2xl font-semibold tracking-tight">digitalnotes</h1>
-      <p className="text-sm text-zinc-600">
-        Whiteboard de anotações em post-its. O board vive na própria URL.
+    <AppShell>
+      <p className="pointer-events-none absolute inset-0 flex items-center justify-center px-6 text-center text-sm text-ink-muted">
+        O quadro ainda não faz nada: pan e zoom chegam na issue #9, e os post-its na Epic de ciclo
+        de vida.
       </p>
-    </main>
+    </AppShell>
   );
 }
