@@ -144,3 +144,125 @@ describe("Whiteboard", () => {
     expect((screen.getByTestId("post-it-editor") as HTMLTextAreaElement).value).toBe("primeiro");
   });
 });
+
+describe("Whiteboard — seleção", () => {
+  /**
+   * Cria um post-it e sai da edição.
+   *
+   * O post-it novo nasce escrevendo, e no browser apertar o ponteiro em outro lugar tira o
+   * foco do editor sozinho. O jsdom não faz isso por conta própria, então o teste sai da
+   * edição de forma explícita — como o usuário sai, pelo Escape.
+   */
+  function criaPostIt(x: number, y: number): void {
+    duploCliqueNoFundo(x, y);
+    // O Escape tira o foco, e é a perda de foco que encerra a edição.
+    fireEvent.keyDown(screen.getByTestId("post-it-editor"), { key: "Escape" });
+  }
+
+  /** Aperta e solta no fundo sem andar: o clique que limpa a seleção. */
+  function cliqueNoFundo(): void {
+    const surface = screen.getByTestId("viewport-surface");
+    surface.setPointerCapture = vi.fn();
+    surface.releasePointerCapture = vi.fn();
+    surface.hasPointerCapture = vi.fn(() => true);
+
+    fireEvent.pointerDown(surface, { pointerId: 1, button: 0, clientX: 700, clientY: 500 });
+    fireEvent.pointerUp(surface, { pointerId: 1, clientX: 700, clientY: 500 });
+  }
+
+  /** Shift + arrastar no fundo, de um canto de tela ao outro. */
+  function retanguloDeSelecao(de: [number, number], ate: [number, number]): void {
+    const surface = screen.getByTestId("viewport-surface");
+    surface.setPointerCapture = vi.fn();
+    surface.releasePointerCapture = vi.fn();
+    surface.hasPointerCapture = vi.fn(() => true);
+
+    fireEvent.pointerDown(surface, {
+      pointerId: 1,
+      button: 0,
+      shiftKey: true,
+      clientX: de[0],
+      clientY: de[1],
+    });
+    fireEvent.pointerMove(surface, { pointerId: 1, clientX: ate[0], clientY: ate[1] });
+    fireEvent.pointerUp(surface, { pointerId: 1 });
+  }
+
+  function selecionados(): (string | undefined)[] {
+    return postIts()
+      .filter((element) => element.dataset.selected === "true")
+      .map((element) => element.dataset.noteId);
+  }
+
+  it("deixa selecionado o post-it que acabou de nascer", () => {
+    render(<Whiteboard />);
+
+    duploCliqueNoFundo(200, 200);
+
+    expect(selecionados()).toEqual([postIt(0).dataset.noteId]);
+  });
+
+  it("clicar num post-it o seleciona e desmarca os demais", () => {
+    render(<Whiteboard />);
+    criaPostIt(200, 200);
+    criaPostIt(700, 200);
+
+    fireEvent.pointerDown(postIt(0), { button: 0 });
+
+    expect(selecionados()).toEqual([postIt(0).dataset.noteId]);
+  });
+
+  it("shift-clique acrescenta o segundo post-it à seleção", () => {
+    render(<Whiteboard />);
+    criaPostIt(200, 200);
+    criaPostIt(700, 200);
+
+    fireEvent.pointerDown(postIt(0), { button: 0 });
+    fireEvent.pointerDown(postIt(1), { button: 0, shiftKey: true });
+
+    expect(selecionados()).toHaveLength(2);
+  });
+
+  it("clicar no fundo vazio limpa a seleção", () => {
+    render(<Whiteboard />);
+    criaPostIt(200, 200);
+
+    cliqueNoFundo();
+
+    expect(selecionados()).toEqual([]);
+  });
+
+  it("o retângulo seleciona os post-its que ele toca, e só", () => {
+    render(<Whiteboard />);
+    criaPostIt(150, 150);
+    criaPostIt(900, 150);
+    const perto = postIt(0).dataset.noteId;
+
+    // Os post-its têm 200 de lado, então o primeiro ocupa de 50 a 250 e o segundo, de 800 a
+    // 1000. O retângulo só alcança o primeiro.
+    retanguloDeSelecao([0, 0], [400, 400]);
+
+    expect(selecionados()).toEqual([perto]);
+  });
+
+  it("traz para a frente o post-it selecionado", () => {
+    render(<Whiteboard />);
+    criaPostIt(200, 200);
+    criaPostIt(700, 200);
+    expect(Number(postIt(1).style.zIndex)).toBeGreaterThan(Number(postIt(0).style.zIndex));
+
+    fireEvent.pointerDown(postIt(0), { button: 0 });
+
+    // O post-it clicado vai para a frente dos demais — critério de conclusão da Epic #2.
+    expect(Number(postIt(0).style.zIndex)).toBeGreaterThan(Number(postIt(1).style.zIndex));
+  });
+
+  it("navegar pelo quadro não limpa a seleção", () => {
+    render(<Whiteboard />);
+    criaPostIt(200, 200);
+
+    arrastaOFundo(120, 80);
+
+    expect(selecionados()).toHaveLength(1);
+  });
+});

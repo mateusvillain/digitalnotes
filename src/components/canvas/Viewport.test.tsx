@@ -229,3 +229,186 @@ describe("Viewport — duplo clique no fundo", () => {
     expect(onBackgroundDoubleClick).not.toHaveBeenCalled();
   });
 });
+
+describe("Viewport — retângulo de seleção", () => {
+  function setupMarquee(viewport = IDENTITY_VIEWPORT) {
+    const onSelectionRect = vi.fn();
+    const onBackgroundClick = vi.fn();
+    const pan = vi.fn();
+    render(
+      <Viewport
+        viewport={viewport}
+        pan={pan}
+        zoomBy={vi.fn()}
+        onSelectionRect={onSelectionRect}
+        onBackgroundClick={onBackgroundClick}
+      />,
+    );
+
+    const surface = screen.getByTestId("viewport-surface");
+    // jsdom não implementa a API de captura de ponteiro.
+    surface.setPointerCapture = vi.fn();
+    surface.releasePointerCapture = vi.fn();
+    surface.hasPointerCapture = vi.fn(() => true);
+
+    return { surface, onSelectionRect, onBackgroundClick, pan };
+  }
+
+  it("shift + arrastar desenha o retângulo em vez de navegar", () => {
+    const { surface, onSelectionRect, pan } = setupMarquee();
+
+    fireEvent.pointerDown(surface, {
+      pointerId: 1,
+      button: 0,
+      shiftKey: true,
+      clientX: 10,
+      clientY: 20,
+    });
+    fireEvent.pointerMove(surface, { pointerId: 1, clientX: 110, clientY: 220 });
+
+    expect(onSelectionRect).toHaveBeenCalledWith({ x: 10, y: 20, w: 100, h: 200 });
+    // O PRD reserva o arrasto puro do fundo para navegar; o Shift é o que separa os dois.
+    expect(pan).not.toHaveBeenCalled();
+    expect(screen.getByTestId("selection-box")).toBeDefined();
+  });
+
+  it("normaliza o retângulo arrastado para trás", () => {
+    const { surface, onSelectionRect } = setupMarquee();
+
+    fireEvent.pointerDown(surface, {
+      pointerId: 1,
+      button: 0,
+      shiftKey: true,
+      clientX: 200,
+      clientY: 300,
+    });
+    fireEvent.pointerMove(surface, { pointerId: 1, clientX: 100, clientY: 100 });
+
+    // Arrastar da direita para a esquerda é tão comum quanto o contrário.
+    expect(onSelectionRect).toHaveBeenCalledWith({ x: 100, y: 100, w: 100, h: 200 });
+  });
+
+  it("desenha o retângulo em coordenadas de canvas, não de tela", () => {
+    const { surface, onSelectionRect } = setupMarquee({ x: 40, y: 20, scale: 2 });
+
+    fireEvent.pointerDown(surface, {
+      pointerId: 1,
+      button: 0,
+      shiftKey: true,
+      clientX: 140,
+      clientY: 120,
+    });
+    fireEvent.pointerMove(surface, { pointerId: 1, clientX: 240, clientY: 220 });
+
+    expect(onSelectionRect).toHaveBeenCalledWith({ x: 50, y: 50, w: 50, h: 50 });
+  });
+
+  it("some com o retângulo ao soltar", () => {
+    const { surface } = setupMarquee();
+
+    fireEvent.pointerDown(surface, {
+      pointerId: 1,
+      button: 0,
+      shiftKey: true,
+      clientX: 0,
+      clientY: 0,
+    });
+    fireEvent.pointerMove(surface, { pointerId: 1, clientX: 50, clientY: 50 });
+    expect(screen.getByTestId("selection-box")).toBeDefined();
+
+    fireEvent.pointerUp(surface, { pointerId: 1 });
+
+    expect(screen.queryByTestId("selection-box")).toBeNull();
+  });
+
+  it("arrastar o retângulo não conta como clique no fundo", () => {
+    const { surface, onBackgroundClick } = setupMarquee();
+
+    fireEvent.pointerDown(surface, {
+      pointerId: 1,
+      button: 0,
+      shiftKey: true,
+      clientX: 0,
+      clientY: 0,
+    });
+    fireEvent.pointerMove(surface, { pointerId: 1, clientX: 50, clientY: 50 });
+    fireEvent.pointerUp(surface, { pointerId: 1 });
+
+    // Limpar a seleção logo depois de desenhá-la seria o gesto se anulando.
+    expect(onBackgroundClick).not.toHaveBeenCalled();
+  });
+});
+
+describe("Viewport — clique no fundo", () => {
+  function setupClique() {
+    const onBackgroundClick = vi.fn();
+    render(
+      <Viewport
+        viewport={IDENTITY_VIEWPORT}
+        pan={vi.fn()}
+        zoomBy={vi.fn()}
+        onBackgroundClick={onBackgroundClick}
+      >
+        <span data-testid="conteudo">post-it</span>
+      </Viewport>,
+    );
+
+    const surface = screen.getByTestId("viewport-surface");
+    surface.setPointerCapture = vi.fn();
+    surface.releasePointerCapture = vi.fn();
+    surface.hasPointerCapture = vi.fn(() => true);
+
+    return { surface, onBackgroundClick };
+  }
+
+  it("avisa do clique quando o ponteiro não andou", () => {
+    const { surface, onBackgroundClick } = setupClique();
+
+    fireEvent.pointerDown(surface, { pointerId: 1, button: 0, clientX: 30, clientY: 30 });
+    fireEvent.pointerUp(surface, { pointerId: 1, clientX: 30, clientY: 30 });
+
+    expect(onBackgroundClick).toHaveBeenCalledOnce();
+  });
+
+  it("tolera o tremor da mão entre apertar e soltar", () => {
+    const { surface, onBackgroundClick } = setupClique();
+
+    fireEvent.pointerDown(surface, { pointerId: 1, button: 0, clientX: 30, clientY: 30 });
+    fireEvent.pointerMove(surface, { pointerId: 1, clientX: 32, clientY: 31 });
+    fireEvent.pointerUp(surface, { pointerId: 1 });
+
+    expect(onBackgroundClick).toHaveBeenCalledOnce();
+  });
+
+  it("não confunde navegar pelo quadro com clicar no fundo", () => {
+    const { surface, onBackgroundClick } = setupClique();
+
+    fireEvent.pointerDown(surface, { pointerId: 1, button: 0, clientX: 30, clientY: 30 });
+    fireEvent.pointerMove(surface, { pointerId: 1, clientX: 200, clientY: 200 });
+    fireEvent.pointerUp(surface, { pointerId: 1 });
+
+    // Sem isso, todo pan terminaria limpando a seleção.
+    expect(onBackgroundClick).not.toHaveBeenCalled();
+  });
+
+  it("continua sendo arrasto mesmo se o ponteiro voltar ao ponto de partida", () => {
+    const { surface, onBackgroundClick } = setupClique();
+
+    fireEvent.pointerDown(surface, { pointerId: 1, button: 0, clientX: 30, clientY: 30 });
+    fireEvent.pointerMove(surface, { pointerId: 1, clientX: 200, clientY: 200 });
+    fireEvent.pointerMove(surface, { pointerId: 1, clientX: 30, clientY: 30 });
+    fireEvent.pointerUp(surface, { pointerId: 1 });
+
+    expect(onBackgroundClick).not.toHaveBeenCalled();
+  });
+
+  it("ignora o clique nascido em algo desenhado sobre o fundo", () => {
+    const { onBackgroundClick } = setupClique();
+    const conteudo = screen.getByTestId("conteudo");
+
+    fireEvent.pointerDown(conteudo, { pointerId: 1, button: 0 });
+    fireEvent.pointerUp(conteudo, { pointerId: 1 });
+
+    expect(onBackgroundClick).not.toHaveBeenCalled();
+  });
+});

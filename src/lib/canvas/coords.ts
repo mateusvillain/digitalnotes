@@ -15,6 +15,12 @@ export interface Point {
   y: number;
 }
 
+/** Retângulo alinhado aos eixos, em coordenadas de canvas. */
+export interface Rect extends Size {
+  x: number;
+  y: number;
+}
+
 /** Dimensões de uma caixa, em unidades de canvas. */
 export interface Size {
   w: number;
@@ -74,6 +80,21 @@ export function canvasToScreen(point: Point, viewport: Viewport): Point {
  */
 export function topLeftCenteredAt(center: Point, size: Size): Point {
   return { x: center.x - size.w / 2, y: center.y - size.h / 2 };
+}
+
+/**
+ * Retângulo entre dois cantos, em qualquer ordem.
+ *
+ * Arrastar da direita para a esquerda é tão comum quanto o contrário, e um retângulo de
+ * largura negativa não desenha nem intersecta nada.
+ */
+export function rectFromCorners(a: Point, b: Point): Rect {
+  return {
+    x: Math.min(a.x, b.x),
+    y: Math.min(a.y, b.y),
+    w: Math.abs(a.x - b.x),
+    h: Math.abs(a.y - b.y),
+  };
 }
 
 /** Desloca o viewport em pixels de tela. */

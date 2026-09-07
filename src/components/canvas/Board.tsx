@@ -1,14 +1,18 @@
 "use client";
 
 import { PostIt } from "@/components/postit/PostIt";
+import type { Selection } from "@/lib/board/selection";
 import type { Note } from "@/lib/board/types";
 
 interface BoardProps {
   notes: readonly Note[];
   /** Note em edição de texto, ou `null`. */
   editingId?: string | null;
+  /** Ids marcados. */
+  selection?: Selection;
   onEditStart?: (id: string) => void;
   onEditCommit?: (id: string, text: string) => void;
+  onSelect?: (id: string, additive: boolean) => void;
 }
 
 /**
@@ -21,7 +25,14 @@ interface BoardProps {
  * arraste (#15) sem montar o quadro inteiro, e o que mantém a decisão de *quando* escrever
  * na store num lugar só, no `useBoard`.
  */
-export function Board({ notes, editingId = null, onEditStart, onEditCommit }: BoardProps) {
+export function Board({
+  notes,
+  editingId = null,
+  selection,
+  onEditStart,
+  onEditCommit,
+  onSelect,
+}: BoardProps) {
   return (
     <>
       {notes.map((note) => (
@@ -29,8 +40,10 @@ export function Board({ notes, editingId = null, onEditStart, onEditCommit }: Bo
           key={note.id}
           note={note}
           editing={note.id === editingId}
+          selected={selection?.has(note.id) ?? false}
           onEditStart={onEditStart}
           onEditCommit={onEditCommit}
+          onSelect={onSelect}
         />
       ))}
     </>

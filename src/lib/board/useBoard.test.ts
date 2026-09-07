@@ -107,3 +107,118 @@ describe("useBoard", () => {
     expect(segunda.result.current.notes).toEqual([]);
   });
 });
+
+describe("useBoard — seleção", () => {
+  /** Cria dois post-its e devolve os dois, já fora de edição. */
+  function comDoisPostIts() {
+    const hook = renderHook(() => useBoard());
+    act(() => hook.result.current.createNoteAt({ x: 0, y: 0 }));
+    act(() => hook.result.current.createNoteAt({ x: 500, y: 0 }));
+
+    return {
+      hook,
+      primeiro: defined(hook.result.current.notes[0], "o primeiro post-it"),
+      segundo: defined(hook.result.current.notes[1], "o segundo post-it"),
+    };
+  }
+
+  it("começa sem nada selecionado", () => {
+    const { result } = renderHook(() => useBoard());
+
+    expect([...result.current.selection]).toEqual([]);
+  });
+
+  it("já deixa selecionado o post-it recém-criado", () => {
+    const { result } = renderHook(() => useBoard());
+
+    act(() => result.current.createNoteAt({ x: 0, y: 0 }));
+
+    expect([...result.current.selection]).toEqual([
+      defined(result.current.notes[0], "o post-it criado").id,
+    ]);
+  });
+
+  it("selecionar um post-it desmarca os demais", () => {
+    const { hook, primeiro } = comDoisPostIts();
+
+    act(() => hook.result.current.selectNote(primeiro.id));
+
+    expect([...hook.result.current.selection]).toEqual([primeiro.id]);
+  });
+
+  it("shift-clique acrescenta e tira da seleção", () => {
+    const { hook, primeiro, segundo } = comDoisPostIts();
+
+    act(() => hook.result.current.selectNote(primeiro.id));
+    act(() => hook.result.current.selectNote(segundo.id, true));
+    expect([...hook.result.current.selection].sort()).toEqual([primeiro.id, segundo.id].sort());
+
+    act(() => hook.result.current.selectNote(segundo.id, true));
+    expect([...hook.result.current.selection]).toEqual([primeiro.id]);
+  });
+
+  it("traz para a frente o post-it selecionado, e grava isso na store", () => {
+    const { hook, primeiro, segundo } = comDoisPostIts();
+    const zDoSegundo = segundo.z;
+
+    act(() => hook.result.current.selectNote(primeiro.id));
+
+    const promovido = defined(
+      hook.result.current.notes.find((note) => note.id === primeiro.id),
+      "o post-it promovido",
+    );
+    expect(promovido.z).toBeGreaterThan(zDoSegundo);
+  });
+
+  it("não reordena o board ao acrescentar à seleção", () => {
+    const { hook, primeiro, segundo } = comDoisPostIts();
+    const zAntes = hook.result.current.notes.map((note) => note.z);
+
+    act(() => hook.result.current.selectNote(primeiro.id, true));
+    act(() => hook.result.current.selectNote(segundo.id, true));
+
+    // Promover em lote reordenaria, um a um, post-its que o usuário não escolheu — numa
+    // ordem que ele não pediu.
+    expect(hook.result.current.notes.map((note) => note.z)).toEqual(zAntes);
+  });
+
+  it("seleciona pelo retângulo quem ele toca, e só", () => {
+    const { hook, primeiro, segundo } = comDoisPostIts();
+
+    // O primeiro nasce centrado em (0,0), o segundo em (500,0).
+    act(() => hook.result.current.selectInRect({ x: -150, y: -150, w: 300, h: 300 }));
+
+    expect([...hook.result.current.selection]).toEqual([primeiro.id]);
+    expect(hook.result.current.selection.has(segundo.id)).toBe(false);
+  });
+
+  it("retângulo que não toca nada esvazia a seleção", () => {
+    const { hook, primeiro } = comDoisPostIts();
+    act(() => hook.result.current.selectNote(primeiro.id));
+
+    act(() => hook.result.current.selectInRect({ x: 5000, y: 5000, w: 10, h: 10 }));
+
+    expect([...hook.result.current.selection]).toEqual([]);
+  });
+
+  it("limpa a seleção quando pedido", () => {
+    const { hook, primeiro } = comDoisPostIts();
+    act(() => hook.result.current.selectNote(primeiro.id));
+
+    act(() => hook.result.current.clearSelection());
+
+    expect([...hook.result.current.selection]).toEqual([]);
+  });
+
+  it("mantém a seleção fora do que a store guarda", () => {
+    const { hook, primeiro } = comDoisPostIts();
+
+    act(() => hook.result.current.selectNote(primeiro.id));
+
+    // O que vai para a URL é o board. Um campo de seleção pendurado na note viajaria junto
+    // — e a store congela justamente para impedir isso.
+    for (const note of hook.result.current.notes) {
+      expect(Object.keys(note).sort()).toEqual(["color", "h", "id", "text", "w", "x", "y", "z"]);
+    }
+  });
+});
