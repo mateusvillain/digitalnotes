@@ -8,6 +8,9 @@
  *
  * É deliberadamente sem React: uma store observável comum, que a interface consome por
  * `useSyncExternalStore` sem obrigar o resto do sistema a existir dentro de um componente.
+ *
+ * Como o contrato (`schema.ts`), nada aqui lança: entrada impossível vira `null` ou
+ * operação sem efeito.
  */
 
 import { normalizeNote } from "./schema";
@@ -26,6 +29,12 @@ const ID_LENGTH = 6;
 /** Campos que uma atualização pode tocar: tudo menos o id, que é a identidade da note. */
 export type NotePatch = Partial<Omit<Note, "id">>;
 
+/** Uma alteração dentro de um lote. */
+export interface NoteUpdate {
+  id: string;
+  patch: NotePatch;
+}
+
 /** Dados mínimos para criar um post-it; o resto vem dos padrões do contrato. */
 export interface NewNote {
   x: number;
@@ -41,10 +50,17 @@ export interface BoardStore {
   getBoard: () => Board;
   /** Registra um ouvinte de mudanças; devolve a função que cancela a inscrição. */
   subscribe: (listener: () => void) => () => void;
-  /** Cria um post-it já na frente dos demais e devolve a note criada. */
-  addNote: (note: NewNote) => Note;
-  /** Altera campos de uma note. Ignora id inexistente. */
+  /** Cria um post-it na frente dos demais. Devolve `null` se a posição for impossível. */
+  addNote: (note: NewNote) => Note | null;
+  /** Altera campos de uma note. Id inexistente ou alteração sem efeito não mexem no board. */
   updateNote: (id: string, patch: NotePatch) => void;
+  /**
+   * Altera várias notes numa publicação só.
+   *
+   * Arrastar uma seleção de dez post-its precisa dar uma notificação, não dez: quem escuta
+   * é a persistência, que reescreve a URL a cada aviso.
+   */
+  updateNotes: (updates: readonly NoteUpdate[]) => void;
   removeNote: (id: string) => void;
   removeNotes: (ids: readonly string[]) => void;
   /** Traz a note para a frente das demais. */
@@ -65,17 +81,54 @@ function createId(taken: ReadonlySet<string>): string {
 
 /** Maior z do board, ou 0 se estiver vazio. */
 function topZ(notes: readonly Note[]): number {
-  return notes.reduce((maior, note) => Math.max(maior, note.z), 0);
+  return notes.reduce((highest, note) => Math.max(highest, note.z), 0);
+}
+
+/** Duas notes são iguais quando todo campo do contrato bate. */
+function sameNote(a: Note, b: Note): boolean {
+  return (
+    a.x === b.x &&
+    a.y === b.y &&
+    a.w === b.w &&
+    a.h === b.h &&
+    a.color === b.color &&
+    a.text === b.text &&
+    a.z === b.z
+  );
+}
+
+/**
+ * Congela o board fora de produção.
+ *
+ * A regra "estado efêmero de interface não se mistura ao serializável" só vale se alguém
+ * a fizer valer: sem isso, bastaria um componente pendurar um campo de seleção numa note
+ * para ele viajar dentro da URL. Em desenvolvimento e nos testes, essa tentativa estoura na
+ * hora; em produção não se paga o custo.
+ */
+function guard(board: Board): Board {
+  if (process.env.NODE_ENV === "production") return board;
+
+  board.notes.forEach(Object.freeze);
+  Object.freeze(board.notes);
+  return Object.freeze(board);
 }
 
 export function createBoardStore(initial: Board = createEmptyBoard()): BoardStore {
-  let board = initial;
+  let board = guard(initial);
   const listeners = new Set<() => void>();
 
-  /** Publica um board novo e avisa os inscritos. */
+  /**
+   * Publica um board novo e avisa os inscritos.
+   *
+   * A lista de ouvintes é copiada antes da iteração: um ouvinte que escreve na store
+   * dispara outra publicação no meio desta, e sem a cópia os avisos restantes sairiam
+   * misturando dois estados.
+   */
   function commit(notes: Note[]): void {
-    board = { version: SCHEMA_VERSION, notes };
-    for (const listener of listeners) listener();
+    // A versão é sempre a atual: o board na memória é, por definição, o que este código
+    // entende. Board de outra versão entra pelo parseBoard antes de chegar aqui.
+    board = guard({ version: SCHEMA_VERSION, notes });
+    for (const listener of [...listeners]) listener();
   }
 
   function getBoard(): Board {
@@ -89,8 +142,8 @@ export function createBoardStore(initial: Board = createEmptyBoard()): BoardStor
     };
   }
 
-  function addNote(input: NewNote): Note {
-    const note: Note = {
+  function addNote(input: NewNote): Note | null {
+    const note = normalizeNote({
       id: createId(new Set(board.notes.map((existing) => existing.id))),
       x: input.x,
       y: input.y,
@@ -100,35 +153,48 @@ export function createBoardStore(initial: Board = createEmptyBoard()): BoardStor
       text: input.text ?? "",
       // Post-it novo nasce na frente: foi o usuário que acabou de colocá-lo ali.
       z: topZ(board.notes) + 1,
-    };
+    });
 
-    // Passa pela normalização do contrato para não existir um segundo conjunto de regras
-    // sobre o que é um post-it válido.
-    const normalized = normalizeNote(note);
-    if (normalized === null) {
-      throw new Error("Post-it inválido: verifique posição e cor.");
-    }
+    // Normalizar pelo contrato evita um segundo conjunto de regras sobre o que é um
+    // post-it válido. Coordenada impossível — um NaN escapado de uma conversão de
+    // coordenadas, por exemplo — não cria nada e não derruba o handler de evento.
+    if (note === null) return null;
 
-    commit([...board.notes, normalized]);
-    return normalized;
+    commit([...board.notes, note]);
+    return note;
   }
 
-  function updateNote(id: string, patch: NotePatch): void {
-    let mudou = false;
+  /** Aplica alterações e devolve a lista nova, ou `null` se nada mudou de fato. */
+  function applyUpdates(updates: readonly NoteUpdate[]): Note[] | null {
+    const byId = new Map(updates.map((update) => [update.id, update.patch]));
+    let changed = false;
+
     const notes = board.notes.map((note) => {
-      if (note.id !== id) return note;
-      const candidate = normalizeNote({ ...note, ...patch, id });
-      if (candidate === null) return note;
-      mudou = true;
+      const patch = byId.get(note.id);
+      if (patch === undefined) return note;
+
+      const candidate = normalizeNote({ ...note, ...patch, id: note.id });
+      if (candidate === null || sameNote(note, candidate)) return note;
+
+      changed = true;
       return candidate;
     });
 
-    if (mudou) commit(notes);
+    return changed ? notes : null;
+  }
+
+  function updateNotes(updates: readonly NoteUpdate[]): void {
+    const notes = applyUpdates(updates);
+    if (notes !== null) commit(notes);
+  }
+
+  function updateNote(id: string, patch: NotePatch): void {
+    updateNotes([{ id, patch }]);
   }
 
   function removeNotes(ids: readonly string[]): void {
-    const alvos = new Set(ids);
-    const notes = board.notes.filter((note) => !alvos.has(note.id));
+    const targets = new Set(ids);
+    const notes = board.notes.filter((note) => !targets.has(note.id));
 
     if (notes.length !== board.notes.length) commit(notes);
   }
@@ -139,13 +205,22 @@ export function createBoardStore(initial: Board = createEmptyBoard()): BoardStor
 
   function bringToFront(id: string): void {
     const note = board.notes.find((candidate) => candidate.id === id);
-    if (note === undefined || note.z === topZ(board.notes)) return;
+    if (note === undefined) return;
 
-    updateNote(id, { z: topZ(board.notes) + 1 });
+    const top = topZ(board.notes);
+    // Estar empatado no topo não é estar na frente: com dois post-its no mesmo z, quem
+    // decide o desenho é a ordem da lista, e o de baixo precisa subir de verdade.
+    const aloneOnTop =
+      note.z === top && board.notes.filter((other) => other.z === top).length === 1;
+    if (aloneOnTop) return;
+
+    updateNote(id, { z: top + 1 });
   }
 
   function replaceBoard(next: Board): void {
-    commit([...next.notes]);
+    // Cópia das notes, e não da lista só: quem chamou não pode continuar segurando as
+    // mesmas referências que a store passou a tratar como imutáveis.
+    commit(next.notes.map((note) => ({ ...note })));
   }
 
   // Funções soltas, e não métodos: a interface vai desestruturar a store, e método com
@@ -155,6 +230,7 @@ export function createBoardStore(initial: Board = createEmptyBoard()): BoardStor
     subscribe,
     addNote,
     updateNote,
+    updateNotes,
     removeNote,
     removeNotes,
     bringToFront,
