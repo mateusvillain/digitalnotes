@@ -1,0 +1,347 @@
+import { describe, expect, it, vi } from "vitest";
+import { createBoardStore, type BoardStore, type NewNote } from "./store";
+import { NOTE_SIZE, SCHEMA_VERSION, createEmptyBoard, type Board, type Note } from "./types";
+
+/** addNote devolve `null` para entrada impossível; nos testes felizes isso é um defeito. */
+function add(store: BoardStore, input: NewNote): Note {
+  const note = store.addNote(input);
+  if (note === null) throw new Error("addNote recusou uma entrada que deveria ser válida");
+  return note;
+}
+
+describe("createBoardStore", () => {
+  it("começa vazia, na versão atual do schema", () => {
+    expect(createBoardStore().getBoard()).toEqual(createEmptyBoard());
+  });
+
+  it("aceita um board inicial", () => {
+    const board: Board = { version: SCHEMA_VERSION, notes: [] };
+
+    expect(createBoardStore(board).getBoard()).toBe(board);
+  });
+});
+
+describe("addNote", () => {
+  it("preenche tamanho, cor e texto com os padrões do contrato", () => {
+    const store = createBoardStore();
+
+    const note = add(store, { x: 10, y: 20 });
+
+    expect(note).toMatchObject({
+      x: 10,
+      y: 20,
+      w: NOTE_SIZE.defaultWidth,
+      h: NOTE_SIZE.defaultHeight,
+      color: 0,
+      text: "",
+    });
+  });
+
+  it("devolve null, sem lançar, para posição impossível", () => {
+    const store = createBoardStore();
+
+    expect(store.addNote({ x: Number.NaN, y: 0 })).toBeNull();
+    expect(store.getBoard().notes).toEqual([]);
+  });
+
+  it("normaliza pelo contrato, sem inventar regra própria", () => {
+    const store = createBoardStore();
+
+    const note = add(store, { x: 0, y: 0, w: 1, text: "x".repeat(5000) });
+
+    expect(note.w).toBe(NOTE_SIZE.minWidth);
+    expect(note.text.length).toBeLessThan(5000);
+  });
+
+  it("gera ids curtos e distintos", () => {
+    const store = createBoardStore();
+
+    const ids = Array.from({ length: 200 }, () => add(store, { x: 0, y: 0 }).id);
+
+    expect(new Set(ids).size).toBe(200);
+    expect(ids.every((id) => id.length === 6)).toBe(true);
+  });
+
+  it("cada post-it novo nasce na frente do anterior", () => {
+    const store = createBoardStore();
+
+    const primeiro = add(store, { x: 0, y: 0 });
+    const segundo = add(store, { x: 0, y: 0 });
+
+    expect(segundo.z).toBeGreaterThan(primeiro.z);
+  });
+});
+
+describe("updateNote", () => {
+  it("altera só a note apontada", () => {
+    const store = createBoardStore();
+    const alvo = add(store, { x: 0, y: 0 });
+    const outra = add(store, { x: 0, y: 0 });
+
+    store.updateNote(alvo.id, { text: "olá", color: 3 });
+
+    const notes = store.getBoard().notes;
+    expect(notes.find((n) => n.id === alvo.id)).toMatchObject({ text: "olá", color: 3 });
+    expect(notes.find((n) => n.id === outra.id)).toEqual(outra);
+  });
+
+  it("ignora id inexistente sem lançar", () => {
+    const store = createBoardStore();
+    add(store, { x: 0, y: 0 });
+    const antes = store.getBoard();
+
+    expect(() => store.updateNote("nada", { text: "x" })).not.toThrow();
+    expect(store.getBoard()).toBe(antes);
+  });
+
+  it("recusa alteração inválida e mantém a note como estava", () => {
+    const store = createBoardStore();
+    const note = add(store, { x: 0, y: 0, text: "original" });
+
+    store.updateNote(note.id, { color: 42 as never });
+
+    expect(store.getBoard().notes[0]).toEqual(note);
+  });
+});
+
+describe("remoção", () => {
+  it("remove uma note", () => {
+    const store = createBoardStore();
+    const note = add(store, { x: 0, y: 0 });
+    add(store, { x: 0, y: 0 });
+
+    store.removeNote(note.id);
+
+    expect(store.getBoard().notes.map((n) => n.id)).not.toContain(note.id);
+  });
+
+  it("remove várias de uma vez, ignorando id que não existe", () => {
+    const store = createBoardStore();
+    const a = add(store, { x: 0, y: 0 });
+    const b = add(store, { x: 0, y: 0 });
+    const c = add(store, { x: 0, y: 0 });
+
+    store.removeNotes([a.id, c.id, "fantasma"]);
+
+    expect(store.getBoard().notes.map((n) => n.id)).toEqual([b.id]);
+  });
+
+  it("não publica nada quando não havia o que remover", () => {
+    const store = createBoardStore();
+    add(store, { x: 0, y: 0 });
+    const antes = store.getBoard();
+    const listener = vi.fn();
+    store.subscribe(listener);
+
+    store.removeNotes(["fantasma"]);
+
+    expect(store.getBoard()).toBe(antes);
+    expect(listener).not.toHaveBeenCalled();
+  });
+
+  it("funciona desestruturada, sem depender de this", () => {
+    const store = createBoardStore();
+    const note = add(store, { x: 0, y: 0 });
+    const { removeNote, bringToFront } = store;
+
+    expect(() => bringToFront(note.id)).not.toThrow();
+    expect(() => removeNote(note.id)).not.toThrow();
+    expect(store.getBoard().notes).toEqual([]);
+  });
+});
+
+describe("bringToFront", () => {
+  it("põe a note escolhida na frente das demais", () => {
+    const store = createBoardStore();
+    const primeira = add(store, { x: 0, y: 0 });
+    add(store, { x: 0, y: 0 });
+
+    store.bringToFront(primeira.id);
+
+    const notes = store.getBoard().notes;
+    const trazida = notes.find((n) => n.id === primeira.id);
+    expect(trazida?.z).toBeGreaterThan(
+      Math.max(...notes.filter((n) => n !== trazida).map((n) => n.z)),
+    );
+  });
+
+  it("sobe a note mesmo quando há empate no topo", () => {
+    // Empate acontece: um board hidratado pela URL (#21) pode trazer dois z iguais, e aí
+    // quem decide o desenho é a ordem da lista. Estar empatado no topo não é estar na
+    // frente.
+    const store = createBoardStore();
+    store.replaceBoard({
+      version: SCHEMA_VERSION,
+      notes: [
+        { id: "aaaaaa", x: 0, y: 0, w: 100, h: 100, color: 0, text: "de baixo", z: 5 },
+        { id: "bbbbbb", x: 0, y: 0, w: 100, h: 100, color: 0, text: "de cima", z: 5 },
+      ],
+    });
+
+    store.bringToFront("aaaaaa");
+
+    const notes = store.getBoard().notes;
+    const subiu = notes.find((n) => n.id === "aaaaaa");
+    const outra = notes.find((n) => n.id === "bbbbbb");
+    expect(subiu?.z).toBeGreaterThan(outra?.z ?? 0);
+  });
+
+  it("não faz nada se já estiver na frente", () => {
+    const store = createBoardStore();
+    add(store, { x: 0, y: 0 });
+    const topo = add(store, { x: 0, y: 0 });
+    const antes = store.getBoard();
+
+    store.bringToFront(topo.id);
+
+    expect(store.getBoard()).toBe(antes);
+  });
+});
+
+describe("updateNotes", () => {
+  it("altera várias notes numa publicação só", () => {
+    const store = createBoardStore();
+    const a = add(store, { x: 0, y: 0 });
+    const b = add(store, { x: 10, y: 10 });
+    const listener = vi.fn();
+    store.subscribe(listener);
+
+    store.updateNotes([
+      { id: a.id, patch: { x: 100 } },
+      { id: b.id, patch: { x: 110 } },
+    ]);
+
+    expect(store.getBoard().notes.map((n) => n.x)).toEqual([100, 110]);
+    expect(listener).toHaveBeenCalledOnce();
+  });
+
+  it("ignora ids inexistentes no lote", () => {
+    const store = createBoardStore();
+    const note = add(store, { x: 0, y: 0 });
+
+    store.updateNotes([
+      { id: "fantasma", patch: { x: 999 } },
+      { id: note.id, patch: { y: 42 } },
+    ]);
+
+    expect(store.getBoard().notes).toHaveLength(1);
+    expect(store.getBoard().notes[0]?.y).toBe(42);
+  });
+});
+
+describe("publicação sem mudança", () => {
+  it("não avisa ninguém quando o patch não muda nada", () => {
+    const store = createBoardStore();
+    const note = add(store, { x: 10, y: 10, text: "igual" });
+    const antes = store.getBoard();
+    const listener = vi.fn();
+    store.subscribe(listener);
+
+    store.updateNote(note.id, { text: "igual", x: 10 });
+    store.updateNote(note.id, {});
+
+    expect(store.getBoard()).toBe(antes);
+    expect(listener).not.toHaveBeenCalled();
+  });
+});
+
+describe("imutabilidade do board", () => {
+  it("impede que a interface pendure estado efêmero numa note", () => {
+    const store = createBoardStore();
+    add(store, { x: 0, y: 0 });
+    const note = store.getBoard().notes[0] as Note & { selecionada?: boolean };
+
+    // Sem esta barreira, um campo de seleção viajaria dentro da URL.
+    expect(() => {
+      note.selecionada = true;
+    }).toThrow();
+    expect(() => {
+      note.x = 999;
+    }).toThrow();
+  });
+});
+
+describe("replaceBoard", () => {
+  it("troca o board inteiro, como na hidratação por URL", () => {
+    const store = createBoardStore();
+    add(store, { x: 0, y: 0 });
+
+    store.replaceBoard({
+      version: SCHEMA_VERSION,
+      notes: [{ id: "abc123", x: 5, y: 5, w: 100, h: 100, color: 2, text: "vindo da URL", z: 1 }],
+    });
+
+    expect(store.getBoard().notes.map((n) => n.id)).toEqual(["abc123"]);
+  });
+
+  it("não compartilha a lista nem as notes com quem chamou", () => {
+    const store = createBoardStore();
+    const nota = { id: "abc123", x: 0, y: 0, w: 100, h: 100, color: 0 as const, text: "", z: 1 };
+    const notes = [nota];
+
+    store.replaceBoard({ version: SCHEMA_VERSION, notes });
+    notes.pop();
+    nota.x = 999;
+
+    expect(store.getBoard().notes).toHaveLength(1);
+    expect(store.getBoard().notes[0]?.x).toBe(0);
+  });
+});
+
+describe("subscribe", () => {
+  it("entrega o mesmo estado a todos, mesmo se um ouvinte escrever na store", () => {
+    const store = createBoardStore();
+    const note = add(store, { x: 0, y: 0 });
+    const vistos: number[] = [];
+
+    // Um ouvinte que escreve dispara outra publicação no meio desta.
+    const cancelar = store.subscribe(() => {
+      cancelar();
+      store.updateNote(note.id, { y: 50 });
+    });
+    store.subscribe(() => vistos.push(store.getBoard().notes.length));
+
+    store.addNote({ x: 1, y: 1 });
+
+    expect(vistos.length).toBeGreaterThan(0);
+    expect(store.getBoard().notes).toHaveLength(2);
+  });
+
+  it("avisa a cada mudança e para ao cancelar", () => {
+    const store = createBoardStore();
+    const listener = vi.fn();
+    const cancelar = store.subscribe(listener);
+
+    const note = add(store, { x: 0, y: 0 });
+    store.updateNote(note.id, { text: "oi" });
+    expect(listener).toHaveBeenCalledTimes(2);
+
+    cancelar();
+    store.removeNote(note.id);
+    expect(listener).toHaveBeenCalledTimes(2);
+  });
+
+  it("troca a referência do board a cada mudança, para comparação por identidade", () => {
+    const store = createBoardStore();
+    const antes = store.getBoard();
+
+    add(store, { x: 0, y: 0 });
+
+    expect(store.getBoard()).not.toBe(antes);
+  });
+
+  it("cancelar duas vezes não afeta outros inscritos", () => {
+    const store = createBoardStore();
+    const listener = vi.fn();
+    const outro = vi.fn();
+    const cancelar = store.subscribe(listener);
+    store.subscribe(outro);
+
+    cancelar();
+    cancelar();
+    add(store, { x: 0, y: 0 });
+
+    expect(listener).not.toHaveBeenCalled();
+    expect(outro).toHaveBeenCalledOnce();
+  });
+});
