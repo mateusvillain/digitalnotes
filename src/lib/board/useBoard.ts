@@ -98,6 +98,13 @@ export interface UseBoardOptions {
    * alguém mandou apagaria o trabalho de quem abriu.
    */
   autosave?: boolean;
+  /**
+   * Liga a restauração do board salvo localmente.
+   *
+   * Desligado por "criar um novo whiteboard" (#47): o quadro começa em branco, mas segue
+   * gravando — o novo passa a ser o board de trabalho.
+   */
+  restoreLocal?: boolean;
 }
 
 /**
@@ -111,12 +118,16 @@ export interface UseBoardOptions {
  * A store é criada uma vez por montagem, e não em escopo de módulo: em escopo de módulo ela
  * sobreviveria entre testes e, no servidor, entre requisições de usuários diferentes.
  */
-export function useBoard({ initialBoard, autosave = true }: UseBoardOptions = {}): BoardApi {
+export function useBoard({
+  initialBoard,
+  autosave = true,
+  restoreLocal = true,
+}: UseBoardOptions = {}): BoardApi {
   const [store] = useState(() => createBoardStore(initialBoard));
   // Autosave local (#22): restaura o board de trabalho ao montar e grava as alterações
   // seguintes. Mora aqui, e não no componente, porque é a store — e não a interface — que
   // precisa ser persistida.
-  useLocalPersistence(store, autosave);
+  useLocalPersistence(store, { enabled: autosave, restore: restoreLocal });
   const [editingId, setEditingId] = useState<string | null>(null);
   const [selection, setSelection] = useState<Selection>(EMPTY_SELECTION);
   /** A seleção de antes do retângulo começar, para o gesto poder ser refeito enquanto anda. */
