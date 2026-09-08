@@ -1,14 +1,14 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { iconButtonClass } from "@/components/ui/iconButton";
 import type { ShareApi } from "@/lib/board/useShareBoard";
-
-/** Mesma métrica e mesmas cores dos controles de zoom: é a mesma classe de ação. */
-const buttonClass =
-  "flex h-8 w-8 items-center justify-center rounded-control text-ink-muted transition-colors hover:bg-canvas hover:text-ink disabled:pointer-events-none disabled:opacity-40";
 
 /** Quanto tempo o botão de copiar confirma a cópia antes de voltar ao normal. */
 const COPIED_FEEDBACK_MS = 2000;
+
+const panelClass =
+  "rounded-control border border-border bg-surface px-3 py-2 text-xs shadow-control";
 
 /** Ícone de compartilhar: três nós ligados por duas linhas. */
 function ShareIcon() {
@@ -31,6 +31,22 @@ function ShareIcon() {
   );
 }
 
+/** O que a região de anúncios diz em cada estado. Vazio quando não há o que dizer. */
+function announcement(status: ShareApi["state"]["status"]): string {
+  switch (status) {
+    case "sharing":
+      return "Gerando o link…";
+    case "shared":
+      return "Link gerado.";
+    case "too-large":
+      return "Este whiteboard é grande demais para ser compartilhado.";
+    case "error":
+      return "Não foi possível compartilhar agora.";
+    default:
+      return "";
+  }
+}
+
 /**
  * Ação de compartilhar e o link que ela devolve (issue #46).
  *
@@ -50,8 +66,10 @@ export function ShareButton({ state, share, dismiss }: ShareApi) {
    * e o "Copiado" do link anterior desaparece sozinho, sem um efeito para desfazê-lo.
    */
   const [copiedUrl, setCopiedUrl] = useState<string | null>(null);
+  const shareRef = useRef<HTMLButtonElement>(null);
   const url = state.status === "shared" ? state.url : null;
   const copied = url !== null && copiedUrl === url;
+  const sharing = state.status === "sharing";
 
   useEffect(() => {
     if (!copied) return;
@@ -71,14 +89,33 @@ export function ShareButton({ state, share, dismiss }: ShareApi) {
     }
   }, [url]);
 
+  const close = useCallback(() => {
+    dismiss();
+    // Fechar o painel desmonta o que tinha o foco. Sem devolvê-lo ao botão, quem navega
+    // por teclado é jogado para o início do documento.
+    shareRef.current?.focus();
+  }, [dismiss]);
+
   return (
     <div className="flex flex-col items-end gap-2">
+      {/*
+        Região de anúncio persistente, e só com texto.
+        Uma live region que nasce junto do conteúdo costuma não ser lida, e envolver o
+        painel do link faria o leitor reler a URL inteira a cada "Copiar" → "Copiado".
+      */}
+      <p className="sr-only" role="status" aria-live="polite">
+        {announcement(state.status)}
+      </p>
+
       <div className="rounded-control border border-border bg-surface p-1 shadow-control">
         <button
+          ref={shareRef}
           type="button"
-          className={buttonClass}
-          onClick={share}
-          disabled={state.status === "sharing"}
+          className={iconButtonClass}
+          onClick={sharing ? undefined : share}
+          // `aria-busy` em vez de `disabled`: desabilitar tira o foco de quem acabou de
+          // acionar o botão pelo teclado, e o clique já está barrado acima.
+          aria-busy={sharing}
           aria-label="Compartilhar whiteboard"
           title="Compartilhar whiteboard"
         >
@@ -86,20 +123,17 @@ export function ShareButton({ state, share, dismiss }: ShareApi) {
         </button>
       </div>
 
-      {state.status === "sharing" ? (
-        <p
-          className="rounded-control border border-border bg-surface px-3 py-2 text-xs text-ink-muted shadow-control"
-          role="status"
-        >
-          Gerando o link…
+      {sharing ? <p className={`${panelClass} text-ink-muted`}>Gerando o link…</p> : null}
+
+      {state.status === "too-large" ? (
+        <p className={`${panelClass} w-64 text-ink`}>
+          Este whiteboard é grande demais para ser compartilhado. Apague alguns post-its e tente de
+          novo.
         </p>
       ) : null}
 
       {state.status === "error" ? (
-        <div
-          className="flex items-center gap-2 rounded-control border border-border bg-surface px-3 py-2 text-xs shadow-control"
-          role="status"
-        >
+        <div className={`${panelClass} flex items-center gap-2`}>
           <span className="text-ink">Não foi possível compartilhar agora.</span>
           <button type="button" className="text-ink-muted hover:text-ink" onClick={share}>
             Tentar de novo
@@ -108,32 +142,36 @@ export function ShareButton({ state, share, dismiss }: ShareApi) {
       ) : null}
 
       {url === null ? null : (
-        <div
-          className="flex items-center gap-2 rounded-control border border-border bg-surface p-1 pl-3 shadow-control"
-          role="status"
-        >
-          <input
-            readOnly
-            value={url}
-            aria-label="Link do whiteboard compartilhado"
-            className="w-64 bg-transparent text-xs text-ink outline-none"
-            onFocus={(event) => event.currentTarget.select()}
-          />
-          <button
-            type="button"
-            className="rounded-control px-2 py-1 text-xs text-ink-muted transition-colors hover:bg-canvas hover:text-ink"
-            onClick={copy}
-          >
-            {copied ? "Copiado" : "Copiar"}
-          </button>
-          <button
-            type="button"
-            className={buttonClass}
-            onClick={dismiss}
-            aria-label="Fechar o link compartilhado"
-          >
-            ×
-          </button>
+        <div className="flex flex-col items-end gap-1">
+          <div className="flex items-center gap-2 rounded-control border border-border bg-surface p-1 pl-3 shadow-control">
+            <input
+              readOnly
+              value={url}
+              aria-label="Link do whiteboard compartilhado"
+              className="w-64 bg-transparent text-xs text-ink outline-none"
+              onFocus={(event) => event.currentTarget.select()}
+            />
+            <button
+              type="button"
+              className="rounded-control px-2 py-1 text-xs text-ink-muted transition-colors hover:bg-canvas hover:text-ink"
+              onClick={copy}
+            >
+              {copied ? "Copiado" : "Copiar"}
+            </button>
+            <button
+              type="button"
+              className={iconButtonClass}
+              onClick={close}
+              aria-label="Fechar o link compartilhado"
+            >
+              ×
+            </button>
+          </div>
+          {/*
+            Compartilhar de novo gera outro documento e troca o link que está aqui. Sem
+            este aviso, quem já mandou o anterior para alguém acharia que o quebrou.
+          */}
+          <p className="px-1 text-[11px] text-ink-muted">Links já enviados continuam valendo.</p>
         </div>
       )}
     </div>

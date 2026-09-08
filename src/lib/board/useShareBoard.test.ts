@@ -113,6 +113,44 @@ describe("useShareBoard", () => {
     await waitFor(() => expect(result.current.state).toEqual({ status: "error" }));
   });
 
+  it("distingue board grande demais de falha passageira", async () => {
+    respondWith({ error: "Conteúdo do board excede o tamanho máximo aceito." }, 413);
+    const { result } = renderHook(() => useShareBoard(() => board));
+
+    act(() => result.current.share());
+
+    // Insistir não resolveria; quem chama precisa poder dizer isso ao usuário.
+    await waitFor(() => expect(result.current.state).toEqual({ status: "too-large" }));
+  });
+
+  it("ignora a resposta de um envio que já foi substituído por outro", async () => {
+    let resolveFirst: ((response: Response) => void) | undefined;
+    vi.spyOn(globalThis, "fetch")
+      .mockReturnValueOnce(
+        new Promise<Response>((resolve) => {
+          resolveFirst = resolve;
+        }),
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ id: "novo", url: "https://site/board/novo" }), {
+          status: 201,
+        }),
+      );
+    const { result } = renderHook(() => useShareBoard(() => board));
+
+    act(() => result.current.share());
+    act(() => result.current.share());
+    await waitFor(() =>
+      expect(result.current.state).toHaveProperty("url", "https://site/board/novo"),
+    );
+
+    // A primeira resposta chega atrasada: aplicá-la trocaria o link novo pelo velho.
+    act(() => resolveFirst?.(new Response("{}", { status: 500 })));
+    await waitFor(() =>
+      expect(result.current.state).toHaveProperty("url", "https://site/board/novo"),
+    );
+  });
+
   it("permite tentar de novo depois de falhar", async () => {
     vi.spyOn(globalThis, "fetch")
       .mockResolvedValueOnce(new Response("{}", { status: 500 }))

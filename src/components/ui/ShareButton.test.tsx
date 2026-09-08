@@ -10,8 +10,15 @@ function renderButton(state: ShareState, overrides: Partial<ShareApi> = {}) {
   return api;
 }
 
+function stubClipboard(writeText: ReturnType<typeof vi.fn>) {
+  // `vi.stubGlobal` é desfeito no `afterEach`; `Object.assign(navigator, …)` vazaria o
+  // clipboard falso para os testes seguintes do arquivo.
+  vi.stubGlobal("navigator", { ...navigator, clipboard: { writeText } });
+}
+
 afterEach(() => {
   vi.restoreAllMocks();
+  vi.unstubAllGlobals();
 });
 
 describe("ShareButton", () => {
@@ -35,11 +42,32 @@ describe("ShareButton", () => {
     renderButton({ status: "sharing" });
 
     expect(screen.getByRole("status").textContent).toBe("Gerando o link…");
-    // Só o próprio botão é desabilitado, para não disparar dois envios pelo mesmo clique.
-    expect(screen.getByRole("button", { name: "Compartilhar whiteboard" })).toHaveProperty(
-      "disabled",
-      true,
-    );
+    expect(screen.getByText("Gerando o link…", { selector: "p:not(.sr-only)" })).toBeDefined();
+  });
+
+  it("não perde o foco do botão enquanto o envio acontece", async () => {
+    const api = renderButton({ status: "sharing" });
+
+    const button = screen.getByRole("button", { name: "Compartilhar whiteboard" });
+    button.focus();
+
+    // Desabilitar tiraria o foco de quem acabou de acionar pelo teclado; o clique é
+    // barrado sem desabilitar.
+    expect(document.activeElement).toBe(button);
+    expect(button.getAttribute("aria-busy")).toBe("true");
+    await userEvent.click(button);
+    expect(api.share).not.toHaveBeenCalled();
+  });
+
+  it("explica o que fazer quando o board é grande demais, sem sugerir insistir", () => {
+    renderButton({ status: "too-large" });
+
+    // A região de anúncio e o painel visível dizem a mesma coisa, cada um para o seu
+    // público.
+    expect(screen.getByRole("status").textContent).toContain("grande demais");
+    expect(screen.getByText(/Apague alguns post-its/)).toBeDefined();
+    // Tentar de novo não resolveria: o próximo envio falharia igual.
+    expect(screen.queryByRole("button", { name: "Tentar de novo" })).toBeNull();
   });
 
   it("mostra o link gerado num campo fácil de copiar", () => {
@@ -52,7 +80,7 @@ describe("ShareButton", () => {
 
   it("copia o link e confirma", async () => {
     const writeText = vi.fn().mockResolvedValue(undefined);
-    Object.assign(navigator, { clipboard: { writeText } });
+    stubClipboard(writeText);
     renderButton({ status: "shared", url: "https://site/board/abc" });
 
     await userEvent.click(screen.getByRole("button", { name: "Copiar" }));
@@ -62,9 +90,7 @@ describe("ShareButton", () => {
   });
 
   it("mantém o link visível quando copiar não é permitido", async () => {
-    Object.assign(navigator, {
-      clipboard: { writeText: vi.fn().mockRejectedValue(new Error("negado")) },
-    });
+    stubClipboard(vi.fn().mockRejectedValue(new Error("negado")));
     renderButton({ status: "shared", url: "https://site/board/abc" });
 
     await userEvent.click(screen.getByRole("button", { name: "Copiar" }));
@@ -82,6 +108,8 @@ describe("ShareButton", () => {
       "disabled",
       false,
     );
+    // E quem já mandou o link anterior precisa saber que ele não quebrou.
+    expect(screen.getByText("Links já enviados continuam valendo.")).toBeDefined();
   });
 
   it("sinaliza a falha e deixa tentar de novo", async () => {
@@ -94,11 +122,15 @@ describe("ShareButton", () => {
     expect(api.share).toHaveBeenCalledOnce();
   });
 
-  it("fecha o link quando pedem", async () => {
+  it("fecha o link e devolve o foco ao botão", async () => {
     const api = renderButton({ status: "shared", url: "https://site/board/abc" });
 
     await userEvent.click(screen.getByRole("button", { name: "Fechar o link compartilhado" }));
 
     expect(api.dismiss).toHaveBeenCalledOnce();
+    // Sem devolver o foco, quem navega por teclado volta para o início do documento.
+    expect(document.activeElement).toBe(
+      screen.getByRole("button", { name: "Compartilhar whiteboard" }),
+    );
   });
 });
