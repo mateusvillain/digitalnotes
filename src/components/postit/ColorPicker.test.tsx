@@ -3,6 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import { NOTE_COLORS } from "@/lib/board/types";
 import { ColorPicker } from "./ColorPicker";
+import { UI } from "@/lib/i18n/ui";
 
 function cores(): HTMLElement[] {
   return screen.getAllByRole("radio");
@@ -39,28 +40,23 @@ describe("ColorPicker", () => {
     const onChange = vi.fn();
     render(<ColorPicker value={0} onChange={onChange} />);
 
-    await user.click(screen.getByRole("radio", { name: "Azul" }));
+    await user.click(screen.getByRole("radio", { name: UI.en.note.colors.blue }));
 
     expect(onChange).toHaveBeenCalledWith(3);
   });
 
-  it("anuncia cada cor pelo nome, em português", () => {
+  it("anuncia cada cor pelo nome, no idioma da rota", () => {
     render(<ColorPicker value={0} onChange={vi.fn()} />);
 
     expect(cores().map((cor) => cor.getAttribute("aria-label"))).toEqual([
-      "Amarelo",
-      "Rosa",
-      "Verde",
-      "Azul",
-      "Roxo",
-      "Laranja",
+      ...NOTE_COLORS.map((name) => UI.en.note.colors[name]),
     ]);
   });
 
   it("é um grupo de rádio com nome próprio", () => {
     render(<ColorPicker value={0} onChange={vi.fn()} />);
 
-    expect(screen.getByRole("radiogroup", { name: "Cor do post-it" })).toBeDefined();
+    expect(screen.getByRole("radiogroup", { name: UI.en.note.color })).toBeDefined();
   });
 });
 

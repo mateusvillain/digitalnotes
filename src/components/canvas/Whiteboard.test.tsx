@@ -1,11 +1,12 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { createEvent, fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { defined } from "@/test-utils/defined";
 import { stubMatchMedia } from "@/test-utils/matchMedia";
-import { NOTE_SIZE } from "@/lib/board/types";
+import { NOTE_SIZE, SCHEMA_VERSION } from "@/lib/board/types";
 import { MAX_SCALE, MIN_SCALE, scaleAsPercent } from "@/lib/canvas/coords";
 import { Whiteboard } from "./Whiteboard";
+import { UI } from "@/lib/i18n/ui";
 
 /**
  * Testes de ponta a ponta do quadro, no nível em que o usuário age: duplo clique no fundo,
@@ -80,7 +81,7 @@ describe("Whiteboard", () => {
     // Zoom por botão, que ancora no centro da área — e no jsdom a área mede zero, então o
     // resultado é um viewport com escala diferente de 1. O que este teste guarda é que a
     // conversão desfaz a transformação seja ela qual for.
-    await user.click(screen.getByLabelText("Aumentar zoom"));
+    await user.click(screen.getByLabelText(UI.en.zoom.in));
     navegaOQuadro(70, -35);
     duploCliqueNoFundo(320, 260);
 
@@ -361,7 +362,7 @@ describe("Whiteboard — arraste", () => {
     criaPostIt(300, 300);
     const antes = posicao(0);
 
-    await user.click(screen.getByLabelText("Aumentar zoom"));
+    await user.click(screen.getByLabelText(UI.en.zoom.in));
     const escala = Number(
       screen.getByTestId("viewport-layer").style.transform.match(/scale\(([^)]+)\)/)?.[1],
     );
@@ -477,7 +478,7 @@ describe("Whiteboard — redimensionamento", () => {
     criaPostIt(400, 400);
     const antes = tamanho();
 
-    await user.click(screen.getByLabelText("Aumentar zoom"));
+    await user.click(screen.getByLabelText(UI.en.zoom.in));
     const escala = Number(
       screen.getByTestId("viewport-layer").style.transform.match(/scale\(([^)]+)\)/)?.[1],
     );
@@ -526,7 +527,7 @@ describe("Whiteboard — redimensionamento", () => {
     criaPostIt(400, 400);
     const antes = tamanho();
 
-    await user.click(screen.getByLabelText("Diminuir zoom"));
+    await user.click(screen.getByLabelText(UI.en.zoom.out));
     const escala = Number(
       screen.getByTestId("viewport-layer").style.transform.match(/scale\(([^)]+)\)/)?.[1],
     );
@@ -608,9 +609,9 @@ describe("Whiteboard — cor do post-it", () => {
     criaPostIt(400, 400);
 
     // O post-it nasce amarelo, que é o índice 0 da paleta.
-    expect(screen.getByRole("radio", { name: "Amarelo" }).getAttribute("aria-checked")).toBe(
-      "true",
-    );
+    expect(
+      screen.getByRole("radio", { name: UI.en.note.colors.yellow }).getAttribute("aria-checked"),
+    ).toBe("true");
   });
 
   it("escolher uma cor pinta o post-it na hora", () => {
@@ -618,7 +619,7 @@ describe("Whiteboard — cor do post-it", () => {
     criaPostIt(400, 400);
     const antes = corDe(0);
 
-    escolheCor("Verde");
+    escolheCor(UI.en.note.colors.green);
 
     expect(corDe(0)).not.toBe(antes);
     expect(corDe(0)).toBe("var(--color-note-green)");
@@ -628,9 +629,11 @@ describe("Whiteboard — cor do post-it", () => {
     render(<Whiteboard />);
     criaPostIt(400, 400);
 
-    escolheCor("Roxo");
+    escolheCor(UI.en.note.colors.purple);
 
-    expect(screen.getByRole("radio", { name: "Roxo" }).getAttribute("aria-checked")).toBe("true");
+    expect(
+      screen.getByRole("radio", { name: UI.en.note.colors.purple }).getAttribute("aria-checked"),
+    ).toBe("true");
   });
 
   it("pinta todos os post-its selecionados", () => {
@@ -639,7 +642,7 @@ describe("Whiteboard — cor do post-it", () => {
     criaPostIt(700, 300);
     fireEvent.pointerDown(postIt(0), { button: 0, shiftKey: true });
 
-    escolheCor("Azul");
+    escolheCor(UI.en.note.colors.blue);
 
     expect(corDe(0)).toBe("var(--color-note-blue)");
     expect(corDe(1)).toBe("var(--color-note-blue)");
@@ -648,7 +651,7 @@ describe("Whiteboard — cor do post-it", () => {
   it("não indica cor quando os selecionados divergem", () => {
     render(<Whiteboard />);
     criaPostIt(300, 300);
-    escolheCor("Rosa");
+    escolheCor(UI.en.note.colors.pink);
     criaPostIt(700, 300);
     fireEvent.pointerDown(postIt(0), { button: 0, shiftKey: true });
 
@@ -663,7 +666,7 @@ describe("Whiteboard — cor do post-it", () => {
     render(<Whiteboard />);
     criaPostIt(400, 400);
 
-    escolheCor("Laranja");
+    escolheCor(UI.en.note.colors.orange);
 
     // A barra vive fora da superfície do quadro justamente para o clique não chegar ao
     // fundo, que o leria como o pedido de limpar a seleção.
@@ -1029,7 +1032,7 @@ function aparelhoDeToque(toque: boolean): void {
 /** A escala mostrada pelos controles, em porcento. */
 function escalaAtual(): string {
   return defined(
-    screen.getByRole("button", { name: "Voltar o zoom para 100%" }).textContent,
+    screen.getByRole("button", { name: UI.en.zoom.reset }).textContent,
     "o percentual de zoom",
   );
 }
@@ -1105,7 +1108,7 @@ describe("Whiteboard — toque", () => {
     aparelhoDeToque(false);
     render(<Whiteboard />);
     duploCliqueNoFundo(150, 150);
-    fireEvent.blur(screen.getByRole("textbox", { name: "Texto do post-it" }));
+    fireEvent.blur(screen.getByRole("textbox", { name: UI.en.note.text }));
     const surface = screen.getByTestId("viewport-surface");
 
     // Primeiro dedo sobre a nota, segundo no fundo: num quadro cheio é o caso comum, e sem
@@ -1138,7 +1141,7 @@ describe("Whiteboard — toque", () => {
     aparelhoDeToque(false);
     render(<Whiteboard />);
     duploCliqueNoFundo(150, 150);
-    fireEvent.blur(screen.getByRole("textbox", { name: "Texto do post-it" }));
+    fireEvent.blur(screen.getByRole("textbox", { name: UI.en.note.text }));
     const surface = screen.getByTestId("viewport-surface");
     const antes = postIt(0).style.transform;
 
@@ -1308,8 +1311,8 @@ describe("Whiteboard — toque", () => {
     render(<Whiteboard />);
 
     // A pinça faz o mesmo trabalho, e o painel disputaria o canto do polegar.
-    expect(screen.queryByRole("button", { name: "Aumentar zoom" })).toBeNull();
-    expect(screen.queryByRole("button", { name: "Diminuir zoom" })).toBeNull();
+    expect(screen.queryByRole("button", { name: UI.en.zoom.in })).toBeNull();
+    expect(screen.queryByRole("button", { name: UI.en.zoom.out })).toBeNull();
   });
 
   it("mantém os controles em aparelho com ponteiro", () => {
@@ -1317,7 +1320,7 @@ describe("Whiteboard — toque", () => {
 
     render(<Whiteboard />);
 
-    expect(screen.getByRole("button", { name: "Aumentar zoom" })).toBeDefined();
+    expect(screen.getByRole("button", { name: UI.en.zoom.in })).toBeDefined();
   });
 
   it("não esconde as ações do documento no toque", () => {
@@ -1326,7 +1329,230 @@ describe("Whiteboard — toque", () => {
     render(<Whiteboard />);
 
     // Só o zoom sai: compartilhar e criar um novo quadro não têm gesto equivalente.
-    expect(screen.getByRole("button", { name: "Compartilhar whiteboard" })).toBeDefined();
-    expect(screen.getByRole("button", { name: "Criar um novo whiteboard" })).toBeDefined();
+    expect(screen.getByRole("button", { name: UI.en.save.action })).toBeDefined();
+    expect(screen.getByRole("button", { name: UI.en.newBoard.action })).toBeDefined();
+  });
+});
+
+describe("Whiteboard — apresentação do quadro vazio", () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  function criaPostIt(x: number, y: number): void {
+    duploCliqueNoFundo(x, y);
+    fireEvent.keyDown(screen.getByTestId("post-it-editor"), { key: "Escape" });
+  }
+
+  function apresentacao(): HTMLElement | null {
+    return screen.queryByTestId("onboarding");
+  }
+
+  it("recebe quem chega no quadro vazio", () => {
+    stubMatchMedia(false);
+
+    render(<Whiteboard />);
+
+    expect(apresentacao()).not.toBeNull();
+  });
+
+  it("sai de cena assim que o primeiro post-it aparece", () => {
+    stubMatchMedia(false);
+    render(<Whiteboard />);
+
+    duploCliqueNoFundo(300, 240);
+
+    expect(apresentacao()).toBeNull();
+  });
+
+  /**
+   * Quem apagou tudo já sabe criar um post-it — foi o que acabou de fazer. Trazer as
+   * instruções de volta no meio de uma limpeza de quadro seria ensinar o já aprendido
+   * justamente no momento em que a tela precisa estar livre.
+   */
+  it("não volta quando o quadro fica vazio de novo", () => {
+    stubMatchMedia(false);
+    render(<Whiteboard />);
+    criaPostIt(400, 400);
+
+    fireEvent.keyDown(document, { key: "Delete" });
+
+    expect(postIts()).toEqual([]);
+    expect(apresentacao()).toBeNull();
+  });
+
+  it("não aparece num board que já vem com post-its", () => {
+    stubMatchMedia(false);
+
+    render(
+      <Whiteboard
+        initialBoard={{
+          version: SCHEMA_VERSION,
+          notes: [
+            {
+              id: "a1b2c3",
+              x: 10,
+              y: 20,
+              w: NOTE_SIZE.defaultWidth,
+              h: NOTE_SIZE.defaultHeight,
+              color: 0,
+              text: "oi",
+              z: 1,
+            },
+          ],
+        }}
+      />,
+    );
+
+    // A asserção do post-it é o que dá sentido à de cima: sem ela, um `initialBoard` que o
+    // quadro ignorasse deixaria o teste passar pelo motivo errado.
+    expect(postIts()).toHaveLength(1);
+    expect(apresentacao()).toBeNull();
+  });
+});
+
+describe("Whiteboard — atalhos de teclado", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    // `restoreAllMocks` e não só `unstubAllGlobals`: um `spyOn(globalThis, "fetch")` do
+    // caso anterior sobrevive, e o `spyOn` seguinte devolve **o mesmo** espião, com as
+    // chamadas antigas ainda contadas. É a convenção do resto da suíte.
+    vi.restoreAllMocks();
+  });
+
+  it("N cria um post-it já pronto para escrever", () => {
+    stubMatchMedia(false);
+    render(<Whiteboard />);
+
+    fireEvent.keyDown(document, { key: "n" });
+
+    expect(postIts()).toHaveLength(1);
+    expect(document.activeElement).toBe(screen.getByTestId("post-it-editor"));
+  });
+
+  /**
+   * Sem cursor não há ponto para obedecer. O centro da área visível é a única resposta que
+   * não depende de onde o quadro foi arrastado — criar sempre na origem do canvas colocaria
+   * o post-it fora da tela de quem já navegou para longe dela.
+   */
+  it("põe o post-it do teclado no centro do que está visível", () => {
+    stubMatchMedia(false);
+    // O jsdom não faz layout: sem medida, toda área do quadro tem 0×0 e o "centro" seria a
+    // origem, indistinguível de criar sempre no mesmo lugar. A medida entra no protótipo
+    // porque quem é medido aqui é a moldura interna, que não tem testid próprio.
+    vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockReturnValue(
+      new DOMRect(0, 0, 800, 600),
+    );
+    render(<Whiteboard />);
+
+    fireEvent.keyDown(document, { key: "n" });
+
+    const nota = postIt(0);
+    expect(Number.parseFloat(nota.style.left) + Number.parseFloat(nota.style.width) / 2).toBe(400);
+    expect(Number.parseFloat(nota.style.top) + Number.parseFloat(nota.style.height) / 2).toBe(300);
+  });
+
+  it("N também dispensa a apresentação do quadro vazio", () => {
+    stubMatchMedia(false);
+    render(<Whiteboard />);
+
+    fireEvent.keyDown(document, { key: "n" });
+
+    expect(screen.queryByTestId("onboarding")).toBeNull();
+  });
+
+  it("Ctrl+S salva o quadro pelo mesmo caminho do botão", async () => {
+    stubMatchMedia(false);
+    const fetchSpy = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(Response.json({ url: "https://site/board/abc" }));
+    render(<Whiteboard />);
+
+    fireEvent.keyDown(document, { key: "s", ctrlKey: true });
+
+    expect(fetchSpy).toHaveBeenCalledWith(
+      "/api/boards",
+      expect.objectContaining({ method: "POST" }),
+    );
+    expect(await screen.findByLabelText(UI.en.save.linkField)).toHaveProperty(
+      "value",
+      "https://site/board/abc",
+    );
+  });
+
+  it("⌘+S salva mesmo com o cursor dentro de um post-it", () => {
+    stubMatchMedia(false);
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockReturnValue(new Promise(() => {}));
+    render(<Whiteboard />);
+    duploCliqueNoFundo(300, 240);
+
+    fireEvent.keyDown(screen.getByTestId("post-it-editor"), { key: "s", metaKey: true });
+
+    expect(fetchSpy).toHaveBeenCalledOnce();
+  });
+});
+
+describe("Whiteboard — navegar com a rodinha apertada", () => {
+  /** Aperta o botão do meio e arrasta: o gesto de quem vem de editor de imagem ou de mapa. */
+  function arrastaComARodinha(dx: number, dy: number): boolean {
+    const surface = screen.getByTestId("viewport-surface");
+    const down = createEvent.pointerDown(surface, {
+      pointerId: 1,
+      button: 1,
+      clientX: 0,
+      clientY: 0,
+    });
+
+    fireEvent(surface, down);
+    fireEvent.pointerMove(surface, { pointerId: 1, clientX: dx, clientY: dy });
+    fireEvent.pointerUp(surface, { pointerId: 1, clientX: dx, clientY: dy });
+
+    return down.defaultPrevented;
+  }
+
+  /** Onde o post-it está na tela, que é o que denuncia o deslocamento do quadro. */
+  function posicaoDoPostIt(): { x: number; y: number } {
+    return {
+      x: Number.parseFloat(postIt(0).style.left),
+      y: Number.parseFloat(postIt(0).style.top),
+    };
+  }
+
+  it("desloca o quadro como segurar espaço", () => {
+    render(<Whiteboard />);
+    duploCliqueNoFundo(300, 240);
+    fireEvent.keyDown(screen.getByTestId("post-it-editor"), { key: "Escape" });
+    const antes = posicaoDoPostIt();
+
+    arrastaComARodinha(80, 40);
+
+    // O post-it não se move em coordenadas de canvas: quem andou foi o quadro inteiro.
+    expect(posicaoDoPostIt()).toEqual(antes);
+    expect(screen.getByTestId("viewport-layer").style.transform).toContain("translate(80px, 40px)");
+  });
+
+  /**
+   * Sem isto, o Windows e o Linux entram no modo de rolagem automática — aquele ícone que
+   * fica preso no meio da tela rolando a página sozinho enquanto se tenta navegar o quadro.
+   */
+  it("engole o evento para o navegador não entrar em rolagem automática", () => {
+    render(<Whiteboard />);
+
+    expect(arrastaComARodinha(10, 10)).toBe(true);
+  });
+
+  it("não seleciona: a rodinha navega, e quem seleciona é o botão principal", () => {
+    render(<Whiteboard />);
+    duploCliqueNoFundo(300, 240);
+    fireEvent.keyDown(screen.getByTestId("post-it-editor"), { key: "Escape" });
+    fireEvent.pointerDown(screen.getByTestId("viewport-surface"), {
+      pointerId: 9,
+      button: 0,
+      clientX: 900,
+      clientY: 700,
+    });
+    fireEvent.pointerUp(screen.getByTestId("viewport-surface"), { pointerId: 9 });
+
+    arrastaComARodinha(-400, -300);
+
+    expect(screen.queryByTestId("selection-box")).toBeNull();
   });
 });

@@ -1,0 +1,26 @@
+<!--
+  O favicon: uma nota amarela com a ponta dobrada e duas linhas escritas.
+
+  Sem texto: no tamanho em que a aba do navegador o mostra, qualquer letra vira um borrão.
+  As cores são as mesmas de globals.css (o amarelo de color-note-yellow e a tinta diluída
+  de color-note-ink), porque o ícone é o produto em miniatura, e não um segundo tema.
+
+  Este arquivo é a fonte da marca: o ícone do iOS (apple-icon.tsx) o lê daqui em vez de
+  redesenhá-lo, para os dois não se separarem no dia em que um deles mudar.
+
+  Cuidado ao editar este comentário: XML proíbe dois hifens seguidos dentro de um
+  comentário, e um nome de token CSS escrito com os hifens da frente torna o arquivo
+  inteiro malformado. O navegador não avisa; ele só deixa de desenhar o ícone.
+-->
+<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" fill="none" viewBox="0 0 32 32">
+  <g clip-path="url(#a)">
+    <path fill="#FDE68A" d="M0 2.667A2.667 2.667 0 0 1 2.667 0h26.666A2.667 2.667 0 0 1 32 2.667v18.666L21.333 32H2.667A2.667 2.667 0 0 1 0 29.333z"/>
+    <path fill="#EAB308" d="M31.999 21.333h-8A2.667 2.667 0 0 0 21.332 24v8z"/>
+    <path fill="#897E58" d="M19.556 16.178a1.601 1.601 0 0 1 0 3.2H7.11a1.6 1.6 0 1 1 0-3.2zm5.333-7.11a1.6 1.6 0 1 1 0 3.199H7.11a1.6 1.6 0 1 1 0-3.2z" opacity=".55"/>
+  </g>
+  <defs>
+    <clipPath id="a">
+      <path fill="#fff" d="M0 0h32v32H0z"/>
+    </clipPath>
+  </defs>
+</svg>

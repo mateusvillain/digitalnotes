@@ -14,6 +14,14 @@
 import { parseBoard } from "./schema";
 import type { Board } from "./types";
 
+/**
+ * O nome antigo do projeto, mantido de propósito depois da renomeação para Virtual Notes.
+ *
+ * Renomear o banco não migra nada: o `IndexedDB` do navegador passaria a abrir um banco
+ * vazio, e o quadro salvo de quem já usava o site sumiria sem aviso e sem forma de voltar.
+ * O nome é interno e ninguém o vê — trocá-lo custaria o autosave de todo mundo para
+ * arrumar uma string que só aparece no inspetor do navegador.
+ */
 const DB_NAME = "digitalnotes";
 const DB_VERSION = 1;
 const STORE_NAME = "board";

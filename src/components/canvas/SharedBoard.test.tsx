@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { SharedBoard } from "./SharedBoard";
 import { loadBoard, saveBoard } from "@/lib/board/localStore";
 import { SCHEMA_VERSION, type Board } from "@/lib/board/types";
+import { UI } from "@/lib/i18n/ui";
 
 const notFound = vi.fn(() => {
   throw new Error("NEXT_NOT_FOUND");
@@ -69,8 +70,8 @@ describe("SharedBoard", () => {
     // Enquanto carrega há um aviso, e não a superfície do quadro: montar o whiteboard
     // antes faria os post-its aparecerem num segundo salto. A moldura continua sendo a do
     // app, com o heading que anuncia a página.
-    expect(screen.getByRole("status").textContent).toBe("Abrindo o whiteboard…");
-    expect(screen.getByRole("heading", { name: "digitalnotes" })).toBeDefined();
+    expect(screen.getByRole("status").textContent).toBe(UI.en.sharedBoard.loading);
+    expect(screen.getByRole("heading", { name: "Virtual Notes" })).toBeDefined();
   });
 
   it("oferece tentar de novo quando a falha não diz que o board sumiu", async () => {
@@ -83,7 +84,7 @@ describe("SharedBoard", () => {
 
     render(<SharedBoard id="abcdefghijkl" />);
 
-    const retry = await screen.findByRole("button", { name: "Tentar de novo" });
+    const retry = await screen.findByRole("button", { name: UI.en.sharedBoard.retry });
     expect(notFound).not.toHaveBeenCalled();
 
     await userEvent.click(retry);
@@ -135,8 +136,8 @@ describe("SharedBoard", () => {
     await screen.findByText("veio do link");
 
     // O board tem post-its, então o botão pergunta antes; seguir sem link limpa só a tela.
-    await userEvent.click(screen.getByRole("button", { name: "Criar um novo whiteboard" }));
-    await userEvent.click(screen.getByRole("button", { name: "Começar sem link" }));
+    await userEvent.click(screen.getByRole("button", { name: UI.en.newBoard.action }));
+    await userEvent.click(screen.getByRole("button", { name: UI.en.newBoard.startWithoutSaving }));
 
     expect(screen.queryByText("veio do link")).toBeNull();
     // Nada foi enviado ao backend, e a cópia de trabalho da raiz segue intacta.

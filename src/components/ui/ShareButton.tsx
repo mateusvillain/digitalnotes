@@ -4,6 +4,8 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { iconButtonClass } from "@/components/ui/iconButton";
 import { Tooltip } from "@/components/ui/Tooltip";
 import type { ShareApi } from "@/lib/board/useShareBoard";
+import { useUi } from "@/lib/i18n/LocaleProvider";
+import type { UiCopy } from "@/lib/i18n/ui";
 
 /** Quanto tempo o botão de copiar confirma a cópia antes de voltar ao normal. */
 const COPIED_FEEDBACK_MS = 2000;
@@ -11,8 +13,14 @@ const COPIED_FEEDBACK_MS = 2000;
 const panelClass =
   "rounded-control border border-border bg-surface px-3 py-2 text-xs shadow-control";
 
-/** Ícone de compartilhar: três nós ligados por duas linhas. */
-function ShareIcon() {
+/**
+ * Ícone de salvar: uma nuvem com a seta para cima.
+ *
+ * Nuvem, e não o disquete: salvar aqui **envia** o quadro e devolve um endereço, e um
+ * disquete prometeria uma cópia guardada na máquina de quem clicou. A seta para cima é a
+ * parte que diz para onde o quadro vai.
+ */
+function SaveIcon() {
   return (
     <svg
       viewBox="0 0 24 24"
@@ -24,42 +32,51 @@ function ShareIcon() {
       strokeLinejoin="round"
       aria-hidden="true"
     >
-      <circle cx="18" cy="5" r="3" />
-      <circle cx="6" cy="12" r="3" />
-      <circle cx="18" cy="19" r="3" />
-      <path d="M8.6 13.5l6.8 4M15.4 6.5l-6.8 4" />
+      <path d="M7 18.5a4 4 0 0 1-.4-8A5.5 5.5 0 0 1 17.4 11a3.75 3.75 0 0 1-.4 7.5" />
+      <path d="M12 20v-8M9 14.5 12 11.5l3 3" />
     </svg>
   );
 }
 
-/** O que a região de anúncios diz em cada estado. Vazio quando não há o que dizer. */
-function announcement(status: ShareApi["state"]["status"]): string {
+/**
+ * O que a região de anúncios diz em cada estado. Vazio quando não há o que dizer.
+ *
+ * Recebe o dicionário em vez de chamar `useUi()`: é uma função pura sobre o estado, e
+ * transformá-la em hook a prenderia a um componente só para ler o mesmo objeto.
+ */
+function announcement(status: ShareApi["state"]["status"], ui: UiCopy): string {
   switch (status) {
     case "sharing":
-      return "Gerando o link…";
+      return ui.save.saving;
     case "shared":
-      return "Link gerado.";
+      return ui.save.saved;
     case "too-large":
-      return "Este whiteboard é grande demais para ser compartilhado.";
+      return ui.save.tooLarge;
     case "error":
-      return "Não foi possível compartilhar agora.";
+      return ui.save.error;
     default:
       return "";
   }
 }
 
 /**
- * Ação de compartilhar e o link que ela devolve (issue #46).
+ * Ação de salvar o quadro e o link que ela devolve (issue #46).
+ *
+ * Salvar aqui é **enviar**: o quadro sai da máquina de quem escreveu e ganha um endereço
+ * público. O rótulo diz "salvar" porque é o que a pessoa quer fazer — não perder o
+ * trabalho —, mas o painel abaixo nunca esconde que o resultado é um link, e é por isso
+ * que ele mostra a URL em vez de um "pronto".
  *
  * Só o ícone, como os controles de zoom: o quadro é a interface inteira, e um rótulo
  * escrito custaria largura de tela para dizer o que o desenho já diz. Quem não vê o ícone
  * ouve o `aria-label`.
  *
- * O link aparece num painel logo abaixo, e não substitui o botão: compartilhar de novo
- * gera outro documento, então o botão continua sendo a ação principal mesmo com um link
- * na tela.
+ * O link aparece num painel logo abaixo, e não substitui o botão: salvar de novo gera
+ * outro documento, então o botão continua sendo a ação principal mesmo com um link na
+ * tela.
  */
 export function ShareButton({ state, share, dismiss }: ShareApi) {
+  const ui = useUi();
   /**
    * Qual link foi copiado, e não "se copiou".
    *
@@ -105,11 +122,11 @@ export function ShareButton({ state, share, dismiss }: ShareApi) {
         painel do link faria o leitor reler a URL inteira a cada "Copiar" → "Copiado".
       */}
       <p className="sr-only" role="status" aria-live="polite">
-        {announcement(state.status)}
+        {announcement(state.status, ui)}
       </p>
 
       <div className="rounded-control border border-border bg-surface p-1 shadow-control">
-        <Tooltip label="Compartilhar whiteboard" align="end">
+        <Tooltip label={ui.save.action} align="end">
           <button
             ref={shareRef}
             type="button"
@@ -118,31 +135,28 @@ export function ShareButton({ state, share, dismiss }: ShareApi) {
             // `aria-busy` em vez de `disabled`: desabilitar tira o foco de quem acabou de
             // acionar o botão pelo teclado, e o clique já está barrado acima.
             aria-busy={sharing}
-            aria-label="Compartilhar whiteboard"
+            aria-label={ui.save.action}
           >
-            <ShareIcon />
+            <SaveIcon />
           </button>
         </Tooltip>
       </div>
 
-      {sharing ? <p className={`${panelClass} text-ink-muted`}>Gerando o link…</p> : null}
+      {sharing ? <p className={`${panelClass} text-ink-muted`}>{ui.save.saving}</p> : null}
 
       {state.status === "too-large" ? (
-        <p className={`${panelClass} w-64 text-ink`}>
-          Este whiteboard é grande demais para ser compartilhado. Apague alguns post-its e tente de
-          novo.
-        </p>
+        <p className={`${panelClass} w-64 text-ink`}>{ui.save.tooLargeHint}</p>
       ) : null}
 
       {state.status === "error" ? (
         <div className={`${panelClass} flex items-center gap-2`}>
-          <span className="text-ink">Não foi possível compartilhar agora.</span>
+          <span className="text-ink">{ui.save.error}</span>
           <button
             type="button"
             className="text-ink-muted hover:text-ink"
             onClick={() => void share()}
           >
-            Tentar de novo
+            {ui.save.retry}
           </button>
         </div>
       ) : null}
@@ -153,7 +167,7 @@ export function ShareButton({ state, share, dismiss }: ShareApi) {
             <input
               readOnly
               value={url}
-              aria-label="Link do whiteboard compartilhado"
+              aria-label={ui.save.linkField}
               className="w-64 bg-transparent text-xs text-ink outline-none"
               onFocus={(event) => event.currentTarget.select()}
             />
@@ -162,24 +176,26 @@ export function ShareButton({ state, share, dismiss }: ShareApi) {
               className="rounded-control px-2 py-1 text-xs text-ink-muted transition-colors hover:bg-canvas hover:text-ink"
               onClick={copy}
             >
-              {copied ? "Copiado" : "Copiar"}
+              {copied ? ui.save.copied : ui.save.copy}
             </button>
-            <Tooltip label="Fechar o link compartilhado" align="end">
+            <Tooltip label={ui.save.closeLink} align="end">
               <button
                 type="button"
                 className={iconButtonClass}
                 onClick={close}
-                aria-label="Fechar o link compartilhado"
+                aria-label={ui.save.closeLink}
               >
                 ×
               </button>
             </Tooltip>
           </div>
           {/*
-            Compartilhar de novo gera outro documento e troca o link que está aqui. Sem
-            este aviso, quem já mandou o anterior para alguém acharia que o quebrou.
+            Duas coisas numa frase só, e as duas necessárias: o link **é** o quadro salvo
+            (quem fechar a aba sem guardá-lo perde o trabalho), e salvar de novo troca o
+            link daqui sem quebrar o anterior — sem isso, quem já mandou o antigo para
+            alguém acharia que o derrubou.
           */}
-          <p className="px-1 text-[11px] text-ink-muted">Links já enviados continuam valendo.</p>
+          <p className="px-1 text-[11px] text-ink-muted">{ui.save.keepLink}</p>
         </div>
       )}
     </div>

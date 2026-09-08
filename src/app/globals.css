@@ -70,6 +70,8 @@
 @theme inline {
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
+  /* Manuscrita, para a prosa que flutua sobre o quadro. Ver Document.tsx. */
+  --font-handwritten: var(--font-fuzzy-bubbles);
 }
 
 /* Malha de pontos do quadro: não vira utilitária, é detalhe da superfície abaixo. */
@@ -99,4 +101,35 @@ body {
     transparent var(--canvas-dot-size)
   );
   background-size: var(--canvas-dot-gap, 24px) var(--canvas-dot-gap, 24px);
+}
+
+/**
+ * Entrada da apresentação do quadro vazio.
+ *
+ * Um fade curto com um passo para cima, e não um simples aparecer: a peça nasce junto com
+ * a página, e sem a transição ela parece um erro de carregamento que ficou na tela.
+ *
+ * Vive aqui porque é um `@keyframes` — não existe utilitária do Tailwind que o declare, e
+ * um `<style>` solto no componente sairia do alcance do tema.
+ */
+@keyframes onboarding-enter {
+  from {
+    opacity: 0;
+    transform: translateY(0.5rem);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.onboarding-enter {
+  animation: onboarding-enter 240ms ease-out both;
+}
+
+/* Quem pediu menos movimento recebe a peça pronta, sem o deslocamento. */
+@media (prefers-reduced-motion: reduce) {
+  .onboarding-enter {
+    animation: none;
+  }
 }

@@ -3,6 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import { NOTE_MAX_TEXT_LENGTH } from "@/lib/board/types";
 import { PostItEditor } from "./PostItEditor";
+import { UI } from "@/lib/i18n/ui";
 
 function editor() {
   return screen.getByTestId("post-it-editor") as HTMLTextAreaElement;
@@ -133,6 +134,6 @@ describe("PostItEditor", () => {
   it("tem nome acessível próprio, já que o texto some do post-it durante a edição", () => {
     render(<PostItEditor initialText="" onCommit={vi.fn()} />);
 
-    expect(screen.getByLabelText("Texto do post-it")).toBe(editor());
+    expect(screen.getByLabelText(UI.en.note.text)).toBe(editor());
   });
 });

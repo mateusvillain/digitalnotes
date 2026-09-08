@@ -28,24 +28,3 @@ export function noteBackgroundVar(color: NoteColor): NoteBackgroundVar {
 export function noteBackgroundColor(color: NoteColor): string {
   return `var(${noteBackgroundVar(color)})`;
 }
-
-/**
- * Nome de cada cor em português, para quem lê a interface com leitor de tela.
- *
- * `Record` sobre o nome da cor, e não uma lista à parte: acrescentar uma cor à paleta sem
- * dar um rótulo a ela vira erro de compilação, em vez de um botão anunciado como "purple"
- * no meio de uma interface em português.
- */
-export const NOTE_COLOR_LABELS: Record<NoteColorName, string> = {
-  yellow: "Amarelo",
-  pink: "Rosa",
-  green: "Verde",
-  blue: "Azul",
-  purple: "Roxo",
-  orange: "Laranja",
-};
-
-/** Rótulo legível da cor a partir do índice guardado no board. */
-export function noteColorLabel(color: NoteColor): string {
-  return NOTE_COLOR_LABELS[NOTE_COLORS[color]];
-}

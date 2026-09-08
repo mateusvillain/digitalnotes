@@ -1,16 +1,17 @@
 "use client";
 
-import { useCallback, useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { AppShell } from "@/components/shell/AppShell";
 import { useBoard, type UseBoardOptions } from "@/lib/board/useBoard";
 import { useKeyboardShortcuts } from "@/lib/board/useKeyboardShortcuts";
-import type { Point } from "@/lib/canvas/coords";
+import { screenToCanvas, type Point } from "@/lib/canvas/coords";
 import { useViewport } from "@/lib/canvas/useViewport";
 import { useTouchPrimary } from "@/lib/dom/useTouchPrimary";
 import { ColorPicker } from "@/components/postit/ColorPicker";
 import { NewBoardButton } from "@/components/ui/NewBoardButton";
 import { ShareButton } from "@/components/ui/ShareButton";
 import { useShareBoard } from "@/lib/board/useShareBoard";
+import { Onboarding } from "./Onboarding";
 import { Board } from "./Board";
 import { Viewport } from "./Viewport";
 import { SelectionToolbar } from "./SelectionToolbar";
@@ -73,7 +74,28 @@ export function Whiteboard({ initialBoard, autosave }: WhiteboardProps) {
     [resizeOffsetBy, toCanvasDelta],
   );
 
-  useKeyboardShortcuts({ onDelete: board.deleteSelection });
+  /**
+   * A apresentação do quadro vazio já cumpriu o papel dela nesta sessão.
+   *
+   * Trava uma vez e não destrava: sem isso, apagar o último post-it traria as instruções de
+   * volta para quem acabou de provar que não precisa mais delas — e a peça reapareceria no
+   * meio de uma limpeza de quadro, que é justamente quando ela mais atrapalha.
+   */
+  const hasNotes = board.notes.length > 0;
+  const [taught, setTaught] = useState(hasNotes);
+  // Ajuste durante o render, e não num efeito: o efeito só rodaria depois da pintura, e a
+  // trava chegaria um quadro atrasada. React reinicia o render com o valor novo antes de
+  // pintar, então ninguém vê o estado intermediário.
+  if (hasNotes && !taught) setTaught(true);
+
+  /**
+   * Ela some no mesmo quadro em que o primeiro post-it aparece.
+   *
+   * A condição olha `hasNotes` direto, e não só o estado acima: o efeito roda depois da
+   * pintura, e esperar por ele deixaria as instruções um quadro a mais na tela, por cima
+   * da nota recém-criada.
+   */
+  const showOnboarding = !hasNotes && !taught;
 
   /** Um gesto de ponteiro em curso sobre um post-it: arrastar ou redimensionar. */
   const inGesture = board.dragOffset !== null || board.resizing !== null;
@@ -84,6 +106,25 @@ export function Whiteboard({ initialBoard, autosave }: WhiteboardProps) {
     if (rect === undefined) return { x: 0, y: 0 };
     return { x: rect.width / 2, y: rect.height / 2 };
   }, []);
+
+  /**
+   * O post-it criado pelo teclado nasce no meio do que está sendo olhado.
+   *
+   * Sem cursor não há ponto para obedecer, e o centro da área visível é a única resposta
+   * que não depende de onde o quadro foi arrastado: criar sempre na origem do canvas
+   * colocaria o post-it fora da tela para quem já navegou para longe dela.
+   */
+  const createNoteAtCenter = useCallback(() => {
+    board.createNoteAt(screenToCanvas(center(), controls.viewport));
+  }, [board, center, controls.viewport]);
+
+  const save = useCallback(() => void share.share(), [share]);
+
+  useKeyboardShortcuts({
+    onDelete: board.deleteSelection,
+    onCreateNote: createNoteAtCenter,
+    onSave: save,
+  });
 
   return (
     <AppShell
@@ -139,6 +180,12 @@ export function Whiteboard({ initialBoard, autosave }: WhiteboardProps) {
             onResizeCancel={board.cancelResize}
           />
         </Viewport>
+
+        {/*
+          Fora do `Viewport` pelo mesmo motivo da barra de seleção abaixo: dentro da camada
+          transformada, o texto cresceria com o zoom e sairia da tela junto com o pan.
+        */}
+        {showOnboarding ? <Onboarding /> : null}
 
         {/*
           Fora do `Viewport`, e de propósito duas vezes. Fora da camada transformada, para a

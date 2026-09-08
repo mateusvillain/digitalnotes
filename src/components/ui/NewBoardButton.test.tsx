@@ -3,6 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { NewBoardButton } from "./NewBoardButton";
 import type { ShareApi, ShareState } from "@/lib/board/useShareBoard";
+import { UI } from "@/lib/i18n/ui";
 
 const SHARED: ShareState = { status: "shared", url: "https://site/board/abc" };
 
@@ -17,7 +18,7 @@ function renderButton({
 }
 
 function clickNew() {
-  return userEvent.click(screen.getByRole("button", { name: "Criar um novo whiteboard" }));
+  return userEvent.click(screen.getByRole("button", { name: UI.en.newBoard.action }));
 }
 
 afterEach(() => {
@@ -28,7 +29,7 @@ describe("NewBoardButton", () => {
   it("é só ícone, e se anuncia por aria-label", () => {
     renderButton();
 
-    const button = screen.getByRole("button", { name: "Criar um novo whiteboard" });
+    const button = screen.getByRole("button", { name: UI.en.newBoard.action });
     // Sem rótulo escrito, e o desenho escondido do leitor de tela para não competir com o
     // `aria-label`.
     expect(button.textContent).toBe("");
@@ -42,7 +43,7 @@ describe("NewBoardButton", () => {
 
     expect(onNewBoard).toHaveBeenCalledOnce();
     // Nada a proteger, então nada de atrito.
-    expect(screen.queryByText(/quadro atual será substituído/i)).toBeNull();
+    expect(screen.queryByText(UI.en.newBoard.warning)).toBeNull();
   });
 
   it("com post-its na tela, oferece o link antes de substituir", async () => {
@@ -50,8 +51,8 @@ describe("NewBoardButton", () => {
 
     await clickNew();
 
-    expect(screen.getByText(/quadro atual será substituído/i)).toBeDefined();
-    expect(screen.getByRole("button", { name: "Gerar link e começar" })).toBeDefined();
+    expect(screen.getByText(UI.en.newBoard.warning)).toBeDefined();
+    expect(screen.getByRole("button", { name: UI.en.newBoard.saveAndStart })).toBeDefined();
     // Ainda não limpou nada: a decisão é de quem está lendo.
     expect(onNewBoard).not.toHaveBeenCalled();
   });
@@ -60,11 +61,11 @@ describe("NewBoardButton", () => {
     const { onNewBoard, share } = renderButton({ hasNotes: true });
     await clickNew();
 
-    await userEvent.click(screen.getByRole("button", { name: "Gerar link e começar" }));
+    await userEvent.click(screen.getByRole("button", { name: UI.en.newBoard.saveAndStart }));
 
     await waitFor(() => expect(onNewBoard).toHaveBeenCalledOnce());
     expect(share).toHaveBeenCalledOnce();
-    expect(screen.queryByText(/quadro atual será substituído/i)).toBeNull();
+    expect(screen.queryByText(UI.en.newBoard.warning)).toBeNull();
   });
 
   it.each([
@@ -75,11 +76,11 @@ describe("NewBoardButton", () => {
     const { onNewBoard } = renderButton({ hasNotes: true, shareOutcome: outcome });
     await clickNew();
 
-    await userEvent.click(screen.getByRole("button", { name: "Gerar link e começar" }));
+    await userEvent.click(screen.getByRole("button", { name: UI.en.newBoard.saveAndStart }));
 
     // Limpar aqui deixaria a pessoa sem o quadro e sem o link.
     await waitFor(() =>
-      expect(screen.getByRole("button", { name: "Gerar link e começar" })).toBeDefined(),
+      expect(screen.getByRole("button", { name: UI.en.newBoard.saveAndStart })).toBeDefined(),
     );
     expect(onNewBoard).not.toHaveBeenCalled();
   });
@@ -88,22 +89,22 @@ describe("NewBoardButton", () => {
     const { onNewBoard, share } = renderButton({ hasNotes: true });
     await clickNew();
 
-    await userEvent.click(screen.getByRole("button", { name: "Começar sem link" }));
+    await userEvent.click(screen.getByRole("button", { name: UI.en.newBoard.startWithoutSaving }));
 
     expect(onNewBoard).toHaveBeenCalledOnce();
     expect(share).not.toHaveBeenCalled();
-    expect(screen.queryByText(/quadro atual será substituído/i)).toBeNull();
+    expect(screen.queryByText(UI.en.newBoard.warning)).toBeNull();
   });
 
   it("desistir não mexe em nada", async () => {
     const { onNewBoard, share } = renderButton({ hasNotes: true });
     await clickNew();
 
-    await userEvent.click(screen.getByRole("button", { name: "Cancelar" }));
+    await userEvent.click(screen.getByRole("button", { name: UI.en.newBoard.cancel }));
 
     expect(onNewBoard).not.toHaveBeenCalled();
     expect(share).not.toHaveBeenCalled();
-    expect(screen.queryByText(/quadro atual será substituído/i)).toBeNull();
+    expect(screen.queryByText(UI.en.newBoard.warning)).toBeNull();
   });
 
   it("fecha com Esc e devolve o foco ao botão", async () => {
@@ -112,11 +113,11 @@ describe("NewBoardButton", () => {
 
     await userEvent.keyboard("{Escape}");
 
-    expect(screen.queryByText(/quadro atual será substituído/i)).toBeNull();
+    expect(screen.queryByText(UI.en.newBoard.warning)).toBeNull();
     expect(onNewBoard).not.toHaveBeenCalled();
     // Sem devolver o foco, quem navega por teclado volta ao início do documento.
     expect(document.activeElement).toBe(
-      screen.getByRole("button", { name: "Criar um novo whiteboard" }),
+      screen.getByRole("button", { name: UI.en.newBoard.action }),
     );
   });
 
@@ -124,12 +125,12 @@ describe("NewBoardButton", () => {
     const { onNewBoard } = renderButton({ hasNotes: true });
     await clickNew();
 
-    await userEvent.click(screen.getByRole("button", { name: "Gerar link e começar" }));
+    await userEvent.click(screen.getByRole("button", { name: UI.en.newBoard.saveAndStart }));
 
     await waitFor(() => expect(onNewBoard).toHaveBeenCalledOnce());
     // O painel desmonta com o foco dentro dele; sem devolvê-lo, o foco cai no body.
     expect(document.activeElement).toBe(
-      screen.getByRole("button", { name: "Criar um novo whiteboard" }),
+      screen.getByRole("button", { name: UI.en.newBoard.action }),
     );
   });
 
@@ -143,14 +144,14 @@ describe("NewBoardButton", () => {
     render(<NewBoardButton hasNotes onNewBoard={vi.fn()} share={share} />);
     await clickNew();
 
-    await userEvent.click(screen.getByRole("button", { name: "Gerar link e começar" }));
+    await userEvent.click(screen.getByRole("button", { name: UI.en.newBoard.saveAndStart }));
 
-    const busy = await screen.findByRole("button", { name: "Gerando o link…" });
+    const busy = await screen.findByRole("button", { name: UI.en.save.saving });
     // `aria-busy`, e não `disabled`: desabilitar tiraria o foco de quem acionou o botão
     // pelo teclado.
     expect(busy.getAttribute("aria-busy")).toBe("true");
     expect(busy).toHaveProperty("disabled", false);
-    expect(screen.getByRole("status").textContent).toBe("Gerando o link…");
+    expect(screen.getByRole("status").textContent).toBe(UI.en.save.saving);
 
     resolveShare?.(SHARED);
     await waitFor(() => expect(share).toHaveBeenCalledOnce());

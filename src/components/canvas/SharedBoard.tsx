@@ -5,6 +5,7 @@ import { AppShell } from "@/components/shell/AppShell";
 import { panelButtonClass } from "@/components/ui/iconButton";
 import { Whiteboard } from "@/components/canvas/Whiteboard";
 import { useHydrateFromBackend } from "@/lib/board/useHydrateFromBackend";
+import { useUi } from "@/lib/i18n/LocaleProvider";
 
 interface SharedBoardProps {
   /** Identificador do board na URL. */
@@ -23,6 +24,7 @@ interface SharedBoardProps {
  * compartilhar de novo (#46) cria outro documento.
  */
 export function SharedBoard({ id }: SharedBoardProps) {
+  const ui = useUi();
   const state = useHydrateFromBackend(id);
 
   if (state.status === "not-found") {
@@ -43,10 +45,10 @@ export function SharedBoard({ id }: SharedBoardProps) {
       <AppShell>
         <div className="flex h-full flex-col items-center justify-center gap-3 text-center">
           <p className="text-sm text-ink-muted" role="status">
-            Não foi possível abrir este whiteboard agora.
+            {ui.sharedBoard.error}
           </p>
           <button type="button" className={panelButtonClass} onClick={state.retry}>
-            Tentar de novo
+            {ui.sharedBoard.retry}
           </button>
         </div>
       </AppShell>
@@ -58,7 +60,7 @@ export function SharedBoard({ id }: SharedBoardProps) {
       <AppShell>
         <div className="flex h-full items-center justify-center">
           <p className="text-sm text-ink-muted" role="status">
-            Abrindo o whiteboard…
+            {ui.sharedBoard.loading}
           </p>
         </div>
       </AppShell>

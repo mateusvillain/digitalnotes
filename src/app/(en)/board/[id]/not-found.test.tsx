@@ -1,6 +1,7 @@
 import { render, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 import BoardNotFound from "./not-found";
+import { UI } from "@/lib/i18n/ui";
 
 /**
  * Termos que só apareceriam se a tela contasse **por que** o link não abriu, ou de onde
@@ -15,7 +16,7 @@ describe("página de board não encontrado", () => {
 
     expect(
       screen.getByRole("heading", {
-        name: "Este whiteboard não existe ou não está mais disponível.",
+        name: UI.en.boardNotFound.title,
       }),
     ).toBeDefined();
   });
@@ -37,8 +38,8 @@ describe("página de board não encontrado", () => {
   it("oferece criar um novo whiteboard e voltar para a página inicial", () => {
     render(<BoardNotFound />);
 
-    const create = screen.getByRole("link", { name: "Criar um novo whiteboard" });
-    const home = screen.getByRole("link", { name: "Voltar para a página inicial" });
+    const create = screen.getByRole("link", { name: UI.en.boardNotFound.create });
+    const home = screen.getByRole("link", { name: UI.en.boardNotFound.back });
 
     expect(create.getAttribute("href")).toBe("/");
     expect(home.getAttribute("href")).toBe("/");

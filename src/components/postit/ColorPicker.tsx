@@ -2,7 +2,8 @@
 
 import { useRef, useState, type KeyboardEvent } from "react";
 import { NOTE_COLORS, type NoteColor } from "@/lib/board/types";
-import { noteBackgroundColor, noteColorLabel } from "@/lib/theme/note-colors";
+import { noteBackgroundColor } from "@/lib/theme/note-colors";
+import { useUi } from "@/lib/i18n/LocaleProvider";
 
 interface ColorPickerProps {
   /** Cor marcada, ou `null` quando a seleção tem mais de uma cor. */
@@ -34,6 +35,7 @@ function wrap(index: number, length: number): number {
  * foi escolhida. É o que o deixa testável sem um quadro em volta.
  */
 export function ColorPicker({ value, onChange }: ColorPickerProps) {
+  const ui = useUi();
   const groupRef = useRef<HTMLDivElement>(null);
   /**
    * Onde o foco esteve por último dentro do grupo.
@@ -85,7 +87,7 @@ export function ColorPicker({ value, onChange }: ColorPickerProps) {
     <div
       ref={groupRef}
       role="radiogroup"
-      aria-label="Cor do post-it"
+      aria-label={ui.note.color}
       className="flex items-center gap-1"
       data-testid="color-picker"
     >
@@ -99,7 +101,7 @@ export function ColorPicker({ value, onChange }: ColorPickerProps) {
             type="button"
             role="radio"
             aria-checked={selected}
-            aria-label={noteColorLabel(color)}
+            aria-label={ui.note.colors[NOTE_COLORS[color]]}
             tabIndex={color === tabStop ? 0 : -1}
             onClick={() => onChange(color)}
             onKeyDown={(event) => handleKeyDown(event, color)}

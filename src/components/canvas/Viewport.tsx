@@ -39,6 +39,9 @@ const DOT_GAP = 24;
  */
 const WHEEL_SENSITIVITY = 0.002;
 
+/** O botão da rodinha do mouse, que navega o quadro como a barra de espaço. */
+const MIDDLE_BUTTON = 1;
+
 /** Pixels equivalentes a uma unidade de `deltaY` em cada modo de rolagem do browser. */
 const DELTA_MODE_TO_PIXELS = { line: 16, page: 100 } as const;
 
@@ -325,12 +328,31 @@ export function Viewport({
       // O gesto nasce no fundo ou na camada do canvas; um post-it (issue #15) para o evento
       // antes de chegar aqui.
       if (!isBackground(event)) return;
-      if (event.button !== 0) return;
+      if (event.button !== 0 && event.button !== MIDDLE_BUTTON) return;
       // Cada handler declara a própria condição: com espaço, o gesto é da captura acima.
       if (spaceHeld) return;
 
       // Defesa contra um `pointerup` perdido, que deixaria um gesto pendurado.
       if (drag.current !== null) return;
+
+      /**
+       * A rodinha apertada navega, como segurar espaço.
+       *
+       * É o gesto que quem vem de editor de imagem ou de mapa já tem no dedo, e o único
+       * que navega sem exigir as duas mãos. O `preventDefault` é obrigatório: sem ele o
+       * Windows e o Linux entram no modo de rolagem automática, aquele ícone que fica
+       * preso no meio da tela rolando a página sozinho.
+       */
+      if (event.button === MIDDLE_BUTTON) {
+        event.preventDefault();
+        event.currentTarget.setPointerCapture(event.pointerId);
+        drag.current = {
+          kind: "pan",
+          pointerId: event.pointerId,
+          last: { x: event.clientX, y: event.clientY },
+        };
+        return;
+      }
 
       event.currentTarget.setPointerCapture(event.pointerId);
 
@@ -500,6 +522,11 @@ export function Viewport({
         } as CSSProperties
       }
       onDoubleClick={handleDoubleClick}
+      // O `pointerdown` do botão do meio já foi barrado, mas o `auxclick` é um evento à
+      // parte: sem engoli-lo, soltar a rodinha ainda dispara a rolagem automática.
+      onAuxClick={(event) => {
+        if (event.button === MIDDLE_BUTTON) event.preventDefault();
+      }}
       onPointerDownCapture={handlePointerDownCapture}
       onPointerDown={handlePointerDown}
       onPointerMove={handlePointerMove}

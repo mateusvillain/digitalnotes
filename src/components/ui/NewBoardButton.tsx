@@ -4,6 +4,7 @@ import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { iconButtonClass, panelButtonClass, subtleButtonClass } from "@/components/ui/iconButton";
 import { Tooltip } from "@/components/ui/Tooltip";
 import type { ShareApi } from "@/lib/board/useShareBoard";
+import { useUi } from "@/lib/i18n/LocaleProvider";
 
 interface NewBoardButtonProps {
   /** Há post-its no quadro atual — ou seja, há trabalho que a substituição levaria junto. */
@@ -38,13 +39,14 @@ function NewBoardIcon() {
  * Ação de começar um whiteboard novo (issue #58).
  *
  * Com o quadro vazio, cria direto: não há trabalho para proteger, e perguntar seria só
- * atrito. Com post-its na tela, oferece antes gerar o link do quadro atual — como o
- * autosave local guarda um board só, o link é a única forma de voltar ao que estava ali.
+ * atrito. Com post-its na tela, oferece antes salvar o quadro atual — como o autosave local guarda
+ * um board só, o link que salvar devolve é a única forma de voltar ao que estava ali.
  *
- * Quem pediu o link e não o recebeu continua com o quadro: limpar depois de uma falha
+ * Quem pediu para salvar e não conseguiu continua com o quadro: limpar depois de uma falha
  * deixaria a pessoa sem o board **e** sem o link, que é pior do que não ter oferecido nada.
  */
 export function NewBoardButton({ hasNotes, onNewBoard, share }: NewBoardButtonProps) {
+  const ui = useUi();
   const [asking, setAsking] = useState(false);
   /** Esperando o link que o usuário pediu antes de limpar. */
   const [awaitingLink, setAwaitingLink] = useState(false);
@@ -105,13 +107,13 @@ export function NewBoardButton({ hasNotes, onNewBoard, share }: NewBoardButtonPr
   return (
     <div className="flex flex-col items-start gap-2">
       <div className="rounded-control border border-border bg-surface p-1 shadow-control">
-        <Tooltip label="Criar um novo whiteboard" align="start">
+        <Tooltip label={ui.newBoard.action} align="start">
           <button
             ref={buttonRef}
             type="button"
             className={iconButtonClass}
             onClick={start}
-            aria-label="Criar um novo whiteboard"
+            aria-label={ui.newBoard.action}
             aria-expanded={asking}
             aria-controls={asking ? panelId : undefined}
           >
@@ -125,7 +127,7 @@ export function NewBoardButton({ hasNotes, onNewBoard, share }: NewBoardButtonPr
         live region que nasce junto do conteúdo costuma não ser lida.
       */}
       <p className="sr-only" role="status" aria-live="polite">
-        {awaitingLink ? "Gerando o link…" : ""}
+        {awaitingLink ? ui.save.saving : ""}
       </p>
 
       {asking ? (
@@ -133,9 +135,7 @@ export function NewBoardButton({ hasNotes, onNewBoard, share }: NewBoardButtonPr
           id={panelId}
           className="flex w-72 flex-col gap-3 rounded-control border border-border bg-surface p-3 shadow-control"
         >
-          <p className="text-xs text-ink">
-            O quadro atual será substituído. Gere um link antes se quiser poder voltar a ele depois.
-          </p>
+          <p className="text-xs text-ink">{ui.newBoard.warning}</p>
 
           <div className="flex flex-wrap items-center gap-2">
             <button
@@ -150,13 +150,13 @@ export function NewBoardButton({ hasNotes, onNewBoard, share }: NewBoardButtonPr
               // ficar preso no botão que o abriu.
               autoFocus
             >
-              {awaitingLink ? "Gerando o link…" : "Gerar link e começar"}
+              {awaitingLink ? ui.save.saving : ui.newBoard.saveAndStart}
             </button>
             <button type="button" className={subtleButtonClass} onClick={resetNow}>
-              Começar sem link
+              {ui.newBoard.startWithoutSaving}
             </button>
             <button type="button" className={subtleButtonClass} onClick={close}>
-              Cancelar
+              {ui.newBoard.cancel}
             </button>
           </div>
         </div>

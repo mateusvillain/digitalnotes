@@ -6,6 +6,7 @@ import { NOTE_COLORS, NOTE_MAX_TEXT_LENGTH, type Note } from "@/lib/board/types"
 import { noteBackgroundColor } from "@/lib/theme/note-colors";
 import { NOTE_TEXT_CLASS } from "./note-text";
 import { PostIt } from "./PostIt";
+import { UI } from "@/lib/i18n/ui";
 
 function note(overrides: Partial<Note> = {}): Note {
   return {
@@ -115,11 +116,11 @@ describe("PostIt", () => {
 
   it("dá um rótulo acessível ao post-it sem conteúdo visível", () => {
     const { rerender } = render(<PostIt note={note({ text: "" })} />);
-    expect(screen.getByLabelText("Post-it vazio")).toBeDefined();
+    expect(screen.getByLabelText(UI.en.note.empty)).toBeDefined();
 
     // Texto só de espaços não nomeia nada: sem isto o post-it ficaria sem nome acessível.
     rerender(<PostIt note={note({ text: "   \n  " })} />);
-    expect(screen.getByLabelText("Post-it vazio")).toBeDefined();
+    expect(screen.getByLabelText(UI.en.note.empty)).toBeDefined();
   });
 
   it("deixa o próprio texto nomear o post-it, sem duplicar o conteúdo no rótulo", () => {

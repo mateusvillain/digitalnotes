@@ -4,6 +4,7 @@ import { describe, expect, it, vi } from "vitest";
 import { MAX_SCALE, MIN_SCALE } from "@/lib/canvas/coords";
 import { ZOOM_STEP } from "@/lib/canvas/useViewport";
 import { ViewportControls } from "./ViewportControls";
+import { UI } from "@/lib/i18n/ui";
 
 function setup(scale: number) {
   const zoomBy = vi.fn();
@@ -26,16 +27,14 @@ describe("ViewportControls", () => {
   it("mostra a escala atual em porcentagem", () => {
     setup(1.5);
 
-    expect(screen.getByRole("button", { name: "Voltar o zoom para 100%" }).textContent).toBe(
-      "150%",
-    );
+    expect(screen.getByRole("button", { name: UI.en.zoom.reset }).textContent).toBe("150%");
   });
 
   it("amplia e reduz ancorando no centro informado", async () => {
     const { zoomBy } = setup(1);
 
-    await userEvent.click(screen.getByRole("button", { name: "Aumentar zoom" }));
-    await userEvent.click(screen.getByRole("button", { name: "Diminuir zoom" }));
+    await userEvent.click(screen.getByRole("button", { name: UI.en.zoom.in }));
+    await userEvent.click(screen.getByRole("button", { name: UI.en.zoom.out }));
 
     expect(zoomBy).toHaveBeenNthCalledWith(1, ZOOM_STEP, { x: 50, y: 40 });
     expect(zoomBy).toHaveBeenNthCalledWith(2, 1 / ZOOM_STEP, { x: 50, y: 40 });
@@ -44,7 +43,7 @@ describe("ViewportControls", () => {
   it("reseta o viewport", async () => {
     const { reset } = setup(2);
 
-    await userEvent.click(screen.getByRole("button", { name: "Voltar o zoom para 100%" }));
+    await userEvent.click(screen.getByRole("button", { name: UI.en.zoom.reset }));
 
     expect(reset).toHaveBeenCalledOnce();
   });
@@ -52,14 +51,14 @@ describe("ViewportControls", () => {
   it("desabilita ampliar no zoom máximo", () => {
     setup(MAX_SCALE);
 
-    expect(screen.getByRole("button", { name: "Aumentar zoom" })).toHaveProperty("disabled", true);
-    expect(screen.getByRole("button", { name: "Diminuir zoom" })).toHaveProperty("disabled", false);
+    expect(screen.getByRole("button", { name: UI.en.zoom.in })).toHaveProperty("disabled", true);
+    expect(screen.getByRole("button", { name: UI.en.zoom.out })).toHaveProperty("disabled", false);
   });
 
   it("desabilita reduzir no zoom mínimo", () => {
     setup(MIN_SCALE);
 
-    expect(screen.getByRole("button", { name: "Diminuir zoom" })).toHaveProperty("disabled", true);
-    expect(screen.getByRole("button", { name: "Aumentar zoom" })).toHaveProperty("disabled", false);
+    expect(screen.getByRole("button", { name: UI.en.zoom.out })).toHaveProperty("disabled", true);
+    expect(screen.getByRole("button", { name: UI.en.zoom.in })).toHaveProperty("disabled", false);
   });
 });
