@@ -3,6 +3,7 @@
 import { useCallback } from "react";
 import { MAX_SCALE, MIN_SCALE, scaleAsPercent, type Point } from "@/lib/canvas/coords";
 import { ZOOM_STEP, type ViewportApi } from "@/lib/canvas/useViewport";
+import { iconButtonClass } from "@/components/ui/iconButton";
 
 interface ViewportControlsProps extends Pick<ViewportApi, "viewport" | "zoomBy" | "reset"> {
   /**
@@ -13,9 +14,6 @@ interface ViewportControlsProps extends Pick<ViewportApi, "viewport" | "zoomBy" 
   anchor: () => Point;
 }
 
-const buttonClass =
-  "flex h-8 w-8 items-center justify-center rounded-control text-ink-muted transition-colors hover:bg-canvas hover:text-ink disabled:pointer-events-none disabled:opacity-40";
-
 /** Controles de zoom e reset, para quem não tem roda de mouse ou prefere clicar. */
 export function ViewportControls({ viewport, zoomBy, reset, anchor }: ViewportControlsProps) {
   const zoomOut = useCallback(() => zoomBy(1 / ZOOM_STEP, anchor()), [zoomBy, anchor]);
@@ -25,7 +23,7 @@ export function ViewportControls({ viewport, zoomBy, reset, anchor }: ViewportCo
     <div className="flex items-center gap-1">
       <button
         type="button"
-        className={buttonClass}
+        className={iconButtonClass}
         onClick={zoomOut}
         disabled={viewport.scale <= MIN_SCALE}
         aria-label="Diminuir zoom"
@@ -43,7 +41,7 @@ export function ViewportControls({ viewport, zoomBy, reset, anchor }: ViewportCo
       </button>
       <button
         type="button"
-        className={buttonClass}
+        className={iconButtonClass}
         onClick={zoomIn}
         disabled={viewport.scale >= MAX_SCALE}
         aria-label="Aumentar zoom"
