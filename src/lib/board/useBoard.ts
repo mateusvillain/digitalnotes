@@ -13,6 +13,7 @@ import {
 } from "./selection";
 import { clampNoteSize } from "./schema";
 import { createBoardStore } from "./store";
+import { useLocalPersistence } from "./useLocalPersistence";
 import { NOTE_SIZE, type Board, type Note, type NoteColor } from "./types";
 
 /** Um post-it em redimensionamento e o tamanho que ele tem agora, durante o gesto. */
@@ -89,6 +90,10 @@ export interface BoardApi {
  */
 export function useBoard(): BoardApi {
   const [store] = useState(createBoardStore);
+  // Autosave local (#22): restaura o board de trabalho ao montar e grava as alterações
+  // seguintes. Mora aqui, e não no componente, porque é a store — e não a interface — que
+  // precisa ser persistida.
+  useLocalPersistence(store);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [selection, setSelection] = useState<Selection>(EMPTY_SELECTION);
   /** A seleção de antes do retângulo começar, para o gesto poder ser refeito enquanto anda. */

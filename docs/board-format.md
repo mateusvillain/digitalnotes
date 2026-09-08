@@ -58,8 +58,8 @@ padrão razoável não é incompatível.
 
 ## Validação
 
-`parseBoard(input: unknown)` é a porta de entrada de todo dado não confiável (URL,
-localStorage, link colado). Ela **nunca lança**:
+`parseBoard(input: unknown)` é a porta de entrada de todo dado não confiável (autosave em
+IndexedDB, board aberto por link compartilhado). Ela **nunca lança**:
 
 ```ts
 type ParseBoardResult =
