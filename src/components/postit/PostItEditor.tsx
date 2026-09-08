@@ -3,6 +3,7 @@
 import { useEffect, useRef, type KeyboardEvent } from "react";
 import { NOTE_MAX_TEXT_LENGTH } from "@/lib/board/types";
 import { NOTE_TEXT_CLASS } from "./note-text";
+import { useUi } from "@/lib/i18n/LocaleProvider";
 
 interface PostItEditorProps {
   /** Texto inicial. O editor é não controlado: quem manda enquanto digita é o DOM. */
@@ -28,6 +29,7 @@ interface PostItEditorProps {
  * silêncio — o texto sumiria sem erro.
  */
 export function PostItEditor({ initialText, onCommit }: PostItEditorProps) {
+  const ui = useUi();
   const ref = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
@@ -66,7 +68,7 @@ export function PostItEditor({ initialText, onCommit }: PostItEditorProps) {
       onKeyDown={handleKeyDown}
       onBlur={(event) => onCommit(event.currentTarget.value)}
       data-testid="post-it-editor"
-      aria-label="Texto do post-it"
+      aria-label={ui.note.text}
     />
   );
 }

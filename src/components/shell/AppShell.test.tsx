@@ -14,7 +14,7 @@ describe("AppShell", () => {
     render(<AppShell />);
 
     // Invisível, mas presente: uma página sem cabeçalho nenhum não tem como ser anunciada.
-    expect(screen.getByRole("heading", { name: "digitalnotes" }).className).toContain("sr-only");
+    expect(screen.getByRole("heading", { name: "Virtual Notes" }).className).toContain("sr-only");
   });
 
   it("põe os controles no canto inferior direito, fora da borda", () => {

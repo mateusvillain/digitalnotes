@@ -15,6 +15,7 @@ import { noteBackgroundColor } from "@/lib/theme/note-colors";
 import { ResizeHandle } from "./ResizeHandle";
 import { NOTE_TEXT_CLASS } from "./note-text";
 import { PostItEditor } from "./PostItEditor";
+import { useUi } from "@/lib/i18n/LocaleProvider";
 
 interface PostItProps {
   note: Note;
@@ -85,6 +86,7 @@ function PostItComponent({
   onResizeEnd,
   onResizeCancel,
 }: PostItProps) {
+  const ui = useUi();
   /**
    * Colapso de seleção adiado para o soltar.
    *
@@ -227,7 +229,7 @@ function PostItComponent({
       data-resizing={size !== null}
       // Rótulo só para o post-it sem conteúdo visível: com texto, o próprio conteúdo já
       // nomeia o elemento, e repetir viraria um nome acessível de até 2000 caracteres.
-      aria-label={note.text.trim() === "" ? "Post-it vazio" : undefined}
+      aria-label={note.text.trim() === "" ? ui.note.empty : undefined}
     >
       {/* A alça some durante a escrita: ali o post-it é um campo de texto, não uma caixa. */}
       {editing ? null : <ResizeHandle handlers={resize} alwaysVisible={selected} />}

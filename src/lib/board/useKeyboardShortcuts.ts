@@ -6,6 +6,10 @@ import { isEditableTarget } from "@/lib/dom/target";
 interface KeyboardShortcutsOptions {
   /** Apagar o que está marcado. Não recebe nada: quem sabe o que está marcado é quem trata. */
   onDelete: () => void;
+  /** Criar um post-it sem tirar as mãos do teclado. */
+  onCreateNote: () => void;
+  /** Salvar o quadro — a mesma ação do botão, num atalho que todo mundo já tem no dedo. */
+  onSave: () => void;
 }
 
 /**
@@ -15,6 +19,11 @@ interface KeyboardShortcutsOptions {
  * um atalho que só ouvisse `Delete` seria inalcançável na maior parte dos laptops.
  */
 const DELETE_KEYS = new Set(["Delete", "Backspace"]);
+
+/** A tecla veio sozinha, sem nenhum modificador segurado junto. */
+function isBareKey(event: KeyboardEvent): boolean {
+  return !event.ctrlKey && !event.metaKey && !event.altKey;
+}
 
 /**
  * Atalhos de teclado do quadro.
@@ -28,29 +37,60 @@ const DELETE_KEYS = new Set(["Delete", "Backspace"]);
  * futuro tendo de lembrar de parar o evento para não ser apagado enquanto se digita nele. Na
  * captura o atalho vê todo evento e decide sozinho, olhando o alvo.
  */
-export function useKeyboardShortcuts({ onDelete }: KeyboardShortcutsOptions): void {
+export function useKeyboardShortcuts({
+  onDelete,
+  onCreateNote,
+  onSave,
+}: KeyboardShortcutsOptions): void {
   /**
-   * O tratador atual, lido por ref dentro do ouvinte.
+   * Os tratadores atuais, lidos por ref dentro do ouvinte.
    *
    * Sem isto, um `onDelete` recriado a cada render faria o efeito remover e registrar o
    * ouvinte no documento a cada quadro do arraste.
    */
-  const onDeleteRef = useRef(onDelete);
+  const handlers = useRef({ onDelete, onCreateNote, onSave });
   useEffect(() => {
-    onDeleteRef.current = onDelete;
-  }, [onDelete]);
+    handlers.current = { onDelete, onCreateNote, onSave };
+  }, [onDelete, onCreateNote, onSave]);
 
   useEffect(() => {
     function handleKeyDown(event: KeyboardEvent): void {
-      if (!DELETE_KEYS.has(event.key)) return;
+      /**
+       * Salvar é o único atalho que também vale com o cursor dentro de um post-it.
+       *
+       * Quem aperta `Ctrl+S` no meio de uma frase está salvando o quadro, não pedindo a
+       * caixa de "salvar página" do navegador — e é justamente escrevendo que se tem mais a
+       * perder. O `preventDefault` é o ponto do atalho: sem ele o navegador abre a caixa
+       * dele por cima, e o quadro seria salvo com um diálogo de download na frente.
+       */
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "s" && !event.altKey) {
+        event.preventDefault();
+        handlers.current.onSave();
+        return;
+      }
+
+      // Daqui para baixo, tudo é atalho de tecla nua. Com um modificador segurado a tecla
+      // pertence ao navegador ou ao sistema — `Ctrl+N` abre uma janela, e roubá-la seria
+      // pior do que não ter atalho.
+      if (!isBareKey(event)) return;
       if (isEditableTarget(event.target)) return;
 
-      // Sempre, e não só quando algo foi apagado: fora de um campo de texto, Backspace é
-      // "voltar" no histórico em navegadores antigos, e sair do quadro sem querer é pior do
-      // que engolir uma tecla que não fez nada. Dentro de um campo o `return` acima já
-      // devolveu a tecla a quem estava digitando.
-      event.preventDefault();
-      onDeleteRef.current();
+      if (DELETE_KEYS.has(event.key)) {
+        // Sempre, e não só quando algo foi apagado: fora de um campo de texto, Backspace é
+        // "voltar" no histórico em navegadores antigos, e sair do quadro sem querer é pior do
+        // que engolir uma tecla que não fez nada. Dentro de um campo o `return` acima já
+        // devolveu a tecla a quem estava digitando.
+        event.preventDefault();
+        handlers.current.onDelete();
+        return;
+      }
+
+      // `toLowerCase` porque com Shift a tecla chega como `N`, e quem segurou Shift sem
+      // querer não deveria ficar sem o atalho.
+      if (event.key.toLowerCase() === "n") {
+        event.preventDefault();
+        handlers.current.onCreateNote();
+      }
     }
 
     document.addEventListener("keydown", handleKeyDown, true);

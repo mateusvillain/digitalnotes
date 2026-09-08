@@ -40,7 +40,7 @@ export function AppShell({ children, controls, leadingActions, trailingActions }
         O nome continua na árvore, só não na tela: uma página sem cabeçalho nenhum não tem
         como ser anunciada por leitor de tela, e um `h1` invisível custa zero pixel.
       */}
-      <h1 className="sr-only">digitalnotes</h1>
+      <h1 className="sr-only">Virtual Notes</h1>
 
       {children}
 

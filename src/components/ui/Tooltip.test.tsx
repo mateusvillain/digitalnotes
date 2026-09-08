@@ -3,7 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Tooltip, TOOLTIP_DELAY_MS } from "./Tooltip";
 
-function renderTooltip(label = "Compartilhar whiteboard") {
+function renderTooltip(label = "Salvar quadro") {
   const onClick = vi.fn();
   render(
     <Tooltip label={label}>
@@ -31,7 +31,7 @@ describe("Tooltip", () => {
     await userEvent.hover(button);
 
     // Atravessar a fileira de controles a caminho do quadro não pode piscar caixas.
-    expect(screen.queryByText("Compartilhar whiteboard")).toBeNull();
+    expect(screen.queryByText("Salvar quadro")).toBeNull();
   });
 
   it("aparece depois da espera, com o cursor parado", async () => {
@@ -40,18 +40,18 @@ describe("Tooltip", () => {
     await userEvent.hover(button);
     await vi.advanceTimersByTimeAsync(TOOLTIP_DELAY_MS);
 
-    expect(await screen.findByText("Compartilhar whiteboard")).toBeDefined();
+    expect(await screen.findByText("Salvar quadro")).toBeDefined();
   });
 
   it("some quando o cursor sai", async () => {
     const { button } = renderTooltip();
     await userEvent.hover(button);
     await vi.advanceTimersByTimeAsync(TOOLTIP_DELAY_MS);
-    await screen.findByText("Compartilhar whiteboard");
+    await screen.findByText("Salvar quadro");
 
     await userEvent.unhover(button);
 
-    await waitFor(() => expect(screen.queryByText("Compartilhar whiteboard")).toBeNull());
+    await waitFor(() => expect(screen.queryByText("Salvar quadro")).toBeNull());
   });
 
   it("aparece na hora ao chegar no botão pelo teclado", async () => {
@@ -61,27 +61,27 @@ describe("Tooltip", () => {
 
     // Pelo teclado a intenção já está declarada pelo foco; esperar seria atraso à toa.
     expect(document.activeElement).toBe(button);
-    expect(await screen.findByText("Compartilhar whiteboard")).toBeDefined();
+    expect(await screen.findByText("Salvar quadro")).toBeDefined();
   });
 
   it("some ao perder o foco", async () => {
     const { button } = renderTooltip();
     await userEvent.tab();
-    await screen.findByText("Compartilhar whiteboard");
+    await screen.findByText("Salvar quadro");
 
     button.blur();
 
-    await waitFor(() => expect(screen.queryByText("Compartilhar whiteboard")).toBeNull());
+    await waitFor(() => expect(screen.queryByText("Salvar quadro")).toBeNull());
   });
 
   it("fecha com Esc sem tirar o foco do botão", async () => {
     const { button } = renderTooltip();
     await userEvent.tab();
-    await screen.findByText("Compartilhar whiteboard");
+    await screen.findByText("Salvar quadro");
 
     await userEvent.keyboard("{Escape}");
 
-    await waitFor(() => expect(screen.queryByText("Compartilhar whiteboard")).toBeNull());
+    await waitFor(() => expect(screen.queryByText("Salvar quadro")).toBeNull());
     expect(document.activeElement).toBe(button);
   });
 
@@ -93,7 +93,7 @@ describe("Tooltip", () => {
     await userEvent.pointer({ target: button, keys: "[TouchA]" });
     await vi.advanceTimersByTimeAsync(TOOLTIP_DELAY_MS);
 
-    expect(screen.queryByText("Compartilhar whiteboard")).toBeNull();
+    expect(screen.queryByText("Salvar quadro")).toBeNull();
   });
 
   it("não repete a descrição para o leitor de tela", async () => {
@@ -101,14 +101,12 @@ describe("Tooltip", () => {
     const nameBefore = button.getAttribute("aria-label");
 
     await userEvent.tab();
-    await screen.findByText("Compartilhar whiteboard");
+    await screen.findByText("Salvar quadro");
 
     // O `aria-label` do botão já diz isso; a caixa é ajuda visual, e abri-la não pode
     // acrescentar nada ao que o leitor de tela lê.
     expect(button.getAttribute("aria-label")).toBe(nameBefore);
-    expect(
-      screen.queryByText("Compartilhar whiteboard", { ignore: "[aria-hidden=true]" }),
-    ).toBeNull();
+    expect(screen.queryByText("Salvar quadro", { ignore: "[aria-hidden=true]" })).toBeNull();
   });
 
   it("não engole o clique do botão", async () => {
@@ -123,13 +121,13 @@ describe("Tooltip", () => {
     const { button } = renderTooltip();
     await userEvent.hover(button);
     await vi.advanceTimersByTimeAsync(TOOLTIP_DELAY_MS);
-    await screen.findByText("Compartilhar whiteboard");
+    await screen.findByText("Salvar quadro");
 
     await userEvent.click(button);
     await userEvent.unhover(button);
 
     // O botão já agiu; manter a dica na tela só atrapalharia a leitura do resultado.
-    await waitFor(() => expect(screen.queryByText("Compartilhar whiteboard")).toBeNull());
+    await waitFor(() => expect(screen.queryByText("Salvar quadro")).toBeNull());
   });
 
   it("não engole os handlers que o próprio botão já tinha", async () => {
