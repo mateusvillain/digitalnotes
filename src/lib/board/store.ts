@@ -67,7 +67,7 @@ export interface BoardStore {
   removeNotes: (ids: readonly string[]) => void;
   /** Traz a note para a frente das demais. */
   bringToFront: (id: string) => void;
-  /** Substitui o board inteiro — usado na hidratação por URL (#21). */
+  /** Substitui o board inteiro — usado pela restauração do autosave local (#22). */
   replaceBoard: (board: Board) => void;
 }
 

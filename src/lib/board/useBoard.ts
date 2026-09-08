@@ -77,6 +77,21 @@ export interface BoardApi {
   commitText: (id: string, text: string) => void;
 }
 
+export interface UseBoardOptions {
+  /**
+   * Board com que a sessão começa. Um board vindo de link compartilhado (#21) entra por
+   * aqui, e não por `replaceBoard` depois da montagem, para não existir um instante em que
+   * a interface mostra um quadro vazio que o usuário nunca pediu.
+   */
+  initialBoard?: Board;
+  /**
+   * Liga o autosave local (#22). Desligado ao abrir um board por link: o `IndexedDB` é a
+   * cópia local em edição da rota raiz, e sobrescrevê-la com o conteúdo de um link que
+   * alguém mandou apagaria o trabalho de quem abriu.
+   */
+  autosave?: boolean;
+}
+
 /**
  * Liga a store do board à interface.
  *
@@ -88,12 +103,12 @@ export interface BoardApi {
  * A store é criada uma vez por montagem, e não em escopo de módulo: em escopo de módulo ela
  * sobreviveria entre testes e, no servidor, entre requisições de usuários diferentes.
  */
-export function useBoard(): BoardApi {
-  const [store] = useState(createBoardStore);
+export function useBoard({ initialBoard, autosave = true }: UseBoardOptions = {}): BoardApi {
+  const [store] = useState(() => createBoardStore(initialBoard));
   // Autosave local (#22): restaura o board de trabalho ao montar e grava as alterações
   // seguintes. Mora aqui, e não no componente, porque é a store — e não a interface — que
   // precisa ser persistida.
-  useLocalPersistence(store);
+  useLocalPersistence(store, autosave);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [selection, setSelection] = useState<Selection>(EMPTY_SELECTION);
   /** A seleção de antes do retângulo começar, para o gesto poder ser refeito enquanto anda. */
