@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { iconButtonClass, panelButtonClass, subtleButtonClass } from "@/components/ui/iconButton";
+import { Tooltip } from "@/components/ui/Tooltip";
 import type { ShareApi } from "@/lib/board/useShareBoard";
 
 interface NewBoardButtonProps {
@@ -104,17 +105,19 @@ export function NewBoardButton({ hasNotes, onNewBoard, share }: NewBoardButtonPr
   return (
     <div className="flex flex-col items-start gap-2">
       <div className="rounded-control border border-border bg-surface p-1 shadow-control">
-        <button
-          ref={buttonRef}
-          type="button"
-          className={iconButtonClass}
-          onClick={start}
-          aria-label="Criar um novo whiteboard"
-          aria-expanded={asking}
-          aria-controls={asking ? panelId : undefined}
-        >
-          <NewBoardIcon />
-        </button>
+        <Tooltip label="Criar um novo whiteboard">
+          <button
+            ref={buttonRef}
+            type="button"
+            className={iconButtonClass}
+            onClick={start}
+            aria-label="Criar um novo whiteboard"
+            aria-expanded={asking}
+            aria-controls={asking ? panelId : undefined}
+          >
+            <NewBoardIcon />
+          </button>
+        </Tooltip>
       </div>
 
       {/*
