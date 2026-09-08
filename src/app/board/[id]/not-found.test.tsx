@@ -1,71 +1,46 @@
 import { render, screen } from "@testing-library/react";
-import { IDBFactory } from "fake-indexeddb";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 import BoardNotFound from "./not-found";
-import { saveBoard } from "@/lib/board/localStore";
-import { SCHEMA_VERSION, type Board } from "@/lib/board/types";
 
-const originalIndexedDB = globalThis.indexedDB;
-
-function boardWith(text: string): Board {
-  return {
-    version: SCHEMA_VERSION,
-    notes: [{ id: "a1b2c3", x: 10, y: 20, w: 200, h: 200, color: 0, text, z: 1 }],
-  };
-}
-
-beforeEach(() => {
-  globalThis.indexedDB = new IDBFactory();
-});
-
-afterEach(() => {
-  globalThis.indexedDB = originalIndexedDB;
-  vi.restoreAllMocks();
-});
+/**
+ * Termos que só apareceriam se a tela contasse **por que** o link não abriu, ou de onde
+ * veio a falha. É o que a spec proíbe: a mesma resposta para inexistente, removido e
+ * malformado, sem nada que deixe alguém inferir quais boards existem.
+ */
+const LEAKY_TERMS = /inválid|malformad|removid|expirad|404|backend|servidor|banco de dados/i;
 
 describe("página de board não encontrado", () => {
   it("diz que o whiteboard não está disponível, sem erro técnico", () => {
     render(<BoardNotFound />);
 
     expect(
-      screen.getByText("Este whiteboard não existe ou não está mais disponível."),
+      screen.getByRole("heading", {
+        name: "Este whiteboard não existe ou não está mais disponível.",
+      }),
     ).toBeDefined();
   });
 
   it("não deixa escapar o motivo nem detalhe do backend", () => {
     render(<BoardNotFound />);
 
-    // A mesma tela serve para inexistente, removido e malformado: distinguir os casos
-    // deixaria alguém descobrir quais boards existem testando links.
-    const text = document.body.textContent ?? "";
-    expect(text).not.toMatch(/inválid|malformad|removid|expirad|404|erro|servidor|banco/i);
+    expect(document.body.textContent ?? "").not.toMatch(LEAKY_TERMS);
   });
 
-  it("oferece criar um novo whiteboard como ação principal", () => {
+  it("se anuncia ao aparecer, porque chega por troca de rota no cliente", () => {
+    render(<BoardNotFound />);
+
+    // Sem isso, quem usa leitor de tela seguiria no contexto anterior sem saber que o
+    // link falhou.
+    expect(screen.getByRole("alert")).toBeDefined();
+  });
+
+  it("oferece criar um novo whiteboard e voltar para a página inicial", () => {
     render(<BoardNotFound />);
 
     const create = screen.getByRole("link", { name: "Criar um novo whiteboard" });
-    // Começa em branco, em vez de restaurar o rascunho salvo.
-    expect(create.getAttribute("href")).toBe("/?board=novo");
-  });
+    const home = screen.getByRole("link", { name: "Voltar para a página inicial" });
 
-  it("oferece voltar para a página inicial", () => {
-    render(<BoardNotFound />);
-
-    expect(
-      screen.getByRole("link", { name: "Voltar para a página inicial" }).getAttribute("href"),
-    ).toBe("/");
-  });
-
-  it("não carrega o board salvo localmente", async () => {
-    await saveBoard(boardWith("rascunho local"));
-    const open = vi.spyOn(globalThis.indexedDB, "open");
-
-    render(<BoardNotFound />);
-
-    // O conteúdo local e o de um link são independentes: mostrar o rascunho aqui faria
-    // parecer que o link abriu.
-    expect(open).not.toHaveBeenCalled();
-    expect(screen.queryByText("rascunho local")).toBeNull();
+    expect(create.getAttribute("href")).toBe("/");
+    expect(home.getAttribute("href")).toBe("/");
   });
 });

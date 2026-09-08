@@ -12,13 +12,6 @@ import type { Board } from "./types";
  */
 export const SAVE_DEBOUNCE_MS = 500;
 
-export interface LocalPersistenceOptions {
-  /** Liga o autosave por inteiro. Desligado ao abrir um board por link (#21). */
-  enabled?: boolean;
-  /** Liga a restauração do board salvo. Desligado ao começar um whiteboard novo (#47). */
-  restore?: boolean;
-}
-
 /**
  * Junta o board restaurado ao trabalho que o usuário fez enquanto a leitura corria.
  *
@@ -43,14 +36,8 @@ function mergeBoards(restored: Board, current: Board): Board {
  * `enabled` é o portão da rota `/board/:id` (#21): um board aberto por link não pode nem
  * ser sobrescrito pelo autosave local nem sobrescrevê-lo — o `IndexedDB` guarda a cópia de
  * trabalho da rota raiz, e não o que veio de um link que alguém mandou.
- *
- * `restore` desliga só a leitura, e é o que "criar um novo whiteboard" (#47) significa:
- * começar em branco continuando a gravar, em vez de retomar o rascunho anterior.
  */
-export function useLocalPersistence(
-  store: BoardStore,
-  { enabled = true, restore = true }: LocalPersistenceOptions = {},
-): void {
+export function useLocalPersistence(store: BoardStore, enabled = true): void {
   useEffect(() => {
     if (!enabled) return;
 
@@ -115,15 +102,8 @@ export function useLocalPersistence(
 
       // Sair antes de a leitura voltar: gravar direto apagaria a sessão anterior, que
       // ninguém chegou a ver. Ler primeiro e juntar preserva os dois lados.
-      //
-      // Quando a restauração está desligada, não há sessão anterior a preservar: quem
-      // pediu um whiteboard novo já decidiu que o rascunho antigo ficou para trás.
       dirty = false;
       const current = store.getBoard();
-      if (!restore) {
-        void enqueueSave(current);
-        return;
-      }
       void loadBoard().then((previous) => {
         void enqueueSave(previous ? mergeBoards(previous, current) : current);
       });
@@ -134,7 +114,7 @@ export function useLocalPersistence(
     const unsubscribe = store.subscribe(scheduleSave);
     window.addEventListener("pagehide", flush);
 
-    void (restore ? loadBoard() : Promise.resolve(null)).then((board) => {
+    void loadBoard().then((board) => {
       // O componente pode ter desmontado enquanto o banco respondia. Escrever na store
       // depois disso mexeria num board que ninguém mais mostra.
       if (cancelled) return;
@@ -160,5 +140,5 @@ export function useLocalPersistence(
       flush();
       clearTimeout(timer);
     };
-  }, [store, enabled, restore]);
+  }, [store, enabled]);
 }

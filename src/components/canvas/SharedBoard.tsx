@@ -2,6 +2,7 @@
 
 import { notFound } from "next/navigation";
 import { AppShell } from "@/components/shell/AppShell";
+import { panelButtonClass } from "@/components/ui/iconButton";
 import { Whiteboard } from "@/components/canvas/Whiteboard";
 import { useHydrateFromBackend } from "@/lib/board/useHydrateFromBackend";
 
@@ -44,11 +45,7 @@ export function SharedBoard({ id }: SharedBoardProps) {
           <p className="text-sm text-ink-muted" role="status">
             Não foi possível abrir este whiteboard agora.
           </p>
-          <button
-            type="button"
-            className="rounded-control border border-border bg-surface px-3 py-1.5 text-sm text-ink transition-colors hover:bg-canvas"
-            onClick={state.retry}
-          >
+          <button type="button" className={panelButtonClass} onClick={state.retry}>
             Tentar de novo
           </button>
         </div>

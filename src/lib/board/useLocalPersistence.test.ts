@@ -159,42 +159,6 @@ describe("useLocalPersistence", () => {
     expect(await loadBoard()).toBeNull();
   });
 
-  it("não restaura o rascunho quando pedem um quadro novo", async () => {
-    await saveBoard(boardWith("rascunho antigo"));
-    const store = createBoardStore();
-
-    renderHook(() => useLocalPersistence(store, { restore: false }));
-    await vi.advanceTimersByTimeAsync(SAVE_DEBOUNCE_MS);
-
-    // Começar em branco é o ponto: quem pediu um whiteboard novo não quer o anterior de
-    // volta na tela.
-    expect(store.getBoard().notes).toEqual([]);
-  });
-
-  it("continua gravando no quadro novo, que passa a ser o board de trabalho", async () => {
-    await saveBoard(boardWith("rascunho antigo"));
-    const store = createBoardStore();
-
-    renderHook(() => useLocalPersistence(store, { restore: false }));
-    store.addNote({ x: 0, y: 0, text: "quadro novo" });
-    await vi.advanceTimersByTimeAsync(SAVE_DEBOUNCE_MS);
-
-    await waitFor(async () => {
-      const saved = await loadBoard();
-      expect(saved?.notes.map((note) => note.text)).toEqual(["quadro novo"]);
-    });
-  });
-
-  it("não grava nada quando o autosave está desligado por inteiro", async () => {
-    const store = createBoardStore();
-
-    renderHook(() => useLocalPersistence(store, { enabled: false }));
-    store.addNote({ x: 0, y: 0, text: "board de link" });
-    await vi.advanceTimersByTimeAsync(SAVE_DEBOUNCE_MS);
-
-    expect(await loadBoard()).toBeNull();
-  });
-
   it("segue funcionando sem IndexedDB, só sem autosave", async () => {
     // @ts-expect-error simula navegador sem suporte
     delete globalThis.indexedDB;

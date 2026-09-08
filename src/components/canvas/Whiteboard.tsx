@@ -14,7 +14,7 @@ import { Viewport } from "./Viewport";
 import { SelectionToolbar } from "./SelectionToolbar";
 import { ViewportControls } from "./ViewportControls";
 
-type WhiteboardProps = Pick<UseBoardOptions, "initialBoard" | "autosave" | "restoreLocal">;
+type WhiteboardProps = Pick<UseBoardOptions, "initialBoard" | "autosave">;
 
 /**
  * O quadro: junta o estado de viewport à superfície navegável, aos controles e aos post-its.
@@ -22,9 +22,9 @@ type WhiteboardProps = Pick<UseBoardOptions, "initialBoard" | "autosave" | "rest
  * A composição é a fiação, e só ela: o viewport sabe navegar, o `useBoard` sabe o que é o
  * board, e o `Board` sabe desenhar. Nenhum dos três precisa do outro para ser testado.
  */
-export function Whiteboard({ initialBoard, autosave, restoreLocal }: WhiteboardProps) {
+export function Whiteboard({ initialBoard, autosave }: WhiteboardProps) {
   const controls = useViewport();
-  const board = useBoard({ initialBoard, autosave, restoreLocal });
+  const board = useBoard({ initialBoard, autosave });
   // Compartilhar lê o board no instante do clique (#46): nunca reage a mudanças da store,
   // porque enviar ao backend é sempre uma decisão explícita de quem escreveu.
   const share = useShareBoard(board.getBoard);
