@@ -76,7 +76,7 @@ export const COPY: Record<Locale, LocaleCopy> = {
       "brainstorming online",
       "bloco de notas online",
     ],
-    ogAlt: `${SITE_NAME} — um quadro cheio de notas coloridos`,
+    ogAlt: `${SITE_NAME} — um quadro cheio de notas coloridas`,
     board: {
       title: "Whiteboard compartilhado",
       description: "Um quadro de post-its compartilhado com você no Virtual Notes.",
