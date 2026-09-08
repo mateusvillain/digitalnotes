@@ -19,6 +19,7 @@ import {
   type Point,
   type Rect,
 } from "@/lib/canvas/coords";
+import { pinchChange, pinchSnapshot, type PinchSnapshot } from "@/lib/canvas/pinch";
 import { releaseCapture } from "@/lib/canvas/pointer-capture";
 import { useSpaceHeld } from "@/lib/canvas/useSpaceHeld";
 import { SelectionBox } from "./SelectionBox";
@@ -144,6 +145,15 @@ export function Viewport({
   const layerRef = useRef<HTMLDivElement>(null);
   const drag = useRef<DragState | null>(null);
   /**
+   * Dedos encostados na tela agora, na ordem em que chegaram.
+   *
+   * A pinça precisa de dois pontos ao mesmo tempo, e o estado de gesto acima só guarda um
+   * ponteiro — dois dedos são dois gestos concorrentes para ele.
+   */
+  const touches = useRef(new Map<number, Point>());
+  /** O instante anterior da pinça, ou `null` quando não há dois dedos na tela. */
+  const pinch = useRef<PinchSnapshot | null>(null);
+  /**
    * O viewport atual, para os handlers de ponteiro.
    *
    * Lido de uma ref, e não da closure: durante um pan o viewport muda a cada quadro, e
@@ -204,6 +214,17 @@ export function Viewport({
     surface.addEventListener("wheel", handleWheel, { passive: false });
     return () => surface.removeEventListener("wheel", handleWheel);
   }, [zoomBy, pan, localPoint]);
+
+  /**
+   * Começa (ou recomeça) a pinça a partir dos dois primeiros dedos na tela.
+   *
+   * Recomeçar importa quando um terceiro dedo entra ou sai: a distância de referência passa
+   * a ser a de agora, senão o quadro daria um salto de escala no meio do gesto.
+   */
+  const restartPinch = useCallback(() => {
+    const [first, second] = [...touches.current.values()];
+    pinch.current = first && second ? pinchSnapshot(first, second) : null;
+  }, []);
 
   /** Verdadeiro só para eventos nascidos no fundo, e não em algo desenhado sobre ele. */
   const isBackground = useCallback(
@@ -266,15 +287,26 @@ export function Viewport({
       if (event.button !== 0) return;
       // Cada handler declara a própria condição: com espaço, o gesto é da captura acima.
       if (spaceHeld) return;
-      // Defesa contra um `pointerup` perdido, que deixaria um gesto pendurado.
-      if (drag.current !== null) return;
 
-      event.currentTarget.setPointerCapture(event.pointerId);
-
-      // No toque não há espaço para segurar, e o pinch do sistema não chega como wheel: um
-      // dedo navega, que é a única forma de mover o quadro por lá. Selecionar por retângulo
-      // fica para quem tem ponteiro.
+      // No toque não há espaço para segurar: um dedo navega, que é a única forma de mover o
+      // quadro por lá, e dois dedos pinçam (#57). Selecionar por retângulo fica para quem
+      // tem ponteiro.
+      //
+      // Vem antes da defesa contra gesto pendurado logo abaixo: o segundo dedo chega
+      // justamente enquanto o primeiro ainda navega, e barrá-lo ali impediria a pinça de
+      // começar.
       if (event.pointerType === "touch") {
+        event.currentTarget.setPointerCapture(event.pointerId);
+        touches.current.set(event.pointerId, { x: event.clientX, y: event.clientY });
+
+        if (touches.current.size >= 2) {
+          // O segundo dedo transforma o gesto: o pan de um dedo é abandonado, senão o
+          // quadro andaria junto com a pinça pelo dobro do caminho.
+          drag.current = null;
+          restartPinch();
+          return;
+        }
+
         drag.current = {
           kind: "pan",
           pointerId: event.pointerId,
@@ -282,6 +314,11 @@ export function Viewport({
         };
         return;
       }
+
+      // Defesa contra um `pointerup` perdido, que deixaria um gesto pendurado.
+      if (drag.current !== null) return;
+
+      event.currentTarget.setPointerCapture(event.pointerId);
 
       // Arrastar o fundo **seleciona**. Navegar é o gesto com espaço, ou a roda.
       drag.current = {
@@ -293,11 +330,27 @@ export function Viewport({
         started: false,
       };
     },
-    [isBackground, localPoint, spaceHeld],
+    [isBackground, localPoint, restartPinch, spaceHeld],
   );
 
   const handlePointerMove = useCallback(
     (event: PointerEvent<HTMLDivElement>) => {
+      if (touches.current.has(event.pointerId)) {
+        touches.current.set(event.pointerId, { x: event.clientX, y: event.clientY });
+
+        const previous = pinch.current;
+        const [first, second] = [...touches.current.values()];
+        if (previous !== null && first && second) {
+          const change = pinchChange(previous, pinchSnapshot(first, second));
+          // Arrastar com dois dedos move o quadro, e afastá-los dá zoom: as duas coisas
+          // acontecem no mesmo gesto, e separá-las obrigaria a pessoa a escolher.
+          pan(change.pan.x, change.pan.y);
+          zoomBy(change.factor, localPoint({ clientX: change.center.x, clientY: change.center.y }));
+          pinch.current = pinchSnapshot(first, second);
+          return;
+        }
+      }
+
       const state = drag.current;
       if (state === null || state.pointerId !== event.pointerId) return;
 
@@ -328,20 +381,35 @@ export function Viewport({
       setMarquee(rect);
       onSelectionRect?.(rect);
     },
-    [localPoint, onSelectionRect, onSelectionStart, pan],
+    [localPoint, onSelectionRect, onSelectionStart, pan, zoomBy],
   );
 
   /** Encerra o gesto e devolve o que ele era, ou `null` se não havia gesto deste ponteiro. */
-  const endDrag = useCallback((event: PointerEvent<HTMLDivElement>): DragState | null => {
-    const state = drag.current;
-    if (state === null || state.pointerId !== event.pointerId) return null;
+  const endDrag = useCallback(
+    (event: PointerEvent<HTMLDivElement>): DragState | null => {
+      if (touches.current.delete(event.pointerId)) {
+        // Tirar um dedo não encerra a pinça enquanto sobrar mais de um; com um só, o gesto
+        // volta a ser navegação, e a referência precisa ser refeita a partir de quem ficou.
+        restartPinch();
+        if (touches.current.size === 1) {
+          const [remaining] = [...touches.current.entries()];
+          if (remaining) {
+            drag.current = { kind: "pan", pointerId: remaining[0], last: remaining[1] };
+          }
+        }
+      }
 
-    drag.current = null;
-    setMarquee(null);
-    releaseCapture(event);
+      const state = drag.current;
+      if (state === null || state.pointerId !== event.pointerId) return null;
 
-    return state;
-  }, []);
+      drag.current = null;
+      setMarquee(null);
+      releaseCapture(event);
+
+      return state;
+    },
+    [restartPinch],
+  );
 
   const handlePointerUp = useCallback(
     (event: PointerEvent<HTMLDivElement>) => {

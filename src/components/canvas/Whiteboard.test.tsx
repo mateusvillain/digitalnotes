@@ -1,8 +1,9 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { defined } from "@/test-utils/defined";
 import { NOTE_SIZE } from "@/lib/board/types";
+import { MAX_SCALE, MIN_SCALE, scaleAsPercent } from "@/lib/canvas/coords";
 import { Whiteboard } from "./Whiteboard";
 
 /**
@@ -1016,5 +1017,122 @@ describe("Whiteboard — seleção por arrasto no fundo", () => {
     fireEvent.keyDown(document, { key: " " });
     expect(surface.className).toContain("cursor-grab");
     expect(surface.dataset.spaceHeld).toBe("true");
+  });
+});
+
+/** Simula um aparelho de toque (ou de ponteiro) para a consulta de mídia. */
+function aparelhoDeToque(toque: boolean): void {
+  vi.stubGlobal(
+    "matchMedia",
+    vi.fn((query: string) => ({
+      matches: toque,
+      media: query,
+      addEventListener: () => {},
+      removeEventListener: () => {},
+    })),
+  );
+}
+
+/** A escala mostrada pelos controles, em porcento. */
+function escalaAtual(): string {
+  return defined(
+    screen.getByRole("button", { name: "Voltar o zoom para 100%" }).textContent,
+    "o percentual de zoom",
+  );
+}
+
+/** Pinça dois dedos sobre o quadro, do afastamento inicial para o final. */
+function pinca(de: number, para: number): void {
+  const surface = screen.getByTestId("viewport-surface");
+
+  fireEvent.pointerDown(surface, {
+    pointerId: 1,
+    pointerType: "touch",
+    button: 0,
+    clientX: 0,
+    clientY: 0,
+  });
+  fireEvent.pointerDown(surface, {
+    pointerId: 2,
+    pointerType: "touch",
+    button: 0,
+    clientX: de,
+    clientY: 0,
+  });
+  fireEvent.pointerMove(surface, { pointerId: 2, pointerType: "touch", clientX: para, clientY: 0 });
+  fireEvent.pointerUp(surface, { pointerId: 1, pointerType: "touch", clientX: 0, clientY: 0 });
+  fireEvent.pointerUp(surface, { pointerId: 2, pointerType: "touch", clientX: para, clientY: 0 });
+}
+
+describe("Whiteboard — toque", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("dá zoom com a pinça de dois dedos", () => {
+    aparelhoDeToque(false);
+    render(<Whiteboard />);
+    expect(escalaAtual()).toBe("100%");
+
+    pinca(100, 200);
+
+    // Dedos ao dobro da distância: o quadro dobra de escala.
+    expect(escalaAtual()).toBe("200%");
+  });
+
+  it("reduz quando os dedos se aproximam", () => {
+    aparelhoDeToque(false);
+    render(<Whiteboard />);
+
+    pinca(200, 100);
+
+    expect(escalaAtual()).toBe("50%");
+  });
+
+  it("respeita o limite máximo de escala", () => {
+    aparelhoDeToque(false);
+    render(<Whiteboard />);
+
+    // Um afastamento absurdo não pode passar do teto que os botões respeitam.
+    pinca(10, 10000);
+
+    expect(escalaAtual()).toBe(`${scaleAsPercent(MAX_SCALE)}%`);
+  });
+
+  it("respeita o limite mínimo de escala", () => {
+    aparelhoDeToque(false);
+    render(<Whiteboard />);
+
+    pinca(10000, 10);
+
+    expect(escalaAtual()).toBe(`${scaleAsPercent(MIN_SCALE)}%`);
+  });
+
+  it("esconde os controles de zoom em aparelho de toque", () => {
+    aparelhoDeToque(true);
+
+    render(<Whiteboard />);
+
+    // A pinça faz o mesmo trabalho, e o painel disputaria o canto do polegar.
+    expect(screen.queryByRole("button", { name: "Aumentar zoom" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Diminuir zoom" })).toBeNull();
+  });
+
+  it("mantém os controles em aparelho com ponteiro", () => {
+    aparelhoDeToque(false);
+
+    render(<Whiteboard />);
+
+    expect(screen.getByRole("button", { name: "Aumentar zoom" })).toBeDefined();
+  });
+
+  it("não esconde as ações do documento no toque", () => {
+    aparelhoDeToque(true);
+
+    render(<Whiteboard />);
+
+    // Só o zoom sai: compartilhar e criar um novo quadro não têm gesto equivalente.
+    expect(screen.getByRole("button", { name: "Compartilhar whiteboard" })).toBeDefined();
+    expect(screen.getByRole("button", { name: "Criar um novo whiteboard" })).toBeDefined();
   });
 });
