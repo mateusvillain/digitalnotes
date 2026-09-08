@@ -1,6 +1,6 @@
 /**
- * Validação e normalização de boards vindos de fontes não confiáveis: a URL, o
- * localStorage ou um link colado por outra pessoa.
+ * Validação e normalização de boards vindos de fontes não confiáveis: o autosave em
+ * `IndexedDB` ou um board aberto por link compartilhado.
  *
  * Nada aqui lança exceção — quem chama sempre recebe um resultado e decide o que fazer.
  * Um board parcialmente corrompido não deve levar a tela toda embora: notes inválidas são

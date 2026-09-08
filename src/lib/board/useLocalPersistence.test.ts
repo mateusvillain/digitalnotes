@@ -3,7 +3,7 @@ import { IDBFactory } from "fake-indexeddb";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { loadBoard, saveBoard } from "./localStore";
 import { createBoardStore } from "./store";
-import { SCHEMA_VERSION, type Board } from "./types";
+import { SCHEMA_VERSION, createEmptyBoard, type Board } from "./types";
 import { SAVE_DEBOUNCE_MS, useLocalPersistence } from "./useLocalPersistence";
 
 const originalIndexedDB = globalThis.indexedDB;
@@ -74,30 +74,64 @@ describe("useLocalPersistence", () => {
     await waitFor(async () => expect((await loadBoard())?.notes[0]?.text).toBe("anot"));
   });
 
-  it("não sobrescreve o board salvo antes de a restauração terminar", async () => {
+  it("não grava o board vazio do primeiro render por cima do salvo", async () => {
     await saveBoard(boardWith("trabalho de ontem"));
     const store = createBoardStore();
 
     renderHook(() => useLocalPersistence(store));
-    // O board da store neste instante ainda é o vazio do primeiro render.
+    // Uma publicação da store enquanto a leitura ainda corre: sem o guard de restauração,
+    // isto agendaria a gravação do board vazio por cima do que está salvo.
+    store.replaceBoard(createEmptyBoard());
     await vi.advanceTimersByTimeAsync(SAVE_DEBOUNCE_MS);
 
-    await waitFor(() => expect(store.getBoard().notes[0]?.text).toBe("trabalho de ontem"));
     expect((await loadBoard())?.notes[0]?.text).toBe("trabalho de ontem");
   });
 
-  it("preserva o que o usuário criou enquanto a restauração ainda corria", async () => {
+  it("junta o board salvo com o que o usuário criou enquanto a leitura corria", async () => {
     await saveBoard(boardWith("de ontem"));
     const store = createBoardStore();
 
     renderHook(() => useLocalPersistence(store));
-    // Mais rápido que o banco: cria um post-it antes de a leitura voltar.
+    // Mais rápido que o banco: cria um post-it antes de a leitura voltar. Descartar
+    // qualquer um dos dois lados aqui seria perda de trabalho real.
     store.addNote({ x: 5, y: 5, text: "de agora" });
 
     await vi.advanceTimersByTimeAsync(SAVE_DEBOUNCE_MS);
 
-    await waitFor(() => expect(store.getBoard().notes[0]?.text).toBe("de agora"));
-    await waitFor(async () => expect((await loadBoard())?.notes[0]?.text).toBe("de agora"));
+    const texts = () => store.getBoard().notes.map((note) => note.text);
+    await waitFor(() => expect(texts()).toEqual(["de ontem", "de agora"]));
+    await waitFor(async () => {
+      const saved = await loadBoard();
+      expect(saved?.notes.map((note) => note.text)).toEqual(["de ontem", "de agora"]);
+    });
+  });
+
+  it("não apaga a sessão anterior ao sair antes de a leitura voltar", async () => {
+    await saveBoard(boardWith("de ontem"));
+    const store = createBoardStore();
+
+    const { unmount } = renderHook(() => useLocalPersistence(store));
+    store.addNote({ x: 5, y: 5, text: "de agora" });
+    unmount();
+
+    await waitFor(async () => {
+      const saved = await loadBoard();
+      expect(saved?.notes.map((note) => note.text)).toEqual(["de ontem", "de agora"]);
+    });
+  });
+
+  it("grava a alteração pendente ao esconder a página, sem esperar o desmonte", async () => {
+    const store = createBoardStore();
+    renderHook(() => useLocalPersistence(store));
+    await waitFor(() => expect(store.getBoard().notes).toEqual([]));
+
+    store.addNote({ x: 0, y: 0, text: "fechou a aba" });
+    // Fechar a aba não desmonta o componente; é este evento que chega.
+    window.dispatchEvent(new Event("pagehide"));
+
+    await waitFor(async () => {
+      expect((await loadBoard())?.notes[0]?.text).toBe("fechou a aba");
+    });
   });
 
   it("grava a alteração pendente ao desmontar", async () => {

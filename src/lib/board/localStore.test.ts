@@ -5,6 +5,27 @@ import { SCHEMA_VERSION, createEmptyBoard, type Board } from "./types";
 
 const originalIndexedDB = globalThis.indexedDB;
 
+/**
+ * O protótipo de `IDBObjectStore` da implementação em uso, obtido de uma store de verdade.
+ *
+ * A classe do `fake-indexeddb` não é exportada com tipos por um caminho que o `tsc`
+ * resolva, e o jsdom não define `IDBObjectStore` global — pegar o protótipo do objeto
+ * pronto funciona nas duas.
+ */
+async function objectStorePrototype(): Promise<IDBObjectStore> {
+  const db = await new Promise<IDBDatabase>((resolve, reject) => {
+    const request = indexedDB.open("probe", 1);
+    request.onupgradeneeded = () => request.result.createObjectStore("probe");
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error);
+  });
+  const prototype = Object.getPrototypeOf(
+    db.transaction("probe", "readwrite").objectStore("probe"),
+  ) as IDBObjectStore;
+  db.close();
+  return prototype;
+}
+
 function boardWith(text: string): Board {
   return {
     version: SCHEMA_VERSION,
@@ -96,6 +117,24 @@ describe("IndexedDB indisponível", () => {
 
     expect(await saveBoard(boardWith("cota cheia"))).toBe(false);
     expect(await loadBoard()).toBeNull();
+  });
+
+  it("reporta false quando a transação aborta depois do request", async () => {
+    await saveBoard(boardWith("primeira"));
+    const abort = vi.spyOn(await objectStorePrototype(), "put").mockImplementation(function (
+      this: IDBObjectStore,
+    ) {
+      // O request "dá certo" e a transação aborta em seguida — é assim que a cota
+      // estourada costuma aparecer. Confirmar no sucesso do request, e não no commit da
+      // transação, diria "gravado" para um dado que nunca chegou ao disco.
+      this.transaction.abort();
+      return {} as IDBRequest;
+    });
+
+    expect(await saveBoard(boardWith("segunda"))).toBe(false);
+
+    abort.mockRestore();
+    expect((await loadBoard())?.notes[0]?.text).toBe("primeira");
   });
 
   it("não quebra quando a gravação falha", async () => {

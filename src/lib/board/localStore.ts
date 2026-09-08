@@ -30,6 +30,21 @@ function requestToPromise<T>(request: IDBRequest<T>): Promise<T> {
 }
 
 /**
+ * Espera a transação **commitar**, e não só o request responder.
+ *
+ * Um `put` pode ter sucesso e a transação abortar logo depois — é assim que a cota
+ * estourada costuma aparecer. Confirmar no request diria "gravado" para um dado que nunca
+ * chegou ao disco.
+ */
+function transactionToPromise(transaction: IDBTransaction): Promise<void> {
+  return new Promise((resolve, reject) => {
+    transaction.oncomplete = () => resolve();
+    transaction.onerror = () => reject(transaction.error);
+    transaction.onabort = () => reject(transaction.error);
+  });
+}
+
+/**
  * Abre (e cria, na primeira vez) o banco local.
  *
  * Devolve `null` quando `IndexedDB` não está disponível — é o sinal de "siga sem
@@ -45,7 +60,14 @@ async function openDatabase(): Promise<IDBDatabase | null> {
         request.result.createObjectStore(STORE_NAME);
       }
     };
-    return await requestToPromise(request);
+
+    return await new Promise<IDBDatabase | null>((resolve, reject) => {
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error);
+      // Outra aba segurando uma versão anterior do banco. Sem este ramo a promise nunca se
+      // resolveria, e o autosave morreria em silêncio pelo resto da sessão.
+      request.onblocked = () => resolve(null);
+    });
   } catch {
     return null;
   }
@@ -54,9 +76,13 @@ async function openDatabase(): Promise<IDBDatabase | null> {
 /**
  * Grava o board como o estado de trabalho atual.
  *
- * Devolve `true` quando a gravação aconteceu. `false` significa que este navegador não
- * está guardando nada — útil para teste e diagnóstico, mas quem chama não precisa reagir:
- * a sessão continua válida em memória.
+ * Devolve `true` quando a gravação chegou ao disco. `false` significa que este navegador
+ * não está guardando nada; quem chama pode usar isso para tentar de novo, mas a sessão
+ * continua válida em memória de qualquer forma.
+ *
+ * Chamadas concorrentes não têm ordem garantida entre si — cada uma abre a sua conexão.
+ * Quem dispara mais de uma gravação (o debounce e o flush de saída, por exemplo) precisa
+ * encadeá-las, como faz `useLocalPersistence`.
  */
 export async function saveBoard(board: Board): Promise<boolean> {
   const db = await openDatabase();
@@ -66,7 +92,8 @@ export async function saveBoard(board: Board): Promise<boolean> {
     const transaction = db.transaction(STORE_NAME, "readwrite");
     // O board é um objeto simples do contrato, então o algoritmo de clonagem estruturada
     // dá conta dele sem serializar para string na mão.
-    await requestToPromise(transaction.objectStore(STORE_NAME).put(board, CURRENT_BOARD_KEY));
+    transaction.objectStore(STORE_NAME).put(board, CURRENT_BOARD_KEY);
+    await transactionToPromise(transaction);
     return true;
   } catch {
     // Cota estourada, banco fechado pelo navegador, transação abortada: nada a fazer além
@@ -84,6 +111,9 @@ export async function saveBoard(board: Board): Promise<boolean> {
  * versão anterior da aplicação e é tão pouco confiável quanto um board colado de fora.
  * Dado corrompido ou de versão incompatível é descartado em silêncio — o usuário abre um
  * quadro vazio, que é melhor que uma tela de erro sobre um detalhe interno.
+ *
+ * Os `warnings` de `parseBoard` são ignorados de propósito: aqui eles descrevem reparos em
+ * dado que a própria aplicação gravou, e não há a quem reportá-los.
  */
 export async function loadBoard(): Promise<Board | null> {
   const db = await openDatabase();
