@@ -1,6 +1,6 @@
 /**
- * Acesso à tabela `boards`: criação (issue #44) e leitura (issue #45) de boards
- * compartilhados.
+ * Acesso à tabela `boards`: criação (issue #44), leitura (issue #45) e limpeza dos
+ * registros vazios (issue #55) de boards compartilhados.
  *
  * O backend nunca valida a estrutura interna de `content` — quem garante que é um board
  * válido é o frontend (`lib/board/schema.ts`). Aqui existem três regras: o payload precisa
@@ -116,4 +116,60 @@ export async function getBoard(id: string): Promise<{ content: unknown } | null>
     console.error(`Board ${id} tem content ilegível:`, error);
     return null;
   }
+}
+/**
+ * Janela de carência antes de um board vazio virar candidato à remoção.
+ *
+ * Existe para não apagar debaixo de quem está usando: alguém pode compartilhar o quadro
+ * vazio e começar a preencher logo depois, e o link recém-enviado precisa continuar
+ * abrindo enquanto a conversa acontece.
+ */
+export const EMPTY_BOARD_RETENTION_HOURS = 24;
+
+/**
+ * Query da limpeza (issue #55). Apaga apenas o que é comprovadamente um board sem nenhum
+ * post-it e mais velho que a janela de carência.
+ *
+ * Os `CASE` aninhados não são estilo: as funções JSON do SQLite **lançam**
+ * `SQLITE_ERROR: malformed JSON` quando `content` não é JSON válido, em vez de devolver
+ * `NULL`. Um único registro ilegível na tabela abortaria o `DELETE` inteiro e deixaria a
+ * rotina sem apagar nada. `AND` encadeado não bastaria: o planejador do SQLite pode
+ * reordenar os termos de um `WHERE`, então a guarda só é confiável dentro de um `CASE`,
+ * cuja avaliação é preguiçosa por definição.
+ *
+ * `json_type(...) = 'array'` é a segunda guarda, e também não é redundante:
+ * `json_array_length` devolve `0` — indistinguível de uma lista vazia — para um `notes`
+ * que seja objeto (`{"notes": {}}`). Sem checar o tipo antes, um board malformado seria
+ * apagado como se estivesse vazio.
+ */
+const DELETE_EMPTY_BOARDS_SQL = `
+  DELETE FROM boards
+  WHERE created_at < datetime('now', ?)
+    AND CASE WHEN json_valid(content)
+             THEN CASE WHEN json_type(content, '$.notes') = 'array'
+                       THEN json_array_length(content, '$.notes') = 0
+                       ELSE 0 END
+             ELSE 0 END
+`;
+
+/**
+ * Remove os boards sem nenhum post-it criados há mais de
+ * {@link EMPTY_BOARD_RETENTION_HOURS} horas e devolve quantos foram apagados.
+ *
+ * Compartilhar sempre cria um documento novo, e nada nunca é apagado: sem esta rotina, um
+ * clique acidental no botão de compartilhar com o quadro vazio deixa uma linha permanente
+ * no banco. São registros sem conteúdo nenhum — não há o que preservar neles.
+ *
+ * Nada que a rotina não consiga interpretar é removido: `content` ilegível ou com formato
+ * inesperado fica onde está.
+ */
+export async function deleteEmptyBoards(): Promise<{ deleted: number }> {
+  const db = getDbClient();
+
+  const result = await db.execute({
+    sql: DELETE_EMPTY_BOARDS_SQL,
+    args: [`-${EMPTY_BOARD_RETENTION_HOURS} hours`],
+  });
+
+  return { deleted: result.rowsAffected };
 }

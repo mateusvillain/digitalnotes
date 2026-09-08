@@ -6,8 +6,14 @@ vi.mock("./client", () => ({
   getDbClient: () => ({ execute }),
 }));
 
-const { BoardPayloadTooLargeError, MAX_BOARD_CONTENT_BYTES, createBoard, getBoard } =
-  await import("./boards");
+const {
+  BoardPayloadTooLargeError,
+  EMPTY_BOARD_RETENTION_HOURS,
+  MAX_BOARD_CONTENT_BYTES,
+  createBoard,
+  deleteEmptyBoards,
+  getBoard,
+} = await import("./boards");
 
 beforeEach(() => {
   execute.mockReset();
@@ -109,5 +115,30 @@ describe("getBoard", () => {
     expect(await getBoard("abcdefghijkl")).toBeNull();
 
     consoleError.mockRestore();
+  });
+});
+
+describe("deleteEmptyBoards", () => {
+  it("apaga com a janela de 24 horas e devolve quantos registros saíram", async () => {
+    execute.mockResolvedValueOnce({ rowsAffected: 3 });
+
+    expect(await deleteEmptyBoards()).toEqual({ deleted: 3 });
+    expect(execute).toHaveBeenCalledTimes(1);
+    expect(execute).toHaveBeenCalledWith({
+      sql: expect.stringContaining("DELETE FROM boards"),
+      args: [`-${EMPTY_BOARD_RETENTION_HOURS} hours`],
+    });
+  });
+
+  it("devolve zero quando não havia nada para apagar", async () => {
+    execute.mockResolvedValueOnce({ rowsAffected: 0 });
+
+    expect(await deleteEmptyBoards()).toEqual({ deleted: 0 });
+  });
+
+  it("propaga a falha em vez de relatar uma limpeza que não aconteceu", async () => {
+    execute.mockRejectedValueOnce(new Error("conexão recusada"));
+
+    await expect(deleteEmptyBoards()).rejects.toThrow("conexão recusada");
   });
 });
