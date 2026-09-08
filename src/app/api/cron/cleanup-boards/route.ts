@@ -24,6 +24,18 @@ function secretMatches(received: string, expected: string): boolean {
 }
 
 /**
+ * Extrai o segredo de um cabeçalho `Authorization` do esquema Bearer.
+ *
+ * O nome do esquema é case-insensitive por especificação (RFC 7235), então compará-lo
+ * literalmente recusaria um `bearer` minúsculo perfeitamente válido. O segredo em si, esse
+ * sim, é comparado byte a byte mais adiante.
+ */
+function extractBearerToken(header: string): string | null {
+  const match = /^Bearer +(.*)$/i.exec(header);
+  return match?.[1] ?? null;
+}
+
+/**
  * Diz se a requisição apresentou o segredo do agendador.
  *
  * Sem `CRON_SECRET` configurado a resposta é sempre `false`: uma variável ausente deixaria
@@ -37,7 +49,10 @@ function isAuthorized(request: Request): boolean {
   const header = request.headers.get("authorization");
   if (!header) return false;
 
-  return secretMatches(header, `Bearer ${secret}`);
+  const token = extractBearerToken(header);
+  if (token === null) return false;
+
+  return secretMatches(token, secret);
 }
 
 export async function GET(request: Request) {

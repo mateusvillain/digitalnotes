@@ -2,9 +2,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const deleteEmptyBoards = vi.fn();
 
-vi.mock("@/lib/db/boards", () => ({
-  deleteEmptyBoards: () => deleteEmptyBoards(),
-}));
+vi.mock("@/lib/db/boards", async () => {
+  const actual = await vi.importActual<typeof import("@/lib/db/boards")>("@/lib/db/boards");
+  return { ...actual, deleteEmptyBoards: () => deleteEmptyBoards() };
+});
 
 const { GET } = await import("./route");
 
@@ -44,7 +45,6 @@ describe("GET /api/cron/cleanup-boards", () => {
     ["cabeçalho vazio", ""],
     ["segredo errado", "Bearer outro-segredo"],
     ["sem o prefixo Bearer", SECRET],
-    ["prefixo com caixa diferente", `bearer ${SECRET}`],
     ["segredo como prefixo do esperado", `Bearer ${SECRET.slice(0, -1)}`],
     ["outro esquema de autenticação", `Basic ${SECRET}`],
   ])("responde 401 e não apaga nada: %s", async (_caso, authorization) => {
@@ -52,6 +52,17 @@ describe("GET /api/cron/cleanup-boards", () => {
 
     expect(response.status).toBe(401);
     expect(deleteEmptyBoards).not.toHaveBeenCalled();
+  });
+
+  it("aceita o esquema em minúsculas, que a RFC 7235 declara case-insensitive", async () => {
+    const consoleLog = vi.spyOn(console, "log").mockImplementation(() => {});
+    deleteEmptyBoards.mockResolvedValueOnce({ deleted: 0 });
+
+    const response = await GET(request(`bearer ${SECRET}`));
+
+    expect(response.status).toBe(200);
+
+    consoleLog.mockRestore();
   });
 
   it("recusa a limpeza quando CRON_SECRET não está configurada", async () => {

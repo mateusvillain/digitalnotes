@@ -3,10 +3,11 @@
  * registros vazios (issue #55) de boards compartilhados.
  *
  * O backend nunca valida a estrutura interna de `content` — quem garante que é um board
- * válido é o frontend (`lib/board/schema.ts`). Aqui existem três regras: o payload precisa
- * caber em um limite razoável; cada chamada sempre cria um registro novo, nunca atualiza um
- * existente — compartilhar é sempre um documento novo; e toda leitura indisponível, seja
- * qual for o motivo, devolve o mesmo `null`.
+ * válido é o frontend (`lib/board/schema.ts`). Aqui existem quatro regras: o payload
+ * precisa caber em um limite razoável; cada chamada sempre cria um registro novo, nunca
+ * atualiza um existente — compartilhar é sempre um documento novo; toda leitura
+ * indisponível, seja qual for o motivo, devolve o mesmo `null`; e a limpeza só remove o que
+ * conseguiu interpretar, deixando intacto qualquer `content` ilegível.
  */
 
 import { randomBytes } from "node:crypto";
@@ -117,6 +118,7 @@ export async function getBoard(id: string): Promise<{ content: unknown } | null>
     return null;
   }
 }
+
 /**
  * Janela de carência antes de um board vazio virar candidato à remoção.
  *

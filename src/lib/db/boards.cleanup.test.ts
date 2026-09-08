@@ -11,6 +11,7 @@
  * em produção.
  */
 
+import { readFile } from "node:fs/promises";
 import { createClient, type Client } from "@libsql/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -41,13 +42,22 @@ async function remainingIds(): Promise<string[]> {
   return result.rows.map((row) => String(row.id));
 }
 
+/**
+ * O schema sai da própria migration, não de uma cópia: o que a limpeza faz depende dos tipos
+ * e do `DEFAULT CURRENT_TIMESTAMP` da tabela real, e um `CREATE TABLE` reescrito à mão aqui
+ * passaria a valer mesmo depois de a tabela de produção mudar.
+ */
+async function createSchema() {
+  const migration = await readFile(
+    new URL("./migrations/0001_create_boards.sql", import.meta.url),
+    "utf-8",
+  );
+  await db.execute(migration);
+}
+
 beforeEach(async () => {
   db = createClient({ url: ":memory:" });
-  await db.execute(`CREATE TABLE boards (
-    id TEXT PRIMARY KEY,
-    content TEXT NOT NULL,
-    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
-  )`);
+  await createSchema();
 });
 
 afterEach(() => {
