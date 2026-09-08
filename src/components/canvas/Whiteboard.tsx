@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef } from "react";
 import { AppShell } from "@/components/shell/AppShell";
-import { useBoard } from "@/lib/board/useBoard";
+import { useBoard, type UseBoardOptions } from "@/lib/board/useBoard";
 import { useKeyboardShortcuts } from "@/lib/board/useKeyboardShortcuts";
 import type { Point } from "@/lib/canvas/coords";
 import { useViewport } from "@/lib/canvas/useViewport";
@@ -12,15 +12,17 @@ import { Viewport } from "./Viewport";
 import { SelectionToolbar } from "./SelectionToolbar";
 import { ViewportControls } from "./ViewportControls";
 
+type WhiteboardProps = Pick<UseBoardOptions, "initialBoard" | "autosave">;
+
 /**
  * O quadro: junta o estado de viewport à superfície navegável, aos controles e aos post-its.
  *
  * A composição é a fiação, e só ela: o viewport sabe navegar, o `useBoard` sabe o que é o
  * board, e o `Board` sabe desenhar. Nenhum dos três precisa do outro para ser testado.
  */
-export function Whiteboard() {
+export function Whiteboard({ initialBoard, autosave }: WhiteboardProps = {}) {
   const controls = useViewport();
-  const board = useBoard();
+  const board = useBoard({ initialBoard, autosave });
   const dragOffsetBy = board.dragBy;
   const resizeOffsetBy = board.resizeBy;
   /**

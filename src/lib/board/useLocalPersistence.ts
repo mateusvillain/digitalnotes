@@ -33,13 +33,14 @@ function mergeBoards(restored: Board, current: Board): Board {
  * primeiro render chegaria ao banco antes da leitura e apagaria justamente o trabalho que
  * a restauração ia devolver.
  *
- * Nota para a issue #21: hoje isto vale para toda montagem de `useBoard`, e `useBoard` só
- * é montado na rota raiz. Quando `/board/:id` existir, o board aberto por link **não** pode
- * cair aqui sem um portão — o `IndexedDB` é a cópia local em edição, não o que veio do
- * backend.
+ * `enabled` é o portão da rota `/board/:id` (#21): um board aberto por link não pode nem
+ * ser sobrescrito pelo autosave local nem sobrescrevê-lo — o `IndexedDB` guarda a cópia de
+ * trabalho da rota raiz, e não o que veio de um link que alguém mandou.
  */
-export function useLocalPersistence(store: BoardStore): void {
+export function useLocalPersistence(store: BoardStore, enabled = true): void {
   useEffect(() => {
+    if (!enabled) return;
+
     let cancelled = false;
     let restored = false;
     /** Há alteração da store ainda não gravada. É a única resposta para "o usuário mexeu". */
@@ -139,5 +140,5 @@ export function useLocalPersistence(store: BoardStore): void {
       flush();
       clearTimeout(timer);
     };
-  }, [store]);
+  }, [store, enabled]);
 }
