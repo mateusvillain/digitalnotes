@@ -6,9 +6,13 @@ vi.mock("./client", () => ({
   getDbClient: () => ({ execute }),
 }));
 
-const { BoardPayloadTooLargeError, MAX_BOARD_CONTENT_BYTES, createBoard } = await import(
-  "./boards"
-);
+const {
+  BoardPayloadTooLargeError,
+  MAX_BOARD_CONTENT_BYTES,
+  createBoard,
+  getBoard,
+  isValidBoardId,
+} = await import("./boards");
 
 beforeEach(() => {
   execute.mockReset();
@@ -61,5 +65,59 @@ describe("createBoard", () => {
 
     await expect(createBoard({ version: 1, notes: [] })).rejects.toThrow("conexão recusada");
     expect(execute).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("isValidBoardId", () => {
+  it("aceita o formato gerado pela própria aplicação", async () => {
+    execute.mockResolvedValueOnce({});
+    const { id } = await createBoard({ version: 1, notes: [] });
+
+    expect(isValidBoardId(id)).toBe(true);
+  });
+
+  it.each([
+    ["vazio", ""],
+    ["curto demais", "abc"],
+    ["longo demais", "abcdefghijklm"],
+    ["caractere inválido", "abcdefghijk!"],
+    ["com barra", "abcdefghij/k"],
+    ["com espaço", "abcdefghij k"],
+  ])("rejeita id malformado: %s", (_caso, id) => {
+    expect(isValidBoardId(id)).toBe(false);
+  });
+});
+
+describe("getBoard", () => {
+  it("devolve o content desserializado quando o board existe", async () => {
+    execute.mockResolvedValueOnce({ rows: [{ content: '{"version":1,"notes":[]}' }] });
+
+    const board = await getBoard("abcdefghijkl");
+
+    expect(board).toEqual({ content: { version: 1, notes: [] } });
+    expect(execute).toHaveBeenCalledWith({
+      sql: "SELECT content FROM boards WHERE id = ?",
+      args: ["abcdefghijkl"],
+    });
+  });
+
+  it("devolve null quando o board não existe", async () => {
+    execute.mockResolvedValueOnce({ rows: [] });
+
+    expect(await getBoard("abcdefghijkl")).toBeNull();
+  });
+
+  it("devolve null para id malformado sem consultar o banco", async () => {
+    expect(await getBoard("id-invalido!")).toBeNull();
+    expect(execute).not.toHaveBeenCalled();
+  });
+
+  it("devolve null quando o content gravado não é JSON legível", async () => {
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
+    execute.mockResolvedValueOnce({ rows: [{ content: "{isso não é json" }] });
+
+    expect(await getBoard("abcdefghijkl")).toBeNull();
+
+    consoleError.mockRestore();
   });
 });
