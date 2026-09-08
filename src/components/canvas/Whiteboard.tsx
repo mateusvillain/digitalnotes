@@ -6,6 +6,7 @@ import { useBoard, type UseBoardOptions } from "@/lib/board/useBoard";
 import { useKeyboardShortcuts } from "@/lib/board/useKeyboardShortcuts";
 import type { Point } from "@/lib/canvas/coords";
 import { useViewport } from "@/lib/canvas/useViewport";
+import { useTouchPrimary } from "@/lib/dom/useTouchPrimary";
 import { ColorPicker } from "@/components/postit/ColorPicker";
 import { NewBoardButton } from "@/components/ui/NewBoardButton";
 import { ShareButton } from "@/components/ui/ShareButton";
@@ -29,6 +30,7 @@ export function Whiteboard({ initialBoard, autosave }: WhiteboardProps) {
   // Compartilhar lê o board no instante do clique (#46): nunca reage a mudanças da store,
   // porque enviar ao backend é sempre uma decisão explícita de quem escreveu.
   const share = useShareBoard(board.getBoard);
+  const touchPrimary = useTouchPrimary();
   const dragOffsetBy = board.dragBy;
   const resizeOffsetBy = board.resizeBy;
   /**
@@ -96,12 +98,16 @@ export function Whiteboard({ initialBoard, autosave }: WhiteboardProps) {
         <ShareButton state={share.state} share={share.share} dismiss={share.dismiss} />
       }
       controls={
-        <ViewportControls
-          viewport={controls.viewport}
-          zoomBy={controls.zoomBy}
-          reset={controls.reset}
-          anchor={center}
-        />
+        // No toque a pinça faz o mesmo trabalho, e o painel só disputaria o canto onde o
+        // polegar descansa — justamente em quem tem menos tela sobrando (#57).
+        touchPrimary ? undefined : (
+          <ViewportControls
+            viewport={controls.viewport}
+            zoomBy={controls.zoomBy}
+            reset={controls.reset}
+            anchor={center}
+          />
+        )
       }
     >
       <div ref={areaRef} className="absolute inset-0">
