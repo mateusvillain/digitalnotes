@@ -35,7 +35,7 @@ describe("useShareBoard", () => {
     const fetchSpy = respondWith({ id: "abc", url: "https://site/board/abc" });
     const { result } = renderHook(() => useShareBoard(() => board));
 
-    act(() => result.current.share());
+    await act(async () => void result.current.share());
 
     await waitFor(() => {
       expect(result.current.state).toEqual({
@@ -56,7 +56,7 @@ describe("useShareBoard", () => {
     const { result } = renderHook(() => useShareBoard(() => current));
 
     current = board;
-    act(() => result.current.share());
+    await act(async () => void result.current.share());
 
     await waitFor(() => expect(result.current.state.status).toBe("shared"));
     const [, init] = fetchSpy.mock.calls[0] ?? [];
@@ -75,24 +75,38 @@ describe("useShareBoard", () => {
       );
     const { result } = renderHook(() => useShareBoard(() => board));
 
-    act(() => result.current.share());
+    await act(async () => void result.current.share());
     await waitFor(() =>
       expect(result.current.state).toHaveProperty("url", "https://site/board/um"),
     );
 
-    act(() => result.current.share());
+    await act(async () => void result.current.share());
     await waitFor(() =>
       expect(result.current.state).toHaveProperty("url", "https://site/board/dois"),
     );
   });
 
   it("passa por 'gerando' antes de ter o link", async () => {
-    respondWith({ id: "abc", url: "https://site/board/abc" });
+    let respond: ((response: Response) => void) | undefined;
+    vi.spyOn(globalThis, "fetch").mockReturnValue(
+      new Promise<Response>((resolve) => {
+        respond = resolve;
+      }),
+    );
     const { result } = renderHook(() => useShareBoard(() => board));
 
-    act(() => result.current.share());
-
+    // Sem `await`: o estado precisa ser observável enquanto o envio ainda corre.
+    act(() => void result.current.share());
     expect(result.current.state).toEqual({ status: "sharing" });
+
+    await act(async () => {
+      respond?.(
+        new Response(JSON.stringify({ id: "abc", url: "https://site/board/abc" }), {
+          status: 201,
+        }),
+      );
+    });
+
     await waitFor(() => expect(result.current.state.status).toBe("shared"));
   });
 
@@ -108,7 +122,7 @@ describe("useShareBoard", () => {
     arrange();
     const { result } = renderHook(() => useShareBoard(() => board));
 
-    act(() => result.current.share());
+    await act(async () => void result.current.share());
 
     await waitFor(() => expect(result.current.state).toEqual({ status: "error" }));
   });
@@ -117,7 +131,7 @@ describe("useShareBoard", () => {
     respondWith({ error: "Conteúdo do board excede o tamanho máximo aceito." }, 413);
     const { result } = renderHook(() => useShareBoard(() => board));
 
-    act(() => result.current.share());
+    await act(async () => void result.current.share());
 
     // Insistir não resolveria; quem chama precisa poder dizer isso ao usuário.
     await waitFor(() => expect(result.current.state).toEqual({ status: "too-large" }));
@@ -138,8 +152,8 @@ describe("useShareBoard", () => {
       );
     const { result } = renderHook(() => useShareBoard(() => board));
 
-    act(() => result.current.share());
-    act(() => result.current.share());
+    await act(async () => void result.current.share());
+    await act(async () => void result.current.share());
     await waitFor(() =>
       expect(result.current.state).toHaveProperty("url", "https://site/board/novo"),
     );
@@ -161,10 +175,10 @@ describe("useShareBoard", () => {
       );
     const { result } = renderHook(() => useShareBoard(() => board));
 
-    act(() => result.current.share());
+    await act(async () => void result.current.share());
     await waitFor(() => expect(result.current.state.status).toBe("error"));
 
-    act(() => result.current.share());
+    await act(async () => void result.current.share());
     await waitFor(() => expect(result.current.state.status).toBe("shared"));
   });
 
@@ -172,7 +186,7 @@ describe("useShareBoard", () => {
     respondWith({ id: "abc", url: "https://site/board/abc" });
     const { result } = renderHook(() => useShareBoard(() => board));
 
-    act(() => result.current.share());
+    await act(async () => void result.current.share());
     await waitFor(() => expect(result.current.state.status).toBe("shared"));
 
     act(() => result.current.dismiss());

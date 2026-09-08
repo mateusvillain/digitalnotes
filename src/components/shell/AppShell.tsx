@@ -13,6 +13,14 @@ interface AppShellProps {
    * caro (um deles manda o board para fora da máquina).
    */
   actions?: ReactNode;
+  /**
+   * Ações que criam ou trocam o documento, no canto superior esquerdo — o whiteboard novo
+   * entra aqui (#58).
+   *
+   * Longe do canto de compartilhar por segurança de gesto: uma delas descarta o quadro
+   * atual e a outra o publica, e vizinhas o clique errado é caro nos dois sentidos.
+   */
+  documentActions?: ReactNode;
 }
 
 /**
@@ -26,7 +34,7 @@ interface AppShellProps {
  * canvas ocupe a tela inteira e que os controles tenham onde morar sem disputar espaço com
  * o quadro.
  */
-export function AppShell({ children, controls, actions }: AppShellProps) {
+export function AppShell({ children, controls, actions, documentActions }: AppShellProps) {
   return (
     <main className="relative h-dvh overflow-hidden bg-canvas">
       {/*
@@ -37,10 +45,14 @@ export function AppShell({ children, controls, actions }: AppShellProps) {
 
       {children}
 
-      {actions === undefined ? null : (
+      {actions === undefined && documentActions === undefined ? null : (
         // Mesmo respiro do canto de baixo: colado na borda o controle parece parte da
         // moldura do navegador, e fica no caminho do gesto de fechar a aba.
-        <div className="pointer-events-none absolute inset-x-0 top-0 z-30 flex justify-end p-4">
+        //
+        // Uma faixa só para os dois cantos, e não duas sobrepostas: assim eles nunca podem
+        // divergir de altura nem cobrir um ao outro.
+        <div className="pointer-events-none absolute inset-x-0 top-0 z-30 flex items-start justify-between p-4">
+          <div className="pointer-events-auto">{documentActions}</div>
           <div className="pointer-events-auto">{actions}</div>
         </div>
       )}

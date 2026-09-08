@@ -27,8 +27,14 @@ export type ShareState =
 
 export interface ShareApi {
   state: ShareState;
-  /** Envia o board atual ao backend e guarda o link devolvido. */
-  share: () => void;
+  /**
+   * Envia o board atual ao backend e guarda o link devolvido.
+   *
+   * Devolve o estado final para quem precisa **encadear** algo no resultado — começar um
+   * quadro novo só depois de o link existir (#58), por exemplo. Quem só quer publicar
+   * ignora o retorno.
+   */
+  share: () => Promise<ShareState>;
   /** Volta ao estado inicial, fechando o link exibido. */
   dismiss: () => void;
 }
@@ -61,17 +67,16 @@ export function useShareBoard(getBoard: () => Board): ShareApi {
     };
   }, []);
 
-  const share = useCallback(() => {
+  const share = useCallback(async () => {
     currentAttempt.current += 1;
     const attempt = currentAttempt.current;
-    const isCurrent = () => attempt === currentAttempt.current;
 
     setState({ status: "sharing" });
 
-    void (async () => {
-      const outcome = await postBoard(getBoard());
-      if (isCurrent()) setState(outcome);
-    })();
+    const outcome = await postBoard(getBoard());
+    // Um envio mais novo já respondeu: aplicar este trocaria o link atual pelo antigo.
+    if (attempt === currentAttempt.current) setState(outcome);
+    return outcome;
   }, [getBoard]);
 
   const dismiss = useCallback(() => setState({ status: "idle" }), []);

@@ -834,3 +834,30 @@ describe("useBoard — apagar a seleção", () => {
     expect(hook.result.current.notes).toHaveLength(1);
   });
 });
+
+describe("resetBoard", () => {
+  it("descarta os post-its e começa um quadro vazio", () => {
+    const { result } = renderHook(() => useBoard());
+    act(() => result.current.createNoteAt({ x: 10, y: 10 }));
+    expect(result.current.notes).toHaveLength(1);
+
+    act(() => result.current.resetBoard());
+
+    expect(result.current.notes).toEqual([]);
+  });
+
+  it("leva junto a seleção e a edição em andamento", () => {
+    const { result } = renderHook(() => useBoard());
+    act(() => result.current.createNoteAt({ x: 10, y: 10 }));
+    const id = defined(result.current.notes[0], "o post-it criado").id;
+    act(() => result.current.selectNote(id));
+    act(() => result.current.startEditing(id));
+
+    act(() => result.current.resetBoard());
+
+    // Seleção e edição apontariam para post-its que não existem mais, e a próxima ação em
+    // lote agiria sobre nada.
+    expect(result.current.selection.size).toBe(0);
+    expect(result.current.editingId).toBeNull();
+  });
+});

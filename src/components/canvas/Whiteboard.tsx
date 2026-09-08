@@ -7,6 +7,7 @@ import { useKeyboardShortcuts } from "@/lib/board/useKeyboardShortcuts";
 import type { Point } from "@/lib/canvas/coords";
 import { useViewport } from "@/lib/canvas/useViewport";
 import { ColorPicker } from "@/components/postit/ColorPicker";
+import { NewBoardButton } from "@/components/ui/NewBoardButton";
 import { ShareButton } from "@/components/ui/ShareButton";
 import { useShareBoard } from "@/lib/board/useShareBoard";
 import { Board } from "./Board";
@@ -84,6 +85,13 @@ export function Whiteboard({ initialBoard, autosave }: WhiteboardProps) {
 
   return (
     <AppShell
+      documentActions={
+        <NewBoardButton
+          hasNotes={board.notes.length > 0}
+          onNewBoard={board.resetBoard}
+          share={share}
+        />
+      }
       actions={<ShareButton state={share.state} share={share.share} dismiss={share.dismiss} />}
       controls={
         <ViewportControls
