@@ -7,6 +7,8 @@ import { useKeyboardShortcuts } from "@/lib/board/useKeyboardShortcuts";
 import type { Point } from "@/lib/canvas/coords";
 import { useViewport } from "@/lib/canvas/useViewport";
 import { ColorPicker } from "@/components/postit/ColorPicker";
+import { ShareButton } from "@/components/ui/ShareButton";
+import { useShareBoard } from "@/lib/board/useShareBoard";
 import { Board } from "./Board";
 import { Viewport } from "./Viewport";
 import { SelectionToolbar } from "./SelectionToolbar";
@@ -23,6 +25,9 @@ type WhiteboardProps = Pick<UseBoardOptions, "initialBoard" | "autosave">;
 export function Whiteboard({ initialBoard, autosave }: WhiteboardProps) {
   const controls = useViewport();
   const board = useBoard({ initialBoard, autosave });
+  // Compartilhar lê o board no instante do clique (#46): nunca reage a mudanças da store,
+  // porque enviar ao backend é sempre uma decisão explícita de quem escreveu.
+  const share = useShareBoard(board.getBoard);
   const dragOffsetBy = board.dragBy;
   const resizeOffsetBy = board.resizeBy;
   /**
@@ -79,6 +84,7 @@ export function Whiteboard({ initialBoard, autosave }: WhiteboardProps) {
 
   return (
     <AppShell
+      actions={<ShareButton state={share.state} share={share.share} dismiss={share.dismiss} />}
       controls={
         <ViewportControls
           viewport={controls.viewport}

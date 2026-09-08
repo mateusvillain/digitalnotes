@@ -25,6 +25,14 @@ export interface Resizing {
 export interface BoardApi {
   /** Notes do board, na ordem em que a store as guarda. */
   notes: readonly Note[];
+  /**
+   * O board inteiro, lido na hora.
+   *
+   * É função, e não valor, porque quem usa isto é o compartilhamento (#46): ele precisa do
+   * estado do instante do clique, e receber o board por prop faria a ação ser recriada a
+   * cada tecla digitada num post-it.
+   */
+  getBoard: () => Board;
   /** Note em edição de texto, ou `null`. Um de cada vez. */
   editingId: string | null;
   /** Ids marcados. Efêmero: não entra na store nem na URL. */
@@ -359,6 +367,7 @@ export function useBoard({ initialBoard, autosave = true }: UseBoardOptions = {}
 
   return {
     notes: board.notes,
+    getBoard: store.getBoard,
     editingId,
     selection,
     createNoteAt,

@@ -5,6 +5,14 @@ interface AppShellProps {
   children?: ReactNode;
   /** Controles flutuantes sobre o canvas — zoom e reset entram aqui na issue #9. */
   controls?: ReactNode;
+  /**
+   * Ações do documento, no canto superior direito — compartilhar entra aqui (#46).
+   *
+   * Canto oposto ao do zoom de propósito: navegar o quadro e publicá-lo são coisas
+   * diferentes, e vizinhas elas virariam uma fileira de ícones em que o clique errado sai
+   * caro (um deles manda o board para fora da máquina).
+   */
+  actions?: ReactNode;
 }
 
 /**
@@ -18,7 +26,7 @@ interface AppShellProps {
  * canvas ocupe a tela inteira e que os controles tenham onde morar sem disputar espaço com
  * o quadro.
  */
-export function AppShell({ children, controls }: AppShellProps) {
+export function AppShell({ children, controls, actions }: AppShellProps) {
   return (
     <main className="relative h-dvh overflow-hidden bg-canvas">
       {/*
@@ -28,6 +36,14 @@ export function AppShell({ children, controls }: AppShellProps) {
       <h1 className="sr-only">digitalnotes</h1>
 
       {children}
+
+      {actions === undefined ? null : (
+        // Mesmo respiro do canto de baixo: colado na borda o controle parece parte da
+        // moldura do navegador, e fica no caminho do gesto de fechar a aba.
+        <div className="pointer-events-none absolute inset-x-0 top-0 z-30 flex justify-end p-4">
+          <div className="pointer-events-auto">{actions}</div>
+        </div>
+      )}
 
       {controls === undefined ? null : (
         // Acima do quadro **e** da barra de seleção (`z-20`): um controle da aplicação não
