@@ -159,6 +159,33 @@ describe("useLocalPersistence", () => {
     expect(await loadBoard()).toBeNull();
   });
 
+  it("grava o quadro vazio quando o board é descartado", async () => {
+    await saveBoard(boardWith("rascunho antigo"));
+    const store = createBoardStore();
+    renderHook(() => useLocalPersistence(store));
+    await waitFor(() => expect(store.getBoard().notes[0]?.text).toBe("rascunho antigo"));
+
+    // É o que "criar um novo whiteboard" (#58) faz na store.
+    store.replaceBoard(createEmptyBoard());
+    await vi.advanceTimersByTimeAsync(SAVE_DEBOUNCE_MS);
+
+    await waitFor(async () => expect((await loadBoard())?.notes).toEqual([]));
+  });
+
+  it("não ressuscita o board descartado antes de a leitura voltar", async () => {
+    await saveBoard(boardWith("rascunho antigo"));
+    const store = createBoardStore();
+
+    renderHook(() => useLocalPersistence(store));
+    // Descartar enquanto o banco ainda responde: mesclar aqui traria de volta justamente o
+    // que acabou de ser jogado fora.
+    store.replaceBoard(createEmptyBoard());
+    await vi.advanceTimersByTimeAsync(SAVE_DEBOUNCE_MS);
+
+    await waitFor(() => expect(store.getBoard().notes).toEqual([]));
+    expect((await loadBoard())?.notes).toEqual([]);
+  });
+
   it("segue funcionando sem IndexedDB, só sem autosave", async () => {
     // @ts-expect-error simula navegador sem suporte
     delete globalThis.indexedDB;

@@ -17,3 +17,12 @@ export const iconButtonClass =
  */
 export const panelButtonClass =
   "rounded-control border border-border bg-surface px-3 py-1.5 text-sm text-ink transition-colors hover:bg-canvas";
+
+/**
+ * Botões de texto secundários dentro dos painéis flutuantes.
+ *
+ * São as ações que acompanham a principal — cancelar, copiar, tentar de novo: mesmo peso
+ * tipográfico, sem moldura, para não competerem com o botão que resolve.
+ */
+export const subtleButtonClass =
+  "rounded-control px-2 py-1.5 text-sm text-ink-muted transition-colors hover:bg-canvas hover:text-ink";

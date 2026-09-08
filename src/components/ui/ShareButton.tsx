@@ -112,7 +112,7 @@ export function ShareButton({ state, share, dismiss }: ShareApi) {
           ref={shareRef}
           type="button"
           className={iconButtonClass}
-          onClick={sharing ? undefined : share}
+          onClick={sharing ? undefined : () => void share()}
           // `aria-busy` em vez de `disabled`: desabilitar tira o foco de quem acabou de
           // acionar o botão pelo teclado, e o clique já está barrado acima.
           aria-busy={sharing}
@@ -135,7 +135,11 @@ export function ShareButton({ state, share, dismiss }: ShareApi) {
       {state.status === "error" ? (
         <div className={`${panelClass} flex items-center gap-2`}>
           <span className="text-ink">Não foi possível compartilhar agora.</span>
-          <button type="button" className="text-ink-muted hover:text-ink" onClick={share}>
+          <button
+            type="button"
+            className="text-ink-muted hover:text-ink"
+            onClick={() => void share()}
+          >
             Tentar de novo
           </button>
         </div>

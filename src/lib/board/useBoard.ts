@@ -14,7 +14,7 @@ import {
 import { clampNoteSize } from "./schema";
 import { createBoardStore } from "./store";
 import { useLocalPersistence } from "./useLocalPersistence";
-import { NOTE_SIZE, type Board, type Note, type NoteColor } from "./types";
+import { NOTE_SIZE, createEmptyBoard, type Board, type Note, type NoteColor } from "./types";
 
 /** Um post-it em redimensionamento e o tamanho que ele tem agora, durante o gesto. */
 export interface Resizing {
@@ -25,6 +25,13 @@ export interface Resizing {
 export interface BoardApi {
   /** Notes do board, na ordem em que a store as guarda. */
   notes: readonly Note[];
+  /**
+   * Descarta o board atual e começa um quadro vazio (#58).
+   *
+   * A seleção e a edição em andamento vão junto: são estados sobre post-its que não existem
+   * mais, e mantê-los deixaria a próxima ação em lote agindo sobre nada.
+   */
+  resetBoard: () => void;
   /**
    * O board inteiro, lido na hora.
    *
@@ -357,6 +364,12 @@ export function useBoard({ initialBoard, autosave = true }: UseBoardOptions = {}
     publishSelection(EMPTY_SELECTION);
   }, [publishSelection, store]);
 
+  const resetBoard = useCallback(() => {
+    store.replaceBoard(createEmptyBoard());
+    setEditingId(null);
+    publishSelection(EMPTY_SELECTION);
+  }, [publishSelection, store]);
+
   const commitText = useCallback(
     (id: string, text: string) => {
       store.updateNote(id, { text });
@@ -368,6 +381,7 @@ export function useBoard({ initialBoard, autosave = true }: UseBoardOptions = {}
   return {
     notes: board.notes,
     getBoard: store.getBoard,
+    resetBoard,
     editingId,
     selection,
     createNoteAt,

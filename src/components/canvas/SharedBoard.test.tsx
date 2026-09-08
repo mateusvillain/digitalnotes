@@ -123,6 +123,27 @@ describe("SharedBoard", () => {
     });
   });
 
+  it("deixa começar um quadro novo sem tocar no registro remoto nem no autosave da raiz", async () => {
+    await saveBoard(boardWith("trabalho local"));
+    const fetchSpy = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(
+        new Response(JSON.stringify({ content: boardWith("veio do link") }), { status: 200 }),
+      );
+
+    render(<SharedBoard id="abcdefghijkl" />);
+    await screen.findByText("veio do link");
+
+    // O board tem post-its, então o botão pergunta antes; seguir sem link limpa só a tela.
+    await userEvent.click(screen.getByRole("button", { name: "Criar um novo whiteboard" }));
+    await userEvent.click(screen.getByRole("button", { name: "Começar sem link" }));
+
+    expect(screen.queryByText("veio do link")).toBeNull();
+    // Nada foi enviado ao backend, e a cópia de trabalho da raiz segue intacta.
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+    expect((await loadBoard())?.notes[0]?.text).toBe("trabalho local");
+  });
+
   it("não escreve no backend ao abrir o link", async () => {
     const fetchSpy = vi
       .spyOn(globalThis, "fetch")
