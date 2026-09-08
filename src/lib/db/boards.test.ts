@@ -6,13 +6,8 @@ vi.mock("./client", () => ({
   getDbClient: () => ({ execute }),
 }));
 
-const {
-  BoardPayloadTooLargeError,
-  MAX_BOARD_CONTENT_BYTES,
-  createBoard,
-  getBoard,
-  isValidBoardId,
-} = await import("./boards");
+const { BoardPayloadTooLargeError, MAX_BOARD_CONTENT_BYTES, createBoard, getBoard } =
+  await import("./boards");
 
 beforeEach(() => {
   execute.mockReset();
@@ -68,26 +63,6 @@ describe("createBoard", () => {
   });
 });
 
-describe("isValidBoardId", () => {
-  it("aceita o formato gerado pela própria aplicação", async () => {
-    execute.mockResolvedValueOnce({});
-    const { id } = await createBoard({ version: 1, notes: [] });
-
-    expect(isValidBoardId(id)).toBe(true);
-  });
-
-  it.each([
-    ["vazio", ""],
-    ["curto demais", "abc"],
-    ["longo demais", "abcdefghijklm"],
-    ["caractere inválido", "abcdefghijk!"],
-    ["com barra", "abcdefghij/k"],
-    ["com espaço", "abcdefghij k"],
-  ])("rejeita id malformado: %s", (_caso, id) => {
-    expect(isValidBoardId(id)).toBe(false);
-  });
-});
-
 describe("getBoard", () => {
   it("devolve o content desserializado quando o board existe", async () => {
     execute.mockResolvedValueOnce({ rows: [{ content: '{"version":1,"notes":[]}' }] });
@@ -107,9 +82,24 @@ describe("getBoard", () => {
     expect(await getBoard("abcdefghijkl")).toBeNull();
   });
 
-  it("devolve null para id malformado sem consultar o banco", async () => {
-    expect(await getBoard("id-invalido!")).toBeNull();
+  it.each([
+    ["vazio", ""],
+    ["curto demais", "abc"],
+    ["longo demais", "abcdefghijklm"],
+    ["caractere inválido", "abcdefghijk!"],
+    ["com barra", "abcdefghij/k"],
+    ["com espaço", "abcdefghij k"],
+  ])("devolve null para id malformado (%s) sem consultar o banco", async (_caso, id) => {
+    expect(await getBoard(id)).toBeNull();
     expect(execute).not.toHaveBeenCalled();
+  });
+
+  it("aceita o formato de id gerado pela própria aplicação", async () => {
+    execute.mockResolvedValueOnce({});
+    const { id } = await createBoard({ version: 1, notes: [] });
+    execute.mockResolvedValueOnce({ rows: [{ content: "{}" }] });
+
+    expect(await getBoard(id)).toEqual({ content: {} });
   });
 
   it("devolve null quando o content gravado não é JSON legível", async () => {

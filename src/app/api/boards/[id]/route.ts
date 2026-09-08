@@ -9,8 +9,13 @@
 import { NextResponse } from "next/server";
 import { getBoard } from "@/lib/db/boards";
 
-/** Resposta única para qualquer board indisponível — sem pistas sobre o motivo. */
-function notFound() {
+/**
+ * Resposta única para qualquer board indisponível — sem pistas sobre o motivo.
+ *
+ * Nome propositalmente diferente do `notFound()` de `next/navigation`, que tem semântica
+ * oposta: aquele lança para acionar a UI de erro, este devolve uma `Response`.
+ */
+function boardUnavailableResponse() {
   return NextResponse.json({ error: "Board não encontrado." }, { status: 404 });
 }
 
@@ -19,7 +24,7 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
 
   try {
     const board = await getBoard(id);
-    if (!board) return notFound();
+    if (!board) return boardUnavailableResponse();
 
     return NextResponse.json({ content: board.content });
   } catch (error) {

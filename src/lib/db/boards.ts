@@ -3,9 +3,10 @@
  * compartilhados.
  *
  * O backend nunca valida a estrutura interna de `content` — quem garante que é um board
- * válido é o frontend (`lib/board/schema.ts`). Aqui só existem duas regras: o payload
- * precisa caber em um limite razoável, e cada chamada sempre cria um registro novo, nunca
- * atualiza um existente — compartilhar é sempre um documento novo.
+ * válido é o frontend (`lib/board/schema.ts`). Aqui existem três regras: o payload precisa
+ * caber em um limite razoável; cada chamada sempre cria um registro novo, nunca atualiza um
+ * existente — compartilhar é sempre um documento novo; e toda leitura indisponível, seja
+ * qual for o motivo, devolve o mesmo `null`.
  */
 
 import { randomBytes } from "node:crypto";
@@ -41,8 +42,14 @@ function generateBoardId(): string {
  * Serve para descartar identificador malformado antes de ir ao banco — nunca para
  * responder algo diferente de "não encontrado": quem consulta não pode distinguir um id
  * inválido de um board inexistente (issue #45).
+ *
+ * Descartar antes da consulta poupa o banco de tráfego de lixo, ao custo de um id
+ * malformado responder mais rápido que um id bem formado e inexistente. A diferença é
+ * observável por quem medir o tempo, e o que ela revela é só o formato do identificador —
+ * que já é público, já que todo link compartilhado o exibe. Nenhuma informação sobre
+ * *quais* boards existem vaza por esse caminho.
  */
-export function isValidBoardId(id: string): boolean {
+function isValidBoardId(id: string): boolean {
   return BOARD_ID_PATTERN.test(id);
 }
 
