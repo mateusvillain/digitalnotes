@@ -2,6 +2,7 @@ import { fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { defined } from "@/test-utils/defined";
+import { stubMatchMedia } from "@/test-utils/matchMedia";
 import { NOTE_SIZE } from "@/lib/board/types";
 import { MAX_SCALE, MIN_SCALE, scaleAsPercent } from "@/lib/canvas/coords";
 import { Whiteboard } from "./Whiteboard";
@@ -1022,15 +1023,7 @@ describe("Whiteboard — seleção por arrasto no fundo", () => {
 
 /** Simula um aparelho de toque (ou de ponteiro) para a consulta de mídia. */
 function aparelhoDeToque(toque: boolean): void {
-  vi.stubGlobal(
-    "matchMedia",
-    vi.fn((query: string) => ({
-      matches: toque,
-      media: query,
-      addEventListener: () => {},
-      removeEventListener: () => {},
-    })),
-  );
+  stubMatchMedia(toque);
 }
 
 /** A escala mostrada pelos controles, em porcento. */
@@ -1106,6 +1099,207 @@ describe("Whiteboard — toque", () => {
     pinca(10000, 10);
 
     expect(escalaAtual()).toBe(`${scaleAsPercent(MIN_SCALE)}%`);
+  });
+
+  it("pinça mesmo quando um dedo encosta num post-it", () => {
+    aparelhoDeToque(false);
+    render(<Whiteboard />);
+    duploCliqueNoFundo(150, 150);
+    fireEvent.blur(screen.getByRole("textbox", { name: "Texto do post-it" }));
+    const surface = screen.getByTestId("viewport-surface");
+
+    // Primeiro dedo sobre a nota, segundo no fundo: num quadro cheio é o caso comum, e sem
+    // contar o dedo na fase de captura a pinça nunca começaria.
+    fireEvent.pointerDown(postIt(0), {
+      pointerId: 1,
+      pointerType: "touch",
+      button: 0,
+      clientX: 150,
+      clientY: 150,
+    });
+    fireEvent.pointerDown(surface, {
+      pointerId: 2,
+      pointerType: "touch",
+      button: 0,
+      clientX: 250,
+      clientY: 150,
+    });
+    fireEvent.pointerMove(surface, {
+      pointerId: 2,
+      pointerType: "touch",
+      clientX: 350,
+      clientY: 150,
+    });
+
+    expect(escalaAtual()).toBe("200%");
+  });
+
+  it("não move o post-it que o primeiro dedo tinha pegado", () => {
+    aparelhoDeToque(false);
+    render(<Whiteboard />);
+    duploCliqueNoFundo(150, 150);
+    fireEvent.blur(screen.getByRole("textbox", { name: "Texto do post-it" }));
+    const surface = screen.getByTestId("viewport-surface");
+    const antes = postIt(0).style.transform;
+
+    fireEvent.pointerDown(postIt(0), {
+      pointerId: 1,
+      pointerType: "touch",
+      button: 0,
+      clientX: 150,
+      clientY: 150,
+    });
+    fireEvent.pointerDown(surface, {
+      pointerId: 2,
+      pointerType: "touch",
+      button: 0,
+      clientX: 250,
+      clientY: 150,
+    });
+    fireEvent.pointerMove(postIt(0), {
+      pointerId: 1,
+      pointerType: "touch",
+      clientX: 190,
+      clientY: 190,
+    });
+
+    // O segundo dedo cancela o arraste da nota: sem isso ela andaria enquanto a pessoa acha
+    // que só está dando zoom.
+    expect(postIt(0).style.transform).toBe(antes);
+  });
+
+  it("ignora um terceiro dedo em vez de trocar a referência da pinça", () => {
+    aparelhoDeToque(false);
+    render(<Whiteboard />);
+    const surface = screen.getByTestId("viewport-surface");
+
+    fireEvent.pointerDown(surface, {
+      pointerId: 1,
+      pointerType: "touch",
+      button: 0,
+      clientX: 0,
+      clientY: 0,
+    });
+    fireEvent.pointerDown(surface, {
+      pointerId: 2,
+      pointerType: "touch",
+      button: 0,
+      clientX: 100,
+      clientY: 0,
+    });
+    fireEvent.pointerDown(surface, {
+      pointerId: 3,
+      pointerType: "touch",
+      button: 0,
+      clientX: 400,
+      clientY: 0,
+    });
+    fireEvent.pointerMove(surface, {
+      pointerId: 2,
+      pointerType: "touch",
+      clientX: 200,
+      clientY: 0,
+    });
+
+    // O terceiro dedo não entra na conta; a escala segue a dos dois primeiros.
+    expect(escalaAtual()).toBe("200%");
+  });
+
+  it("volta a navegar com um dedo quando o outro sai", () => {
+    aparelhoDeToque(false);
+    render(<Whiteboard />);
+    const surface = screen.getByTestId("viewport-surface");
+    const layer = screen.getByTestId("viewport-layer");
+
+    fireEvent.pointerDown(surface, {
+      pointerId: 1,
+      pointerType: "touch",
+      button: 0,
+      clientX: 0,
+      clientY: 0,
+    });
+    fireEvent.pointerDown(surface, {
+      pointerId: 2,
+      pointerType: "touch",
+      button: 0,
+      clientX: 100,
+      clientY: 0,
+    });
+    fireEvent.pointerUp(surface, { pointerId: 2, pointerType: "touch", clientX: 100, clientY: 0 });
+    const antes = layer.style.transform;
+    fireEvent.pointerMove(surface, {
+      pointerId: 1,
+      pointerType: "touch",
+      clientX: 60,
+      clientY: 40,
+    });
+
+    // O dedo que ficou retoma a navegação, sem salto: o quadro anda com ele.
+    expect(layer.style.transform).not.toBe(antes);
+  });
+
+  it("solta a captura do dedo que sai da pinça", () => {
+    aparelhoDeToque(false);
+    render(<Whiteboard />);
+    const surface = screen.getByTestId("viewport-surface");
+    // O jsdom não implementa captura de ponteiro; o stub global responde sempre "não
+    // capturado", e sem isto o teste passaria sem provar nada.
+    vi.spyOn(surface, "hasPointerCapture").mockReturnValue(true);
+    const release = vi.spyOn(surface, "releasePointerCapture");
+
+    fireEvent.pointerDown(surface, {
+      pointerId: 1,
+      pointerType: "touch",
+      button: 0,
+      clientX: 0,
+      clientY: 0,
+    });
+    fireEvent.pointerDown(surface, {
+      pointerId: 2,
+      pointerType: "touch",
+      button: 0,
+      clientX: 100,
+      clientY: 0,
+    });
+    fireEvent.pointerUp(surface, { pointerId: 2, pointerType: "touch", clientX: 100, clientY: 0 });
+
+    // Na pinça os dedos são capturados sem um gesto correspondente; sem soltar aqui, a
+    // captura ficaria pendurada no ponteiro que já saiu.
+    expect(release).toHaveBeenCalledWith(2);
+  });
+
+  it("encerra a pinça quando o sistema cancela o gesto", () => {
+    aparelhoDeToque(false);
+    render(<Whiteboard />);
+    const surface = screen.getByTestId("viewport-surface");
+
+    fireEvent.pointerDown(surface, {
+      pointerId: 1,
+      pointerType: "touch",
+      button: 0,
+      clientX: 0,
+      clientY: 0,
+    });
+    fireEvent.pointerDown(surface, {
+      pointerId: 2,
+      pointerType: "touch",
+      button: 0,
+      clientX: 100,
+      clientY: 0,
+    });
+    fireEvent.pointerCancel(surface, { pointerId: 1, pointerType: "touch" });
+    fireEvent.pointerCancel(surface, { pointerId: 2, pointerType: "touch" });
+    const depoisDoCancelamento = escalaAtual();
+    // Dedos "fantasma": se o cancelamento não limpasse a contagem, este movimento ainda
+    // seria lido como pinça.
+    fireEvent.pointerMove(surface, {
+      pointerId: 2,
+      pointerType: "touch",
+      clientX: 400,
+      clientY: 0,
+    });
+
+    expect(escalaAtual()).toBe(depoisDoCancelamento);
   });
 
   it("esconde os controles de zoom em aparelho de toque", () => {

@@ -6,7 +6,7 @@ import { useBoard, type UseBoardOptions } from "@/lib/board/useBoard";
 import { useKeyboardShortcuts } from "@/lib/board/useKeyboardShortcuts";
 import type { Point } from "@/lib/canvas/coords";
 import { useViewport } from "@/lib/canvas/useViewport";
-import { useTouchPrimary } from "@/lib/dom/usePointerKind";
+import { useTouchPrimary } from "@/lib/dom/useTouchPrimary";
 import { ColorPicker } from "@/components/postit/ColorPicker";
 import { NewBoardButton } from "@/components/ui/NewBoardButton";
 import { ShareButton } from "@/components/ui/ShareButton";

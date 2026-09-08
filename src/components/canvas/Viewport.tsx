@@ -20,7 +20,7 @@ import {
   type Rect,
 } from "@/lib/canvas/coords";
 import { pinchChange, pinchSnapshot, type PinchSnapshot } from "@/lib/canvas/pinch";
-import { releaseCapture } from "@/lib/canvas/pointer-capture";
+import { cancelPointerGesture, releaseCapture } from "@/lib/canvas/pointer-capture";
 import { useSpaceHeld } from "@/lib/canvas/useSpaceHeld";
 import { SelectionBox } from "./SelectionBox";
 import type { ViewportApi } from "@/lib/canvas/useViewport";
@@ -150,7 +150,14 @@ export function Viewport({
    * A pinça precisa de dois pontos ao mesmo tempo, e o estado de gesto acima só guarda um
    * ponteiro — dois dedos são dois gestos concorrentes para ele.
    */
-  const touches = useRef(new Map<number, Point>());
+  const touches = useRef(new Map<number, { point: Point; target: Element }>());
+  /**
+   * Dedos cujo gesto **eu** cancelei ao abrir a pinça.
+   *
+   * O `pointercancel` que aviso ao post-it borbulha de volta até esta superfície; sem
+   * marcá-lo, o meu próprio handler apagaria o dedo da pinça que acabou de começar.
+   */
+  const cancelledByPinch = useRef(new Set<number>());
   /** O instante anterior da pinça, ou `null` quando não há dois dedos na tela. */
   const pinch = useRef<PinchSnapshot | null>(null);
   /**
@@ -223,7 +230,7 @@ export function Viewport({
    */
   const restartPinch = useCallback(() => {
     const [first, second] = [...touches.current.values()];
-    pinch.current = first && second ? pinchSnapshot(first, second) : null;
+    pinch.current = first && second ? pinchSnapshot(first.point, second.point) : null;
   }, []);
 
   /** Verdadeiro só para eventos nascidos no fundo, e não em algo desenhado sobre ele. */
@@ -257,14 +264,48 @@ export function Viewport({
   );
 
   /**
-   * Espaço segurado: o gesto vira navegação, em **captura**.
+   * O que precisa ser decidido na **descida** do evento, antes de um post-it pará-lo.
    *
-   * Em captura porque o pan com espaço vale sobre o quadro inteiro, post-its inclusive — e
-   * o post-it para o `pointerdown` antes de ele chegar à superfície. Interceptando na
-   * descida, o gesto é reivindicado aqui e o post-it nunca chega a armar um arraste.
+   * São dois casos, pelo mesmo motivo: o post-it interrompe o `pointerdown` antes de ele
+   * chegar à superfície, e ambos os gestos valem sobre o quadro inteiro, notas inclusive.
+   * O pan com espaço reivindica o gesto aqui; a contagem de dedos da pinça (#57) precisa
+   * enxergar o toque mesmo quando ele começa sobre uma nota.
    */
   const handlePointerDownCapture = useCallback(
     (event: PointerEvent<HTMLDivElement>) => {
+      /*
+        Dedos são contados na descida, antes de qualquer post-it parar o evento: com a
+        contagem só no fundo, pinçar num quadro cheio — onde é mais provável encostar numa
+        nota — simplesmente não funcionaria, e no toque não sobra botão de zoom.
+
+        Um terceiro dedo é ignorado: a pinça é definida pelos dois primeiros, e trocar a
+        referência no meio do gesto daria um salto de escala.
+      */
+      if (event.pointerType === "touch" && event.button === 0 && touches.current.size < 2) {
+        touches.current.set(event.pointerId, {
+          point: { x: event.clientX, y: event.clientY },
+          target: event.target as Element,
+        });
+
+        if (touches.current.size === 2) {
+          event.stopPropagation();
+          event.preventDefault();
+          event.currentTarget.setPointerCapture(event.pointerId);
+
+          // O primeiro dedo pode ter armado o arraste de um post-it. Cancelá-lo é o que
+          // impede a nota de andar junto enquanto a pessoa acha que só está pinçando.
+          const [firstId, first] = [...touches.current.entries()][0] ?? [];
+          if (firstId !== undefined && first) {
+            cancelledByPinch.current.add(firstId);
+            cancelPointerGesture(first.target, firstId);
+          }
+
+          drag.current = null;
+          restartPinch();
+          return;
+        }
+      }
+
       if (!spaceHeld || event.button !== 0) return;
 
       event.stopPropagation();
@@ -276,7 +317,7 @@ export function Viewport({
         last: { x: event.clientX, y: event.clientY },
       };
     },
-    [spaceHeld],
+    [restartPinch, spaceHeld],
   );
 
   const handlePointerDown = useCallback(
@@ -288,25 +329,15 @@ export function Viewport({
       // Cada handler declara a própria condição: com espaço, o gesto é da captura acima.
       if (spaceHeld) return;
 
+      // Defesa contra um `pointerup` perdido, que deixaria um gesto pendurado.
+      if (drag.current !== null) return;
+
+      event.currentTarget.setPointerCapture(event.pointerId);
+
       // No toque não há espaço para segurar: um dedo navega, que é a única forma de mover o
-      // quadro por lá, e dois dedos pinçam (#57). Selecionar por retângulo fica para quem
-      // tem ponteiro.
-      //
-      // Vem antes da defesa contra gesto pendurado logo abaixo: o segundo dedo chega
-      // justamente enquanto o primeiro ainda navega, e barrá-lo ali impediria a pinça de
-      // começar.
+      // quadro por lá. Os dois dedos da pinça já foram contados na fase de captura (#57), e
+      // selecionar por retângulo fica para quem tem ponteiro.
       if (event.pointerType === "touch") {
-        event.currentTarget.setPointerCapture(event.pointerId);
-        touches.current.set(event.pointerId, { x: event.clientX, y: event.clientY });
-
-        if (touches.current.size >= 2) {
-          // O segundo dedo transforma o gesto: o pan de um dedo é abandonado, senão o
-          // quadro andaria junto com a pinça pelo dobro do caminho.
-          drag.current = null;
-          restartPinch();
-          return;
-        }
-
         drag.current = {
           kind: "pan",
           pointerId: event.pointerId,
@@ -314,11 +345,6 @@ export function Viewport({
         };
         return;
       }
-
-      // Defesa contra um `pointerup` perdido, que deixaria um gesto pendurado.
-      if (drag.current !== null) return;
-
-      event.currentTarget.setPointerCapture(event.pointerId);
 
       // Arrastar o fundo **seleciona**. Navegar é o gesto com espaço, ou a roda.
       drag.current = {
@@ -330,23 +356,27 @@ export function Viewport({
         started: false,
       };
     },
-    [isBackground, localPoint, restartPinch, spaceHeld],
+    [isBackground, localPoint, spaceHeld],
   );
 
   const handlePointerMove = useCallback(
     (event: PointerEvent<HTMLDivElement>) => {
-      if (touches.current.has(event.pointerId)) {
-        touches.current.set(event.pointerId, { x: event.clientX, y: event.clientY });
+      const touch = touches.current.get(event.pointerId);
+      if (touch) {
+        touches.current.set(event.pointerId, {
+          point: { x: event.clientX, y: event.clientY },
+          target: touch.target,
+        });
 
         const previous = pinch.current;
         const [first, second] = [...touches.current.values()];
         if (previous !== null && first && second) {
-          const change = pinchChange(previous, pinchSnapshot(first, second));
+          const change = pinchChange(previous, pinchSnapshot(first.point, second.point));
           // Arrastar com dois dedos move o quadro, e afastá-los dá zoom: as duas coisas
           // acontecem no mesmo gesto, e separá-las obrigaria a pessoa a escolher.
           pan(change.pan.x, change.pan.y);
           zoomBy(change.factor, localPoint({ clientX: change.center.x, clientY: change.center.y }));
-          pinch.current = pinchSnapshot(first, second);
+          pinch.current = pinchSnapshot(first.point, second.point);
           return;
         }
       }
@@ -384,27 +414,33 @@ export function Viewport({
     [localPoint, onSelectionRect, onSelectionStart, pan, zoomBy],
   );
 
-  /** Encerra o gesto e devolve o que ele era, ou `null` se não havia gesto deste ponteiro. */
+  /**
+   * Fecha o que este ponteiro tinha em aberto e devolve o gesto que ele era, ou `null`.
+   *
+   * Também mantém a contagem de dedos: tirar um não encerra a pinça enquanto sobrar mais de
+   * um, e com um só o gesto volta a ser navegação, a partir de quem ficou.
+   */
   const endDrag = useCallback(
     (event: PointerEvent<HTMLDivElement>): DragState | null => {
       if (touches.current.delete(event.pointerId)) {
-        // Tirar um dedo não encerra a pinça enquanto sobrar mais de um; com um só, o gesto
-        // volta a ser navegação, e a referência precisa ser refeita a partir de quem ficou.
         restartPinch();
         if (touches.current.size === 1) {
           const [remaining] = [...touches.current.entries()];
           if (remaining) {
-            drag.current = { kind: "pan", pointerId: remaining[0], last: remaining[1] };
+            drag.current = { kind: "pan", pointerId: remaining[0], last: remaining[1].point };
           }
         }
       }
 
       const state = drag.current;
+      // A captura é solta aqui e não mais abaixo: na pinça os dois dedos são capturados sem
+      // haver um `drag` correspondente, e o dedo que sai não pode levar a captura embora.
+      releaseCapture(event);
+
       if (state === null || state.pointerId !== event.pointerId) return null;
 
       drag.current = null;
       setMarquee(null);
-      releaseCapture(event);
 
       return state;
     },
@@ -434,6 +470,10 @@ export function Viewport({
    */
   const handlePointerCancel = useCallback(
     (event: PointerEvent<HTMLDivElement>) => {
+      // O cancelamento que eu mesmo emiti para o post-it, voltando por borbulhamento:
+      // tratá-lo aqui desfaria a pinça no instante em que ela começa.
+      if (cancelledByPinch.current.delete(event.pointerId)) return;
+
       endDrag(event);
     },
     [endDrag],

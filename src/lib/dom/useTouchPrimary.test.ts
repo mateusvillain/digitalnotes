@@ -1,31 +1,7 @@
 import { act, renderHook } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { useTouchPrimary } from "./usePointerKind";
-
-/** Simula o `matchMedia` do navegador, guardando quem escuta para poder mudar a resposta. */
-function stubMatchMedia(matches: boolean) {
-  const listeners = new Set<() => void>();
-  let current = matches;
-
-  vi.stubGlobal(
-    "matchMedia",
-    vi.fn((query: string) => ({
-      matches: current,
-      media: query,
-      addEventListener: (_: string, listener: () => void) => listeners.add(listener),
-      removeEventListener: (_: string, listener: () => void) => listeners.delete(listener),
-    })),
-  );
-
-  return {
-    /** O aparelho mudou — um trackpad foi conectado, por exemplo. */
-    change(next: boolean) {
-      current = next;
-      for (const listener of listeners) listener();
-    },
-    listenerCount: () => listeners.size,
-  };
-}
+import { stubMatchMedia } from "@/test-utils/matchMedia";
+import { useTouchPrimary } from "./useTouchPrimary";
 
 afterEach(() => {
   vi.unstubAllGlobals();
