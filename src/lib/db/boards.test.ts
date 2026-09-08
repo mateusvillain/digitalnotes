@@ -6,8 +6,13 @@ vi.mock("./client", () => ({
   getDbClient: () => ({ execute }),
 }));
 
-const { BoardPayloadTooLargeError, MAX_BOARD_CONTENT_BYTES, createBoard, getBoard } =
-  await import("./boards");
+const {
+  BoardPayloadTooLargeError,
+  MAX_BOARD_CONTENT_BYTES,
+  createBoard,
+  deleteEmptyBoards,
+  getBoard,
+} = await import("./boards");
 
 beforeEach(() => {
   execute.mockReset();
@@ -109,5 +114,19 @@ describe("getBoard", () => {
     expect(await getBoard("abcdefghijkl")).toBeNull();
 
     consoleError.mockRestore();
+  });
+});
+
+/**
+ * O comportamento da limpeza está em `boards.cleanup.test.ts`, contra um banco de verdade:
+ * o que importa nela é o efeito da query sobre `content` de todo tipo, e um `execute` falso
+ * conferiria a string da query, não o efeito dela. Aqui fica só o que o banco em memória não
+ * consegue provocar — uma falha da própria conexão.
+ */
+describe("deleteEmptyBoards", () => {
+  it("propaga a falha em vez de relatar uma limpeza que não aconteceu", async () => {
+    execute.mockRejectedValueOnce(new Error("conexão recusada"));
+
+    await expect(deleteEmptyBoards()).rejects.toThrow("conexão recusada");
   });
 });

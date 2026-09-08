@@ -36,4 +36,9 @@ O deploy é feito pela Vercel. O framework fica declarado em `vercel.json` em ve
 depender da detecção automática no painel: foi justamente ela que falhou no import
 inicial, procurando uma pasta `public/` estática depois de um build de Next bem-sucedido.
 
+Uma rotina diária apaga os boards que ficaram sem nenhum post-it por mais de 24 horas
+(`/api/cron/cleanup-boards`, agendada em `vercel.json`). O endpoint exige o cabeçalho
+`Authorization: Bearer $CRON_SECRET`, então a variável `CRON_SECRET` precisa estar definida
+no projeto da Vercel — sem ela a rota recusa toda chamada, inclusive a do agendador.
+
 Stack: Next.js (App Router) · TypeScript · Tailwind CSS · Vitest · deploy na Vercel.
