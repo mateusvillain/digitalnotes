@@ -20,7 +20,7 @@ type WhiteboardProps = Pick<UseBoardOptions, "initialBoard" | "autosave">;
  * A composição é a fiação, e só ela: o viewport sabe navegar, o `useBoard` sabe o que é o
  * board, e o `Board` sabe desenhar. Nenhum dos três precisa do outro para ser testado.
  */
-export function Whiteboard({ initialBoard, autosave }: WhiteboardProps = {}) {
+export function Whiteboard({ initialBoard, autosave }: WhiteboardProps) {
   const controls = useViewport();
   const board = useBoard({ initialBoard, autosave });
   const dragOffsetBy = board.dragBy;

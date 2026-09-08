@@ -1,4 +1,4 @@
-import { renderHook, waitFor } from "@testing-library/react";
+import { act, renderHook, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { SCHEMA_VERSION } from "./types";
 import { useHydrateFromBackend } from "./useHydrateFromBackend";
@@ -51,8 +51,15 @@ describe("useHydrateFromBackend", () => {
     });
   });
 
+  it("trata 404 como board inexistente", async () => {
+    respondWith({ error: "Board não encontrado." }, 404);
+
+    const { result } = renderHook(() => useHydrateFromBackend("abcdefghijkl"));
+
+    await waitFor(() => expect(result.current).toEqual({ status: "not-found" }));
+  });
+
   it.each([
-    ["404 do backend", () => respondWith({ error: "Board não encontrado." }, 404)],
     ["500 do backend", () => respondWith({ error: "Não foi possível buscar o board." }, 500)],
     ["resposta que não é JSON", () => respondWith("não é json")],
     ["resposta sem content", () => respondWith({})],
@@ -65,25 +72,61 @@ describe("useHydrateFromBackend", () => {
       "rede fora",
       () => vi.spyOn(globalThis, "fetch").mockRejectedValue(new TypeError("failed to fetch")),
     ],
-  ])("termina em not-found: %s", async (_caso, arrange) => {
+  ])("não afirma que o board não existe quando a falha não é 404: %s", async (_caso, arrange) => {
     arrange();
 
     const { result } = renderHook(() => useHydrateFromBackend("abcdefghijkl"));
 
-    await waitFor(() => expect(result.current).toEqual({ status: "not-found" }));
+    // Dizer "não existe" para um documento que pode muito bem existir seria mentira, e
+    // ainda esconderia a única ação que resolve.
+    await waitFor(() => expect(result.current.status).toBe("error"));
   });
 
-  it("não aplica a resposta de um id que não é mais o atual", async () => {
+  it("tenta de novo quando pedem, e chega ao board se o backend voltar", async () => {
     const fetchSpy = vi
       .spyOn(globalThis, "fetch")
-      .mockResolvedValue(new Response(JSON.stringify({ content: board }), { status: 200 }));
+      .mockResolvedValueOnce(new Response("{}", { status: 500 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ content: board }), { status: 200 }));
+
+    const { result } = renderHook(() => useHydrateFromBackend("abcdefghijkl"));
+    await waitFor(() => expect(result.current.status).toBe("error"));
+
+    const state = result.current;
+    if (state.status !== "error") throw new Error("esperava o estado de falha");
+    act(() => state.retry());
+
+    await waitFor(() => expect(result.current).toEqual({ status: "ready", board }));
+    expect(fetchSpy).toHaveBeenCalledTimes(2);
+  });
+
+  it("volta a carregar ao trocar de link, sem mostrar o board anterior", async () => {
+    respondWith({ content: board });
+
+    const { result, rerender } = renderHook(({ id }) => useHydrateFromBackend(id), {
+      initialProps: { id: "abcdefghijkl" },
+    });
+    await waitFor(() => expect(result.current.status).toBe("ready"));
+
+    rerender({ id: "mnopqrstuvwx" });
+
+    // Sem isto, o board do link anterior continuaria na tela sob a URL nova.
+    expect(result.current).toEqual({ status: "loading" });
+  });
+
+  it("não escreve estado depois de desmontar", async () => {
+    let respond: ((response: Response) => void) | undefined;
+    vi.spyOn(globalThis, "fetch").mockReturnValue(
+      new Promise<Response>((resolve) => {
+        respond = resolve;
+      }),
+    );
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
 
     const { unmount } = renderHook(() => useHydrateFromBackend("abcdefghijkl"));
     unmount();
-
-    // O cleanup aborta a busca em andamento, em vez de deixá-la escrever num estado que
-    // ninguém mais mostra.
-    const [, init] = fetchSpy.mock.calls[0] ?? [];
-    expect((init as RequestInit | undefined)?.signal?.aborted).toBe(true);
+    // A resposta chega depois do desmonte: aplicá-la avisaria o React de uma atualização
+    // em componente que não existe mais.
+    respond?.(new Response(JSON.stringify({ content: board }), { status: 200 }));
+    await waitFor(() => expect(consoleError).not.toHaveBeenCalled());
   });
 });

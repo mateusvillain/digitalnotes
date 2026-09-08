@@ -1,4 +1,5 @@
 import { render, screen, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { Component, type ReactNode } from "react";
 import { IDBFactory } from "fake-indexeddb";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -21,13 +22,13 @@ const originalIndexedDB = globalThis.indexedDB;
  * sem alguém para capturar, o React derruba a árvore e o erro vaza como falha do processo.
  */
 class Boundary extends Component<{ children: ReactNode }, { failed: boolean }> {
-  state = { failed: false };
+  override state = { failed: false };
 
   static getDerivedStateFromError() {
     return { failed: true };
   }
 
-  render() {
+  override render() {
     return this.state.failed ? null : this.props.children;
   }
 }
@@ -66,9 +67,29 @@ describe("SharedBoard", () => {
     render(<SharedBoard id="abcdefghijkl" />);
 
     // Enquanto carrega há um aviso, e não a superfície do quadro: montar o whiteboard
-    // antes faria os post-its aparecerem num segundo salto.
+    // antes faria os post-its aparecerem num segundo salto. A moldura continua sendo a do
+    // app, com o heading que anuncia a página.
     expect(screen.getByRole("status").textContent).toBe("Abrindo o whiteboard…");
-    expect(screen.queryByRole("heading", { name: "digitalnotes" })).toBeNull();
+    expect(screen.getByRole("heading", { name: "digitalnotes" })).toBeDefined();
+  });
+
+  it("oferece tentar de novo quando a falha não diz que o board sumiu", async () => {
+    const fetchSpy = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(new Response("{}", { status: 500 }))
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ content: boardWith("voltou") }), { status: 200 }),
+      );
+
+    render(<SharedBoard id="abcdefghijkl" />);
+
+    const retry = await screen.findByRole("button", { name: "Tentar de novo" });
+    expect(notFound).not.toHaveBeenCalled();
+
+    await userEvent.click(retry);
+
+    expect(await screen.findByText("voltou")).toBeDefined();
+    expect(fetchSpy).toHaveBeenCalledTimes(2);
   });
 
   it("aciona a fronteira de não encontrado quando o link não vale", async () => {

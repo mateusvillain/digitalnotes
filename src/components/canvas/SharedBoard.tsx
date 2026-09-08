@@ -1,6 +1,7 @@
 "use client";
 
 import { notFound } from "next/navigation";
+import { AppShell } from "@/components/shell/AppShell";
 import { Whiteboard } from "@/components/canvas/Whiteboard";
 import { useHydrateFromBackend } from "@/lib/board/useHydrateFromBackend";
 
@@ -24,18 +25,46 @@ export function SharedBoard({ id }: SharedBoardProps) {
   const state = useHydrateFromBackend(id);
 
   if (state.status === "not-found") {
-    // Aciona a fronteira de "não encontrado" da rota, que a issue #47 transforma numa
-    // página amigável. Aqui só o estado é sinalizado.
+    /**
+     * Aciona a fronteira de "não encontrado" da rota, que a issue #47 transforma numa
+     * página amigável.
+     *
+     * `notFound()` chamado do cliente é usado à margem do que a documentação do Next
+     * descreve (ela fala em Server Components e Route Handlers), mas a fronteira que o
+     * captura é client-side, e a alternativa — buscar no servidor — obrigaria a esperar o
+     * backend antes de mandar qualquer HTML de um documento que nem é indexável.
+     */
     notFound();
+  }
+
+  if (state.status === "error") {
+    return (
+      <AppShell>
+        <div className="flex h-full flex-col items-center justify-center gap-3 text-center">
+          <p className="text-sm text-ink-muted" role="status">
+            Não foi possível abrir este whiteboard agora.
+          </p>
+          <button
+            type="button"
+            className="rounded-control border border-border bg-surface px-3 py-1.5 text-sm text-ink transition-colors hover:bg-canvas"
+            onClick={state.retry}
+          >
+            Tentar de novo
+          </button>
+        </div>
+      </AppShell>
+    );
   }
 
   if (state.status === "loading") {
     return (
-      <main className="flex h-dvh items-center justify-center bg-canvas">
-        <p className="text-sm text-ink-muted" role="status">
-          Abrindo o whiteboard…
-        </p>
-      </main>
+      <AppShell>
+        <div className="flex h-full items-center justify-center">
+          <p className="text-sm text-ink-muted" role="status">
+            Abrindo o whiteboard…
+          </p>
+        </div>
+      </AppShell>
     );
   }
 
