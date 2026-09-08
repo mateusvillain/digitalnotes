@@ -22,7 +22,7 @@ export function ViewportControls({ viewport, zoomBy, reset, anchor }: ViewportCo
 
   return (
     <div className="flex items-center gap-1">
-      <Tooltip label="Diminuir zoom" side="top">
+      <Tooltip label="Diminuir zoom" side="top" align="start">
         <button
           type="button"
           className={iconButtonClass}
@@ -33,7 +33,7 @@ export function ViewportControls({ viewport, zoomBy, reset, anchor }: ViewportCo
           −
         </button>
       </Tooltip>
-      <Tooltip label="Voltar o zoom para 100%" side="top">
+      <Tooltip label="Voltar o zoom para 100%" side="top" align="center">
         <button
           type="button"
           className="rounded-control px-2 text-xs tabular-nums text-ink-muted transition-colors hover:bg-canvas hover:text-ink"
@@ -43,7 +43,7 @@ export function ViewportControls({ viewport, zoomBy, reset, anchor }: ViewportCo
           {scaleAsPercent(viewport.scale)}%
         </button>
       </Tooltip>
-      <Tooltip label="Aumentar zoom" side="top">
+      <Tooltip label="Aumentar zoom" side="top" align="end">
         <button
           type="button"
           className={iconButtonClass}

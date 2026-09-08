@@ -98,13 +98,17 @@ describe("Tooltip", () => {
 
   it("não repete a descrição para o leitor de tela", async () => {
     const { button } = renderTooltip();
-    await userEvent.tab();
-    const tip = await screen.findByText("Compartilhar whiteboard");
+    const nameBefore = button.getAttribute("aria-label");
 
-    // O `aria-label` do botão já diz isso; descrever de novo faria a mesma frase ser lida
-    // duas vezes.
-    expect(button.getAttribute("aria-describedby")).toBeNull();
-    expect(tip.getAttribute("role")).toBe("presentation");
+    await userEvent.tab();
+    await screen.findByText("Compartilhar whiteboard");
+
+    // O `aria-label` do botão já diz isso; a caixa é ajuda visual, e abri-la não pode
+    // acrescentar nada ao que o leitor de tela lê.
+    expect(button.getAttribute("aria-label")).toBe(nameBefore);
+    expect(
+      screen.queryByText("Compartilhar whiteboard", { ignore: "[aria-hidden=true]" }),
+    ).toBeNull();
   });
 
   it("não engole o clique do botão", async () => {

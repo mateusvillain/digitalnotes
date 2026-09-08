@@ -109,7 +109,7 @@ export function ShareButton({ state, share, dismiss }: ShareApi) {
       </p>
 
       <div className="rounded-control border border-border bg-surface p-1 shadow-control">
-        <Tooltip label="Compartilhar whiteboard">
+        <Tooltip label="Compartilhar whiteboard" align="end">
           <button
             ref={shareRef}
             type="button"
@@ -164,7 +164,7 @@ export function ShareButton({ state, share, dismiss }: ShareApi) {
             >
               {copied ? "Copiado" : "Copiar"}
             </button>
-            <Tooltip label="Fechar o link compartilhado">
+            <Tooltip label="Fechar o link compartilhado" align="end">
               <button
                 type="button"
                 className={iconButtonClass}

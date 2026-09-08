@@ -28,7 +28,8 @@ function onPointerDown() {
  * ouvintes passivos para a página inteira, e não um par por componente.
  */
 export function trackInputModality(): void {
-  if (listening || typeof document === "undefined") return;
+  // Só chamado de dentro de um efeito, onde o documento sempre existe.
+  if (listening) return;
 
   // Fase de captura: o foco muda no meio do `pointerdown`, e um ouvinte na fase de
   // borbulhamento chegaria tarde demais para quem pergunta durante o `focus`.
@@ -40,4 +41,14 @@ export function trackInputModality(): void {
 /** O último gesto veio do teclado. */
 export function lastInputWasKeyboard(): boolean {
   return keyboard;
+}
+
+/**
+ * Esquece a última modalidade observada.
+ *
+ * Existe para o teste: o estado é de módulo e sobrevive entre casos, então sem isto um
+ * teste que aperta uma tecla deixa o próximo achando que a interação foi por teclado.
+ */
+export function resetInputModality(): void {
+  keyboard = false;
 }

@@ -13,11 +13,34 @@ import { lastInputWasKeyboard, trackInputModality } from "@/lib/dom/inputModalit
  */
 export const TOOLTIP_DELAY_MS = 300;
 
+/** Como a caixa se prende ao gatilho em cada alinhamento. */
+const ALIGNMENT = {
+  center: "left-1/2 -translate-x-1/2",
+  start: "left-0",
+  end: "right-0",
+} as const;
+
 interface TooltipProps {
-  /** O texto mostrado. É o mesmo `aria-label` do gatilho, e não uma segunda descrição. */
+  /**
+   * O texto mostrado.
+   *
+   * É repetido do `aria-label` do gatilho de propósito: derivá-lo exigiria clonar o
+   * elemento para ler as props dele, e o invólucro atual é o que mantém os handlers do
+   * botão intactos. As duas frases precisam continuar iguais — se divergirem, a tela e o
+   * leitor de tela passam a dizer coisas diferentes sobre o mesmo botão.
+   */
   label: string;
   /** De que lado do gatilho a caixa aparece. */
   side?: "top" | "bottom";
+  /**
+   * Por onde a caixa se alinha ao gatilho.
+   *
+   * Centrada, uma dica larga sobre um botão de 32px estoura ~60px para cada lado — e os
+   * controles moram a 20px das bordas, dentro de um `main` com `overflow-hidden`, então o
+   * texto sairia cortado. Alinhar pelo lado que está para dentro da tela resolve sem
+   * medir nada em tempo de execução.
+   */
+  align?: "center" | "start" | "end";
   /** O botão que dispara o tooltip. */
   children: ReactNode;
 }
@@ -37,7 +60,7 @@ interface TooltipProps {
  * descrevê-lo de novo faria a mesma frase ser lida duas vezes. É ajuda visual, e a versão
  * sonora dela já existe.
  */
-export function Tooltip({ label, side = "bottom", children }: TooltipProps) {
+export function Tooltip({ label, side = "bottom", align = "center", children }: TooltipProps) {
   const [open, setOpen] = useState(false);
   const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
@@ -101,12 +124,14 @@ export function Tooltip({ label, side = "bottom", children }: TooltipProps) {
       {children}
       {open ? (
         <span
-          // `presentation` porque a informação já chega pelo `aria-label` do botão: sem
-          // isso, o leitor de tela leria a mesma frase duas vezes.
-          role="presentation"
-          className={`pointer-events-none absolute left-1/2 z-40 -translate-x-1/2 whitespace-nowrap rounded-control border border-border bg-surface px-2 py-1 text-xs text-ink shadow-control ${
+          // Escondida da árvore de acessibilidade porque o texto repete o `aria-label` do
+          // botão: exposta, a mesma frase apareceria duas vezes na navegação por leitor de
+          // tela. (`role="presentation"` não serviria: `span` não tem role implícito, e
+          // `presentation` não remove o conteúdo de texto.)
+          aria-hidden="true"
+          className={`pointer-events-none absolute z-40 whitespace-nowrap rounded-control border border-border bg-surface px-2 py-1 text-xs text-ink shadow-control ${
             side === "bottom" ? "top-full mt-2" : "bottom-full mb-2"
-          }`}
+          } ${ALIGNMENT[align]}`}
         >
           {label}
         </span>

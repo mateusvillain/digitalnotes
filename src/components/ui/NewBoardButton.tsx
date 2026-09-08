@@ -105,7 +105,7 @@ export function NewBoardButton({ hasNotes, onNewBoard, share }: NewBoardButtonPr
   return (
     <div className="flex flex-col items-start gap-2">
       <div className="rounded-control border border-border bg-surface p-1 shadow-control">
-        <Tooltip label="Criar um novo whiteboard">
+        <Tooltip label="Criar um novo whiteboard" align="start">
           <button
             ref={buttonRef}
             type="button"
