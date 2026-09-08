@@ -85,14 +85,16 @@ export function Whiteboard({ initialBoard, autosave }: WhiteboardProps) {
 
   return (
     <AppShell
-      documentActions={
+      leadingActions={
         <NewBoardButton
           hasNotes={board.notes.length > 0}
           onNewBoard={board.resetBoard}
-          share={share}
+          share={share.share}
         />
       }
-      actions={<ShareButton state={share.state} share={share.share} dismiss={share.dismiss} />}
+      trailingActions={
+        <ShareButton state={share.state} share={share.share} dismiss={share.dismiss} />
+      }
       controls={
         <ViewportControls
           viewport={controls.viewport}

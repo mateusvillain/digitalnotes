@@ -6,21 +6,20 @@ interface AppShellProps {
   /** Controles flutuantes sobre o canvas — zoom e reset entram aqui na issue #9. */
   controls?: ReactNode;
   /**
-   * Ações do documento, no canto superior direito — compartilhar entra aqui (#46).
+   * Ações no canto superior direito — compartilhar entra aqui (#46).
    *
    * Canto oposto ao do zoom de propósito: navegar o quadro e publicá-lo são coisas
    * diferentes, e vizinhas elas virariam uma fileira de ícones em que o clique errado sai
    * caro (um deles manda o board para fora da máquina).
    */
-  actions?: ReactNode;
+  trailingActions?: ReactNode;
   /**
-   * Ações que criam ou trocam o documento, no canto superior esquerdo — o whiteboard novo
-   * entra aqui (#58).
+   * Ações no canto superior esquerdo — o whiteboard novo entra aqui (#58).
    *
    * Longe do canto de compartilhar por segurança de gesto: uma delas descarta o quadro
    * atual e a outra o publica, e vizinhas o clique errado é caro nos dois sentidos.
    */
-  documentActions?: ReactNode;
+  leadingActions?: ReactNode;
 }
 
 /**
@@ -34,7 +33,7 @@ interface AppShellProps {
  * canvas ocupe a tela inteira e que os controles tenham onde morar sem disputar espaço com
  * o quadro.
  */
-export function AppShell({ children, controls, actions, documentActions }: AppShellProps) {
+export function AppShell({ children, controls, leadingActions, trailingActions }: AppShellProps) {
   return (
     <main className="relative h-dvh overflow-hidden bg-canvas">
       {/*
@@ -45,15 +44,15 @@ export function AppShell({ children, controls, actions, documentActions }: AppSh
 
       {children}
 
-      {actions === undefined && documentActions === undefined ? null : (
+      {leadingActions === undefined && trailingActions === undefined ? null : (
         // Mesmo respiro do canto de baixo: colado na borda o controle parece parte da
         // moldura do navegador, e fica no caminho do gesto de fechar a aba.
         //
         // Uma faixa só para os dois cantos, e não duas sobrepostas: assim eles nunca podem
         // divergir de altura nem cobrir um ao outro.
         <div className="pointer-events-none absolute inset-x-0 top-0 z-30 flex items-start justify-between p-4">
-          <div className="pointer-events-auto">{documentActions}</div>
-          <div className="pointer-events-auto">{actions}</div>
+          <div className="pointer-events-auto">{leadingActions}</div>
+          <div className="pointer-events-auto">{trailingActions}</div>
         </div>
       )}
 

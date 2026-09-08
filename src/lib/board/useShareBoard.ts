@@ -33,8 +33,12 @@ export interface ShareApi {
    * Devolve o estado final para quem precisa **encadear** algo no resultado — começar um
    * quadro novo só depois de o link existir (#58), por exemplo. Quem só quer publicar
    * ignora o retorno.
+   *
+   * Devolve `null` quando este envio foi substituído por outro no meio do caminho: o
+   * resultado dele não vale mais, e agir sobre ele encadearia uma ação a um link que já
+   * não é o da tela.
    */
-  share: () => Promise<ShareState>;
+  share: () => Promise<ShareState | null>;
   /** Volta ao estado inicial, fechando o link exibido. */
   dismiss: () => void;
 }
@@ -74,8 +78,11 @@ export function useShareBoard(getBoard: () => Board): ShareApi {
     setState({ status: "sharing" });
 
     const outcome = await postBoard(getBoard());
-    // Um envio mais novo já respondeu: aplicar este trocaria o link atual pelo antigo.
-    if (attempt === currentAttempt.current) setState(outcome);
+    // Um envio mais novo tomou o lugar deste: aplicar o resultado trocaria o link atual
+    // pelo antigo, e quem encadeou algo agiria sobre um link que já não está na tela.
+    if (attempt !== currentAttempt.current) return null;
+
+    setState(outcome);
     return outcome;
   }, [getBoard]);
 

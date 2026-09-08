@@ -1,7 +1,7 @@
 "use client";
 
-import { useCallback, useRef, useState } from "react";
-import { iconButtonClass, panelButtonClass } from "@/components/ui/iconButton";
+import { useCallback, useEffect, useId, useRef, useState } from "react";
+import { iconButtonClass, panelButtonClass, subtleButtonClass } from "@/components/ui/iconButton";
 import type { ShareApi } from "@/lib/board/useShareBoard";
 
 interface NewBoardButtonProps {
@@ -10,7 +10,7 @@ interface NewBoardButtonProps {
   /** Descarta o board atual e começa um quadro vazio. */
   onNewBoard: () => void;
   /** A mesma ação de compartilhar do resto da interface (#46), e não um segundo caminho. */
-  share: ShareApi;
+  share: ShareApi["share"];
 }
 
 /** Ícone de documento novo: uma folha com um `+`. */
@@ -48,6 +48,15 @@ export function NewBoardButton({ hasNotes, onNewBoard, share }: NewBoardButtonPr
   /** Esperando o link que o usuário pediu antes de limpar. */
   const [awaitingLink, setAwaitingLink] = useState(false);
   const buttonRef = useRef<HTMLButtonElement>(null);
+  const panelId = useId();
+
+  const close = useCallback(() => {
+    setAsking(false);
+    setAwaitingLink(false);
+    // Fechar desmonta o que tinha o foco; sem devolvê-lo, quem usa teclado é jogado para o
+    // início do documento.
+    buttonRef.current?.focus();
+  }, []);
 
   const start = useCallback(() => {
     // Quadro vazio não tem o que perder: segue sem trava.
@@ -58,32 +67,39 @@ export function NewBoardButton({ hasNotes, onNewBoard, share }: NewBoardButtonPr
     setAsking(true);
   }, [hasNotes, onNewBoard]);
 
-  const close = useCallback(() => {
-    setAsking(false);
-    setAwaitingLink(false);
-    // Fechar desmonta o que tinha o foco; sem devolvê-lo, quem usa teclado é jogado para o
-    // início do documento.
-    buttonRef.current?.focus();
-  }, []);
-
   const shareThenReset = useCallback(async () => {
     setAwaitingLink(true);
-    const outcome = await share.share();
+    const outcome = await share();
     setAwaitingLink(false);
 
     // Só limpa depois de o link existir: sem ele, quem pediu justamente para poder voltar
     // ficaria sem o quadro **e** sem o link. Em caso de falha, o painel de compartilhar já
     // explica o motivo, e ainda dá para seguir sem link.
-    if (outcome.status !== "shared") return;
+    //
+    // `null` é o envio que foi substituído por outro: o link que saiu não é o desta ação.
+    if (outcome === null || outcome.status !== "shared") return;
 
-    setAsking(false);
     onNewBoard();
-  }, [onNewBoard, share]);
+    close();
+  }, [close, onNewBoard, share]);
 
   const resetNow = useCallback(() => {
     onNewBoard();
     close();
   }, [close, onNewBoard]);
+
+  // `Esc` escutado no documento, e não no painel: este é um popover, e não um diálogo
+  // modal, então o foco pode estar em qualquer lugar da página na hora de fechá-lo.
+  useEffect(() => {
+    if (!asking) return;
+
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") close();
+    }
+
+    document.addEventListener("keydown", handleKeyDown);
+    return () => document.removeEventListener("keydown", handleKeyDown);
+  }, [asking, close]);
 
   return (
     <div className="flex flex-col items-start gap-2">
@@ -95,19 +111,24 @@ export function NewBoardButton({ hasNotes, onNewBoard, share }: NewBoardButtonPr
           onClick={start}
           aria-label="Criar um novo whiteboard"
           aria-expanded={asking}
+          aria-controls={asking ? panelId : undefined}
         >
           <NewBoardIcon />
         </button>
       </div>
 
+      {/*
+        Região de anúncio persistente e só com texto, como no painel de compartilhar: uma
+        live region que nasce junto do conteúdo costuma não ser lida.
+      */}
+      <p className="sr-only" role="status" aria-live="polite">
+        {awaitingLink ? "Gerando o link…" : ""}
+      </p>
+
       {asking ? (
         <div
-          role="dialog"
-          aria-label="Criar um novo whiteboard"
+          id={panelId}
           className="flex w-72 flex-col gap-3 rounded-control border border-border bg-surface p-3 shadow-control"
-          onKeyDown={(event) => {
-            if (event.key === "Escape") close();
-          }}
         >
           <p className="text-xs text-ink">
             O quadro atual será substituído. Gere um link antes se quiser poder voltar a ele depois.
@@ -117,26 +138,21 @@ export function NewBoardButton({ hasNotes, onNewBoard, share }: NewBoardButtonPr
             <button
               type="button"
               className={panelButtonClass}
-              onClick={() => void shareThenReset()}
-              disabled={awaitingLink}
-              // O foco entra no painel assim que ele abre: é o que faz o `Esc` chegar aqui
-              // e o que evita deixar quem usa teclado preso no botão que abriu o aviso.
+              onClick={awaitingLink ? undefined : () => void shareThenReset()}
+              // `aria-busy` em vez de `disabled`, pela mesma razão do botão de compartilhar:
+              // desabilitar tira o foco de quem acabou de acionar pelo teclado. O clique já
+              // está barrado acima.
+              aria-busy={awaitingLink}
+              // O foco entra no painel assim que ele abre, para quem navega por teclado não
+              // ficar preso no botão que o abriu.
               autoFocus
             >
               {awaitingLink ? "Gerando o link…" : "Gerar link e começar"}
             </button>
-            <button
-              type="button"
-              className="rounded-control px-2 py-1.5 text-sm text-ink-muted transition-colors hover:text-ink"
-              onClick={resetNow}
-            >
+            <button type="button" className={subtleButtonClass} onClick={resetNow}>
               Começar sem link
             </button>
-            <button
-              type="button"
-              className="rounded-control px-2 py-1.5 text-sm text-ink-muted transition-colors hover:text-ink"
-              onClick={close}
-            >
+            <button type="button" className={subtleButtonClass} onClick={close}>
               Cancelar
             </button>
           </div>

@@ -120,9 +120,16 @@ export function useLocalPersistence(store: BoardStore, enabled = true): void {
       if (cancelled) return;
 
       if (board) {
-        // `dirty` aqui significa que o usuário foi mais rápido que o banco: o que ele
-        // criou nesse intervalo entra junto, em vez de um dos dois lados ser descartado.
-        store.replaceBoard(dirty ? mergeBoards(board, store.getBoard()) : board);
+        const current = store.getBoard();
+        // `dirty` com post-its na tela significa que o usuário foi mais rápido que o banco:
+        // o que ele criou nesse intervalo entra junto, em vez de um dos lados ser
+        // descartado.
+        //
+        // `dirty` com o quadro vazio é o oposto — apagar tudo ou começar um quadro novo
+        // (#58). Mesclar aqui ressuscitaria justamente o board que acabou de ser
+        // descartado.
+        if (!dirty) store.replaceBoard(board);
+        else if (current.notes.length > 0) store.replaceBoard(mergeBoards(board, current));
       }
 
       restored = true;
