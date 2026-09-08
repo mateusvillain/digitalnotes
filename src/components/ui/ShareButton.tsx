@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { iconButtonClass } from "@/components/ui/iconButton";
+import { Tooltip } from "@/components/ui/Tooltip";
 import type { ShareApi } from "@/lib/board/useShareBoard";
 
 /** Quanto tempo o botão de copiar confirma a cópia antes de voltar ao normal. */
@@ -108,19 +109,20 @@ export function ShareButton({ state, share, dismiss }: ShareApi) {
       </p>
 
       <div className="rounded-control border border-border bg-surface p-1 shadow-control">
-        <button
-          ref={shareRef}
-          type="button"
-          className={iconButtonClass}
-          onClick={sharing ? undefined : () => void share()}
-          // `aria-busy` em vez de `disabled`: desabilitar tira o foco de quem acabou de
-          // acionar o botão pelo teclado, e o clique já está barrado acima.
-          aria-busy={sharing}
-          aria-label="Compartilhar whiteboard"
-          title="Compartilhar whiteboard"
-        >
-          <ShareIcon />
-        </button>
+        <Tooltip label="Compartilhar whiteboard" align="end">
+          <button
+            ref={shareRef}
+            type="button"
+            className={iconButtonClass}
+            onClick={sharing ? undefined : () => void share()}
+            // `aria-busy` em vez de `disabled`: desabilitar tira o foco de quem acabou de
+            // acionar o botão pelo teclado, e o clique já está barrado acima.
+            aria-busy={sharing}
+            aria-label="Compartilhar whiteboard"
+          >
+            <ShareIcon />
+          </button>
+        </Tooltip>
       </div>
 
       {sharing ? <p className={`${panelClass} text-ink-muted`}>Gerando o link…</p> : null}
@@ -162,14 +164,16 @@ export function ShareButton({ state, share, dismiss }: ShareApi) {
             >
               {copied ? "Copiado" : "Copiar"}
             </button>
-            <button
-              type="button"
-              className={iconButtonClass}
-              onClick={close}
-              aria-label="Fechar o link compartilhado"
-            >
-              ×
-            </button>
+            <Tooltip label="Fechar o link compartilhado" align="end">
+              <button
+                type="button"
+                className={iconButtonClass}
+                onClick={close}
+                aria-label="Fechar o link compartilhado"
+              >
+                ×
+              </button>
+            </Tooltip>
           </div>
           {/*
             Compartilhar de novo gera outro documento e troca o link que está aqui. Sem

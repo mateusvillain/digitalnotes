@@ -1,8 +1,13 @@
 import { cleanup } from "@testing-library/react";
 import { afterEach } from "vitest";
+import { resetInputModality } from "@/lib/dom/inputModality";
 
 // Sem `globals: true`, o auto-cleanup da Testing Library não se registra sozinho.
 afterEach(cleanup);
+
+// A modalidade de entrada é estado de módulo e sobrevive entre casos: sem zerar, um teste
+// que aperta uma tecla deixa o próximo achando que a interação foi por teclado.
+afterEach(resetInputModality);
 
 /**
  * A API de captura de ponteiro, que o jsdom não implementa.
