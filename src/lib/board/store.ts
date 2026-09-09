@@ -105,6 +105,21 @@ export interface BoardStore {
   removeNotes: (ids: readonly string[]) => void;
   /** Traz a note para a frente das demais. */
   bringToFront: (id: string) => void;
+  /**
+   * Cria notes e traços numa publicação só, com ids novos, e devolve o que entrou (#88).
+   *
+   * Existe para colar: um recorte com dez elementos criado um a um seriam dez publicações —
+   * dez avisos à persistência e dez passos de desfazer para um gesto só. E os ids são
+   * sorteados contra o que já existe **e** contra o que está sendo criado agora, senão dois
+   * elementos do mesmo lote poderiam nascer com a mesma identidade.
+   *
+   * O que não passa pelo contrato é descartado em silêncio, como em `addNote`: o lote inteiro
+   * não pode cair por causa de um elemento estragado vindo de fora.
+   */
+  addElements: (
+    notes: readonly NewNote[],
+    strokes: readonly NewStroke[],
+  ) => { notes: Note[]; strokes: Stroke[] };
   /** Cria um traço na frente dos demais. Devolve `null` se os dados forem impossíveis. */
   addStroke: (stroke: NewStroke) => Stroke | null;
   /**
@@ -451,6 +466,65 @@ export function createBoardStore(initial: Board = createEmptyBoard()): BoardStor
     commit({ notes: notes ?? board.notes, strokes: strokes ?? board.strokes });
   }
 
+  function addElements(
+    input: readonly NewNote[],
+    inputStrokes: readonly NewStroke[],
+  ): { notes: Note[]; strokes: Stroke[] } {
+    // Os ids já tomados incluem os deste lote, e vão sendo acrescentados: sem isso, dois
+    // elementos criados na mesma chamada poderiam sortear a mesma identidade.
+    const takenNotes = new Set(board.notes.map((note) => note.id));
+    const takenStrokes = new Set(board.strokes.map((stroke) => stroke.id));
+
+    // O z de partida é lido uma vez, e o lote sobe a partir dele: assim o recorte colado
+    // chega inteiro na frente, e preserva a ordem que tinha entre os próprios elementos.
+    let noteZ = topZ(board.notes);
+    let strokeZ = topZ(board.strokes);
+
+    const notes: Note[] = [];
+    for (const candidate of input) {
+      const id = createId(takenNotes);
+      noteZ += 1;
+      const note = normalizeNote({
+        id,
+        x: candidate.x,
+        y: candidate.y,
+        w: candidate.w ?? NOTE_SIZE.defaultWidth,
+        h: candidate.h ?? NOTE_SIZE.defaultHeight,
+        color: candidate.color ?? DEFAULT_NOTE_COLOR,
+        text: candidate.text ?? "",
+        z: noteZ,
+      });
+      if (note === null) continue;
+
+      takenNotes.add(id);
+      notes.push(note);
+    }
+
+    const strokes: Stroke[] = [];
+    for (const candidate of inputStrokes) {
+      const id = createId(takenStrokes);
+      strokeZ += 1;
+      const stroke = normalizeStroke({
+        id,
+        color: candidate.color,
+        points: candidate.points,
+        z: strokeZ,
+      });
+      if (stroke === null) continue;
+
+      takenStrokes.add(id);
+      strokes.push(stroke);
+    }
+
+    // Nada entrou, nada publicado: um lote inteiramente inválido não gasta um passo de
+    // desfazer nem faz a persistência reescrever a URL com o mesmo board.
+    if (notes.length === 0 && strokes.length === 0) return { notes: [], strokes: [] };
+
+    commit({ notes: [...board.notes, ...notes], strokes: [...board.strokes, ...strokes] });
+
+    return { notes, strokes };
+  }
+
   function removeStroke(id: string): void {
     removeStrokes([id]);
   }
@@ -522,6 +596,7 @@ export function createBoardStore(initial: Board = createEmptyBoard()): BoardStor
     removeNotes,
     bringToFront,
     addStroke,
+    addElements,
     updateStrokes,
     updateElements,
     removeStroke,

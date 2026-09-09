@@ -1921,6 +1921,302 @@ describe("Whiteboard — colocar nota (#73)", () => {
   });
 });
 
+describe("Whiteboard — copiar e colar (#88)", () => {
+  /** O que o quadro escreveu na área de transferência do sistema. */
+  let copiado: string | null = null;
+
+  function fingeClipboard(): void {
+    copiado = null;
+  }
+
+  function criaPostIt(x: number, y: number, texto = ""): void {
+    duploCliqueNoFundo(x, y);
+    const editor = screen.getByTestId("post-it-editor");
+    if (texto !== "") fireEvent.change(editor, { target: { value: texto } });
+    fireEvent.keyDown(editor, { key: "Escape" });
+  }
+
+  function desenha(de: [number, number], ate: [number, number]): void {
+    const surface = screen.getByTestId("viewport-surface");
+
+    fireEvent.keyDown(document, { key: "p" });
+    fireEvent.pointerDown(surface, { pointerId: 1, button: 0, clientX: de[0], clientY: de[1] });
+    fireEvent.pointerMove(surface, { pointerId: 1, clientX: ate[0], clientY: ate[1] });
+    fireEvent.pointerUp(surface, { pointerId: 1, clientX: ate[0], clientY: ate[1] });
+    fireEvent.keyDown(document, { key: "v" });
+  }
+
+  /**
+   * Dispara o evento nativo de copiar, que é por onde o recorte sai de verdade.
+   *
+   * Pelo evento, e não pela tecla: é o navegador que abre a janela em que a escrita pode
+   * acontecer de forma síncrona, e foi trocar `writeText` no `keydown` por isto que fez
+   * copiar passar a funcionar de verdade.
+   */
+  function copia(target: EventTarget = document.body): boolean {
+    const event = new Event("copy", { bubbles: true, cancelable: true });
+    Object.defineProperty(event, "clipboardData", {
+      value: {
+        setData: (_tipo: string, text: string) => {
+          copiado = text;
+        },
+      },
+    });
+    act(() => {
+      target.dispatchEvent(event);
+    });
+
+    return event.defaultPrevented;
+  }
+
+  /**
+   * Dispara o evento nativo de colar, que é por onde o conteúdo chega de verdade.
+   *
+   * Dentro de `act`, e pela mesma razão do `rola`: o `dispatchEvent` cru não passa pelo
+   * empacotamento que o `fireEvent` faz, e o `setState` do ouvinte fica agendado sem ser
+   * pintado. Devolve se o evento foi engolido — é assim que o quadro diz que entendeu o
+   * conteúdo.
+   */
+  function cola(text: string, target: EventTarget = document.body): boolean {
+    const event = new Event("paste", { bubbles: true, cancelable: true });
+    Object.defineProperty(event, "clipboardData", {
+      value: { getData: () => text },
+    });
+    act(() => {
+      target.dispatchEvent(event);
+    });
+
+    return event.defaultPrevented;
+  }
+
+  function tracos(): HTMLElement[] {
+    return screen.queryAllByTestId("stroke-group");
+  }
+
+  function marcados(): number {
+    return (
+      postIts().filter((each) => each.dataset.selected === "true").length +
+      tracos().filter((each) => each.dataset.selected === "true").length
+    );
+  }
+
+  afterEach(() => vi.unstubAllGlobals());
+
+  it("copia a seleção e cola de volta no quadro", () => {
+    fingeClipboard();
+    render(<Whiteboard />);
+    criaPostIt(200, 200, "oi");
+    fireEvent.keyDown(document, { key: "a", ctrlKey: true });
+
+    copia();
+    expect(copiado).not.toBeNull();
+
+    cola(copiado ?? "");
+
+    expect(postIts()).toHaveLength(2);
+  });
+
+  it("copia notas e traços da mesma seleção", () => {
+    fingeClipboard();
+    render(<Whiteboard />);
+    criaPostIt(200, 200);
+    desenha([400, 400], [500, 500]);
+    fireEvent.keyDown(document, { key: "a", ctrlKey: true });
+
+    copia();
+    cola(copiado ?? "");
+
+    expect(postIts()).toHaveLength(2);
+    expect(tracos()).toHaveLength(2);
+  });
+
+  /**
+   * O colado nasce marcado: é sobre ele que a próxima ação age, e é também o que torna
+   * visível que alguma coisa aconteceu.
+   */
+  it("o que foi colado nasce marcado, e só ele", () => {
+    fingeClipboard();
+    render(<Whiteboard />);
+    criaPostIt(200, 200);
+    fireEvent.keyDown(document, { key: "a", ctrlKey: true });
+    copia();
+
+    cola(copiado ?? "");
+
+    expect(marcados()).toBe(1);
+    expect(postIt(1).dataset.selected).toBe("true");
+  });
+
+  /** Colar em cima do original é indistinguível de não ter colado. */
+  it("o colado não fica escondido embaixo do original", () => {
+    fingeClipboard();
+    render(<Whiteboard />);
+    criaPostIt(200, 200);
+    fireEvent.keyDown(document, { key: "a", ctrlKey: true });
+    copia();
+
+    cola(copiado ?? "");
+
+    expect(postIt(1).style.left).not.toBe(postIt(0).style.left);
+    expect(postIt(1).style.top).not.toBe(postIt(0).style.top);
+  });
+
+  it("colar duas vezes dá dois resultados distintos, e não dois empilhados", () => {
+    fingeClipboard();
+    render(<Whiteboard />);
+    criaPostIt(200, 200);
+    fireEvent.keyDown(document, { key: "a", ctrlKey: true });
+    copia();
+
+    cola(copiado ?? "");
+    cola(copiado ?? "");
+
+    expect(postIts()).toHaveLength(3);
+    const posicoes = postIts().map((each) => `${each.style.left},${each.style.top}`);
+    expect(new Set(posicoes).size).toBe(3);
+  });
+
+  it("o colado tem id próprio: não duplica identidade no board", () => {
+    fingeClipboard();
+    render(<Whiteboard />);
+    criaPostIt(200, 200);
+    fireEvent.keyDown(document, { key: "a", ctrlKey: true });
+    copia();
+
+    cola(copiado ?? "");
+
+    const ids = postIts().map((each) => each.dataset.noteId);
+    expect(new Set(ids).size).toBe(2);
+  });
+
+  it("o texto do post-it vai junto", () => {
+    fingeClipboard();
+    render(<Whiteboard />);
+    criaPostIt(200, 200, "levo isto comigo");
+    fireEvent.keyDown(document, { key: "a", ctrlKey: true });
+    copia();
+
+    cola(copiado ?? "");
+
+    expect(postIt(1).textContent).toContain("levo isto comigo");
+  });
+
+  it("colar é um passo de desfazer, mesmo com vários elementos", () => {
+    fingeClipboard();
+    render(<Whiteboard />);
+    criaPostIt(200, 200);
+    criaPostIt(500, 200);
+    desenha([700, 400], [800, 500]);
+    fireEvent.keyDown(document, { key: "a", ctrlKey: true });
+    copia();
+    cola(copiado ?? "");
+    expect(postIts()).toHaveLength(4);
+
+    fireEvent.keyDown(document, { key: "z", ctrlKey: true });
+
+    expect(postIts()).toHaveLength(2);
+    expect(tracos()).toHaveLength(1);
+  });
+
+  it("copiar sem seleção não toca na área de transferência", () => {
+    fingeClipboard();
+    render(<Whiteboard />);
+    criaPostIt(200, 200);
+    // Um clique no fundo desmarca tudo.
+    const surface = screen.getByTestId("viewport-surface");
+    fireEvent.pointerDown(surface, { pointerId: 9, button: 0, clientX: 900, clientY: 700 });
+    fireEvent.pointerUp(surface, { pointerId: 9, clientX: 900, clientY: 700 });
+
+    const engoliu = copia();
+
+    // O que a pessoa tinha copiado de outro programa continua lá, e o evento segue intacto
+    // para o navegador fazer o que quiser com ele.
+    expect(copiado).toBeNull();
+    expect(engoliu).toBe(false);
+  });
+
+  /**
+   * O `preventDefault` é o ponto do mecanismo: ele **substitui** a cópia nativa em vez de
+   * disputar com ela. Sem isso, o navegador seguiria copiando a seleção de texto do
+   * documento — que não existe, porque o quadro tem `select-none` — por cima do recorte.
+   */
+  it("copiar substitui a cópia nativa, e não disputa com ela", () => {
+    fingeClipboard();
+    render(<Whiteboard />);
+    criaPostIt(200, 200);
+    fireEvent.keyDown(document, { key: "a", ctrlKey: true });
+
+    expect(copia()).toBe(true);
+    expect(copiado).not.toBeNull();
+  });
+
+  /** Dentro de um post-it, copiar é do texto: o quadro não intercepta. */
+  it("copiar dentro do editor pertence ao texto", () => {
+    fingeClipboard();
+    render(<Whiteboard />);
+    criaPostIt(200, 200);
+    fireEvent.keyDown(document, { key: "a", ctrlKey: true });
+    duploCliqueNoFundo(600, 200);
+
+    const engoliu = copia(screen.getByTestId("post-it-editor"));
+
+    expect(engoliu).toBe(false);
+    expect(copiado).toBeNull();
+  });
+
+  it("colar texto que não é do quadro não quebra nem esvazia o board", () => {
+    fingeClipboard();
+    render(<Whiteboard />);
+    criaPostIt(200, 200);
+
+    cola("uma frase qualquer");
+    cola('{"foo":1}');
+    cola("[1,2,3]");
+
+    expect(postIts()).toHaveLength(1);
+  });
+
+  /** Dentro de um post-it, colar é do texto: quem escreve quer a frase, não um post-it novo. */
+  it("colar dentro do editor pertence ao texto", () => {
+    fingeClipboard();
+    render(<Whiteboard />);
+    criaPostIt(200, 200);
+    fireEvent.keyDown(document, { key: "a", ctrlKey: true });
+    copia();
+    duploCliqueNoFundo(600, 200);
+
+    cola(copiado ?? "", screen.getByTestId("post-it-editor"));
+
+    // Dois: o original e o que o duplo clique criou. Nenhum terceiro veio da colagem.
+    expect(postIts()).toHaveLength(2);
+  });
+
+  /** Só o que foi entendido é engolido; o resto continua sendo do navegador. */
+  it("engole o evento do recorte, e devolve o do texto estranho", () => {
+    fingeClipboard();
+    render(<Whiteboard />);
+    criaPostIt(200, 200);
+    fireEvent.keyDown(document, { key: "a", ctrlKey: true });
+    copia();
+
+    expect(cola(copiado ?? "")).toBe(true);
+    expect(cola("uma frase qualquer")).toBe(false);
+  });
+
+  /** Colar dez post-its não pode abrir um editor. */
+  it("o post-it colado não entra em edição", () => {
+    fingeClipboard();
+    render(<Whiteboard />);
+    criaPostIt(200, 200);
+    fireEvent.keyDown(document, { key: "a", ctrlKey: true });
+    copia();
+
+    cola(copiado ?? "");
+
+    expect(screen.queryByTestId("post-it-editor")).toBeNull();
+  });
+});
+
 describe("Whiteboard — selecionar tudo (#85)", () => {
   function criaPostIt(x: number, y: number): void {
     duploCliqueNoFundo(x, y);

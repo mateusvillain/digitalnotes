@@ -7,6 +7,7 @@ import { useKeyboardShortcuts } from "@/lib/board/useKeyboardShortcuts";
 import type { Point } from "@/lib/canvas/coords";
 import { useViewport } from "@/lib/canvas/useViewport";
 import { useTouchPrimary } from "@/lib/dom/useTouchPrimary";
+import { useCopy, usePaste } from "@/lib/dom/useClipboard";
 import { ColorPicker } from "@/components/postit/ColorPicker";
 import { SelectButton } from "@/components/ui/SelectButton";
 import { HistoryButtons } from "@/components/ui/HistoryButtons";
@@ -121,6 +122,11 @@ export function Whiteboard({ initialBoard, autosave }: WhiteboardProps) {
   }, []);
 
   const save = useCallback(() => void share.share(), [share]);
+
+  // Copiar e colar são eventos de área de transferência, e não atalhos de teclado: o
+  // conteúdo só existe dentro deles. Ver `useClipboard`.
+  useCopy(board.copySelection);
+  usePaste(board.pasteFromClipboard);
 
   /**
    * O modo em curso: um estado só, e não uma flag por ferramenta.
