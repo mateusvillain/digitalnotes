@@ -98,6 +98,49 @@ describe("apresentação do quadro vazio", () => {
   });
 
   /**
+   * A mesma regra do lápis, agora sobre a peça que mudou de nome (#81): a apresentação e o
+   * botão precisam chamar a nota pelo mesmo nome, senão a interface passa a ter dois.
+   *
+   * Comparado com `UI`, e não com o literal: um teste que fixasse "Nota adesiva" continuaria
+   * passando no dia em que só o botão fosse renomeado, que é exatamente o defeito que ele
+   * existe para pegar.
+   */
+  it("chama a nota pelo mesmo nome que o botão, nos dois idiomas", () => {
+    aparelho();
+    const { unmount } = renderiza("pt");
+
+    expect(screen.getByText(UI.pt.note.action)).toBeDefined();
+
+    unmount();
+    aparelho();
+    renderiza("en");
+
+    expect(screen.getByText(UI.en.note.action)).toBeDefined();
+  });
+
+  /**
+   * A lista de toque **não** acompanhou o nome (#81).
+   *
+   * Ela é a única das duas escrita como resultado de um gesto, e não como nome de
+   * ferramenta: lá não há tecla `N` para associar a um nome, há um duplo toque e o que ele
+   * produz. O nome completo importa onde a peça é escolhida — o botão e a linha de teclado.
+   */
+  it("no toque, a linha da nota continua nomeando o gesto, e não a ferramenta", () => {
+    aparelho({ toque: true });
+    const { unmount } = renderiza("pt");
+
+    expect(screen.getByText("Nova nota")).toBeDefined();
+    expect(screen.queryByText(UI.pt.note.action)).toBeNull();
+
+    unmount();
+    aparelho({ toque: true });
+    renderiza("en");
+
+    expect(screen.getByText("New note")).toBeDefined();
+    expect(screen.queryByText(UI.en.note.action)).toBeNull();
+  });
+
+  /**
    * No toque o lápis não é gesto nenhum: é um botão que fica na tela o tempo todo. A
    * apresentação existe para ensinar o que não se descobre olhando, e uma linha mandando
    * tocar num botão visível gastaria uma das poucas que cabem.

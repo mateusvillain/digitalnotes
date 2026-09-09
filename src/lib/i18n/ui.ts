@@ -47,7 +47,14 @@ export interface UiCopy {
     action: string;
   };
   note: {
-    /** Nome do botão que arma a colocação de uma nota (#73) — a mesma ação da tecla `N`. */
+    /**
+     * Nome da peça, no botão que arma a colocação (#73) e na lista de teclado da
+     * apresentação (#81) — os dois lugares onde a ferramenta é **escolhida**.
+     *
+     * Os rótulos abaixo continuam dizendo "nota" e não "nota adesiva", de propósito: eles
+     * são lidos **depois** da escolha, dentro de uma peça que o leitor de tela já anunciou.
+     * "Cor da nota adesiva" a cada campo acrescenta sílabas e nenhuma informação.
+     */
     action: string;
     /** `aria-label` de uma nota sem texto, que não teria como ser anunciada. */
     empty: string;
@@ -88,7 +95,7 @@ export const UI: Record<Locale, UiCopy> = {
     history: { undo: "Undo", redo: "Redo" },
     pencil: { action: "Pencil" },
     note: {
-      action: "Note",
+      action: "Sticky Note",
       empty: "Empty note",
       text: "Note text",
       color: "Note colour",
@@ -142,7 +149,7 @@ export const UI: Record<Locale, UiCopy> = {
     history: { undo: "Desfazer", redo: "Refazer" },
     pencil: { action: "Lápis" },
     note: {
-      action: "Nota",
+      action: "Nota adesiva",
       empty: "Nota vazia",
       text: "Texto da nota",
       color: "Cor da nota",

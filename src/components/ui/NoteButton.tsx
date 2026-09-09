@@ -12,7 +12,7 @@ interface NoteButtonProps {
 }
 
 /**
- * Post-it com um `+`, o mesmo desenho que a apresentação do quadro vazio usa para "Nota".
+ * Post-it com um `+`, o mesmo desenho que a apresentação do quadro vazio usa na linha da nota.
  *
  * As duas cópias existem porque vivem em contextos diferentes — lá o ícone é ilustração de
  * uma linha de ajuda, aqui é o rosto de um botão — mas o traço é o mesmo do resto da
