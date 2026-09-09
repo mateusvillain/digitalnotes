@@ -1846,3 +1846,198 @@ describe("Whiteboard — modo lápis", () => {
     expect(tracos()[0]).toBe("0,0 200,200");
   });
 });
+
+describe("Whiteboard — modo lápis no toque", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  function tracos(): (string | null)[] {
+    return screen.queryAllByTestId("stroke").map((element) => element.getAttribute("points"));
+  }
+
+  function ligaOLapis(): void {
+    fireEvent.keyDown(document, { key: "p" });
+  }
+
+  /** Encosta um dedo no quadro. */
+  function encosta(pointerId: number, x: number, y: number): void {
+    fireEvent.pointerDown(screen.getByTestId("viewport-surface"), {
+      pointerId,
+      pointerType: "touch",
+      button: 0,
+      clientX: x,
+      clientY: y,
+    });
+  }
+
+  function arrasta(pointerId: number, x: number, y: number): void {
+    fireEvent.pointerMove(screen.getByTestId("viewport-surface"), {
+      pointerId,
+      pointerType: "touch",
+      clientX: x,
+      clientY: y,
+    });
+  }
+
+  function levanta(pointerId: number, x: number, y: number): void {
+    fireEvent.pointerUp(screen.getByTestId("viewport-surface"), {
+      pointerId,
+      pointerType: "touch",
+      clientX: x,
+      clientY: y,
+    });
+  }
+
+  it("com o lápis ligado, um dedo desenha em vez de navegar", () => {
+    aparelhoDeToque(true);
+    render(<Whiteboard />);
+    const layer = screen.getByTestId("viewport-layer");
+    const antes = layer.style.transform;
+    ligaOLapis();
+
+    encosta(1, 100, 100);
+    arrasta(1, 160, 140);
+    levanta(1, 160, 140);
+
+    expect(tracos()).toEqual(["100,100 160,140"]);
+    // E o quadro ficou parado: com o lápis ligado, um dedo não navega mais.
+    expect(layer.style.transform).toBe(antes);
+  });
+
+  it("com o lápis desligado, um dedo volta a navegar exatamente como antes", () => {
+    aparelhoDeToque(true);
+    render(<Whiteboard />);
+    const layer = screen.getByTestId("viewport-layer");
+    ligaOLapis();
+    fireEvent.keyDown(document, { key: "p" });
+
+    encosta(1, 100, 100);
+    arrasta(1, 160, 140);
+    levanta(1, 160, 140);
+
+    expect(layer.style.transform).toContain("translate(60px, 40px)");
+    expect(tracos()).toEqual([]);
+  });
+
+  it("dois dedos continuam navegando e dando zoom com o lápis ligado", () => {
+    aparelhoDeToque(false);
+    render(<Whiteboard />);
+    const layer = screen.getByTestId("viewport-layer");
+    const antes = layer.style.transform;
+    ligaOLapis();
+
+    pinca(100, 200);
+
+    // A pinça é o gesto inteiro: afastar dá zoom e arrastar move, no mesmo movimento. Com o
+    // lápis ligado ela vira a única forma de navegar, então precisa continuar fazendo as duas.
+    expect(escalaAtual()).toBe("200%");
+    expect(layer.style.transform).not.toBe(antes);
+    expect(tracos()).toEqual([]);
+  });
+
+  it("o segundo dedo vira pinça sem deixar traço pela metade", () => {
+    aparelhoDeToque(false);
+    render(<Whiteboard />);
+    ligaOLapis();
+
+    // Um dedo começa a desenhar…
+    encosta(1, 0, 0);
+    arrasta(1, 40, 40);
+    expect(screen.getByTestId("stroke-preview")).toBeTruthy();
+
+    // …e o segundo chega no meio do gesto.
+    encosta(2, 100, 0);
+    arrasta(2, 200, 0);
+    levanta(1, 40, 40);
+    levanta(2, 200, 0);
+
+    // Nem prévia pendurada na tela, nem meio-rabisco gravado no board.
+    expect(screen.queryByTestId("stroke-preview")).toBeNull();
+    expect(tracos()).toEqual([]);
+    // E a pinça aconteceu: quem encostou o segundo dedo estava pinçando. O quanto ela
+    // aproxima é assunto dos testes de pinça — aqui a referência é a distância entre os
+    // dedos no instante em que o segundo encostou, com o primeiro já deslocado.
+    expect(Number.parseInt(escalaAtual(), 10)).toBeGreaterThan(100);
+  });
+
+  it("o dedo que sobra da pinça não navega com o lápis ligado", () => {
+    aparelhoDeToque(false);
+    render(<Whiteboard />);
+    const layer = screen.getByTestId("viewport-layer");
+    ligaOLapis();
+
+    encosta(1, 0, 0);
+    encosta(2, 100, 0);
+    levanta(2, 100, 0);
+    const antes = layer.style.transform;
+    arrasta(1, 60, 40);
+
+    // Sem o lápis, o dedo que ficou retomaria a navegação (ver o teste da pinça). Com ele
+    // ligado, um dedo não navega — e também não deixa tinta no caminho de volta do gesto.
+    expect(layer.style.transform).toBe(antes);
+    expect(tracos()).toEqual([]);
+  });
+
+  it("desenhar com o dedo sobre uma nota é traço, e não arraste da nota", () => {
+    aparelhoDeToque(true);
+    render(<Whiteboard />);
+    duploCliqueNoFundo(150, 150);
+    fireEvent.blur(screen.getByRole("textbox", { name: UI.en.note.text }));
+    const antes = postIt(0).style.left;
+    ligaOLapis();
+
+    fireEvent.pointerDown(postIt(0), {
+      pointerId: 1,
+      pointerType: "touch",
+      button: 0,
+      clientX: 150,
+      clientY: 150,
+    });
+    arrasta(1, 200, 190);
+    levanta(1, 200, 190);
+
+    expect(tracos()).toHaveLength(1);
+    expect(postIt(0).style.left).toBe(antes);
+  });
+
+  it("um terceiro dedo durante a pinça não começa um traço por baixo do gesto", () => {
+    aparelhoDeToque(false);
+    render(<Whiteboard />);
+    ligaOLapis();
+
+    encosta(1, 0, 0);
+    encosta(2, 100, 0);
+    encosta(3, 50, 200);
+    arrasta(3, 60, 210);
+    levanta(3, 60, 210);
+
+    expect(tracos()).toEqual([]);
+    expect(screen.queryByTestId("stroke-preview")).toBeNull();
+  });
+
+  /**
+   * No celular não há tecla `P` nem `Esc`, e o cursor não muda de forma: o botão é a única
+   * coisa que diz que o modo existe, que ele está ligado, e como sair dele.
+   */
+  it("o indicador do modo é alcançável e desliga o modo no toque", async () => {
+    const user = userEvent.setup();
+    aparelhoDeToque(true);
+    render(<Whiteboard />);
+
+    const botao = screen.getByLabelText(UI.en.pencil.action);
+    expect(botao).toBeTruthy();
+
+    await user.click(botao);
+    expect(botao.getAttribute("aria-pressed")).toBe("true");
+
+    await user.click(botao);
+    expect(botao.getAttribute("aria-pressed")).toBe("false");
+
+    // E desligado pelo botão, o dedo volta a navegar.
+    encosta(1, 100, 100);
+    arrasta(1, 160, 140);
+    levanta(1, 160, 140);
+    expect(screen.getByTestId("viewport-layer").style.transform).toContain("translate(60px, 40px)");
+  });
+});
