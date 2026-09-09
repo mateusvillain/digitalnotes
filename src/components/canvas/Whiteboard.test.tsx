@@ -1023,11 +1023,31 @@ describe("Whiteboard — seleção por arrasto no fundo", () => {
     render(<Whiteboard />);
     const surface = screen.getByTestId("viewport-surface");
 
-    expect(surface.className).toContain("cursor-crosshair");
+    // Com a ferramenta de seleção — a de partida —, a seta do sistema: apontar e clicar é o
+    // gesto que a pessoa já conhece de qualquer outra tela, e ele não precisa de desenho
+    // próprio.
+    expect(surface.className).toContain("cursor-default");
 
     fireEvent.keyDown(document, { key: " " });
     expect(surface.className).toContain("cursor-grab");
     expect(surface.dataset.spaceHeld).toBe("true");
+  });
+
+  /**
+   * A cruz sobrou para quem mira: colocar uma nota é escolher um ponto, e é aí que ela
+   * significa alguma coisa. Como padrão da ferramenta de seleção, ela estava ligada o tempo
+   * todo prometendo uma mira que não existia.
+   */
+  it("a cruz é da colocação de nota, e não do estado de partida", () => {
+    render(<Whiteboard />);
+    const surface = screen.getByTestId("viewport-surface");
+
+    fireEvent.keyDown(document, { key: "n" });
+    expect(surface.className).toContain("cursor-crosshair");
+
+    fireEvent.keyDown(document, { key: "v" });
+    expect(surface.className).toContain("cursor-default");
+    expect(surface.className).not.toContain("cursor-crosshair");
   });
 });
 
@@ -1837,7 +1857,7 @@ describe("Whiteboard — ferramenta de seleção (#83)", () => {
     return botao(nome).getAttribute("aria-pressed") === "true";
   }
 
-  const CURSOR = UI.en.cursor.action;
+  const SELECAO = UI.en.select.action;
   const NOTA = UI.en.note.action;
   const LAPIS = UI.en.pencil.action;
 
@@ -1848,22 +1868,22 @@ describe("Whiteboard — ferramenta de seleção (#83)", () => {
    * seleção —, mas nascia sem representação: os três botões apareciam apagados enquanto uma
    * das três estava, de fato, valendo.
    */
-  it("o quadro começa com o cursor ativo, sem ninguém ter clicado", () => {
+  it("o quadro começa com a seleção ativa, sem ninguém ter clicado", () => {
     render(<Whiteboard />);
 
-    expect(ativo(CURSOR)).toBe(true);
+    expect(ativo(SELECAO)).toBe(true);
     expect(ativo(NOTA)).toBe(false);
     expect(ativo(LAPIS)).toBe(false);
   });
 
-  it("V escolhe o cursor", () => {
+  it("V escolhe a seleção", () => {
     render(<Whiteboard />);
     fireEvent.keyDown(document, { key: "p" });
-    expect(ativo(CURSOR)).toBe(false);
+    expect(ativo(SELECAO)).toBe(false);
 
     fireEvent.keyDown(document, { key: "v" });
 
-    expect(ativo(CURSOR)).toBe(true);
+    expect(ativo(SELECAO)).toBe(true);
     expect(ativo(LAPIS)).toBe(false);
   });
 
@@ -1872,23 +1892,23 @@ describe("Whiteboard — ferramenta de seleção (#83)", () => {
    * alternar aqui exigiria de volta o estado "nenhuma ferramenta", que é justamente o que
    * esta issue veio tirar.
    */
-  it("V de novo não desliga o cursor", () => {
+  it("V de novo não desliga a seleção", () => {
     render(<Whiteboard />);
 
     fireEvent.keyDown(document, { key: "v" });
     fireEvent.keyDown(document, { key: "v" });
 
-    expect(ativo(CURSOR)).toBe(true);
+    expect(ativo(SELECAO)).toBe(true);
   });
 
-  it("o botão escolhe o cursor, como a tecla", async () => {
+  it("o botão escolhe a seleção, como a tecla", async () => {
     const user = userEvent.setup();
     render(<Whiteboard />);
     fireEvent.keyDown(document, { key: "p" });
 
-    await user.click(botao(CURSOR));
+    await user.click(botao(SELECAO));
 
-    expect(ativo(CURSOR)).toBe(true);
+    expect(ativo(SELECAO)).toBe(true);
     expect(screen.getByTestId("viewport-surface").dataset.pencil).toBe("false");
   });
 
@@ -1896,24 +1916,24 @@ describe("Whiteboard — ferramenta de seleção (#83)", () => {
     const user = userEvent.setup();
     render(<Whiteboard />);
 
-    await user.click(botao(CURSOR));
+    await user.click(botao(SELECAO));
 
-    expect(ativo(CURSOR)).toBe(true);
+    expect(ativo(SELECAO)).toBe(true);
   });
 
   /** Uma ferramenta de cada vez: escolher o cursor larga as outras duas. */
-  it("o cursor exclui o lápis e a colocação de nota", () => {
+  it("a seleção exclui o lápis e a colocação de nota", () => {
     render(<Whiteboard />);
 
     fireEvent.keyDown(document, { key: "n" });
     fireEvent.keyDown(document, { key: "v" });
-    expect(ativo(CURSOR)).toBe(true);
+    expect(ativo(SELECAO)).toBe(true);
     expect(ativo(NOTA)).toBe(false);
     expect(screen.getByTestId("viewport-surface").dataset.placing).toBe("false");
 
     fireEvent.keyDown(document, { key: "p" });
     fireEvent.keyDown(document, { key: "v" });
-    expect(ativo(CURSOR)).toBe(true);
+    expect(ativo(SELECAO)).toBe(true);
     expect(ativo(LAPIS)).toBe(false);
   });
 
@@ -1921,23 +1941,23 @@ describe("Whiteboard — ferramenta de seleção (#83)", () => {
    * Desligar uma ferramenta deixou de ser uma ação sem destino: `P` no lápis ligado, `Esc` e
    * `V` chegam todos ao mesmo lugar, que agora tem nome.
    */
-  it("largar o lápis leva ao cursor, por qualquer um dos três caminhos", () => {
+  it("largar o lápis leva à seleção, por qualquer um dos três caminhos", () => {
     render(<Whiteboard />);
 
     fireEvent.keyDown(document, { key: "p" });
     fireEvent.keyDown(document, { key: "p" });
-    expect(ativo(CURSOR)).toBe(true);
+    expect(ativo(SELECAO)).toBe(true);
 
     fireEvent.keyDown(document, { key: "p" });
     fireEvent.keyDown(document, { key: "Escape" });
-    expect(ativo(CURSOR)).toBe(true);
+    expect(ativo(SELECAO)).toBe(true);
 
     fireEvent.keyDown(document, { key: "p" });
     fireEvent.keyDown(document, { key: "v" });
-    expect(ativo(CURSOR)).toBe(true);
+    expect(ativo(SELECAO)).toBe(true);
   });
 
-  it("colocar uma nota devolve o cursor", () => {
+  it("colocar uma nota devolve a seleção", () => {
     render(<Whiteboard />);
     fireEvent.keyDown(document, { key: "n" });
 
@@ -1945,7 +1965,7 @@ describe("Whiteboard — ferramenta de seleção (#83)", () => {
     fireEvent.pointerDown(surface, { pointerId: 1, button: 0, clientX: 200, clientY: 200 });
     fireEvent.pointerUp(surface, { pointerId: 1, clientX: 200, clientY: 200 });
 
-    expect(ativo(CURSOR)).toBe(true);
+    expect(ativo(SELECAO)).toBe(true);
   });
 
   it("V não dispara com o cursor dentro do texto de uma nota", () => {
@@ -1956,7 +1976,7 @@ describe("Whiteboard — ferramenta de seleção (#83)", () => {
     fireEvent.keyDown(screen.getByTestId("post-it-editor"), { key: "v" });
 
     // A tecla pertence a quem está escrevendo: `v` no meio de uma frase é a letra.
-    expect(ativo(CURSOR)).toBe(false);
+    expect(ativo(SELECAO)).toBe(false);
   });
 
   it("V com modificador segurado é do navegador, não do quadro", () => {
@@ -1967,7 +1987,7 @@ describe("Whiteboard — ferramenta de seleção (#83)", () => {
     fireEvent.keyDown(document, { key: "v", metaKey: true });
 
     // `Ctrl+V` é colar, e roubá-la seria pior do que não ter atalho.
-    expect(ativo(CURSOR)).toBe(false);
+    expect(ativo(SELECAO)).toBe(false);
   });
 
   /**
@@ -1980,7 +2000,7 @@ describe("Whiteboard — ferramenta de seleção (#83)", () => {
     render(<Whiteboard />);
 
     expect(screen.getAllByRole("listitem")).toHaveLength(4);
-    expect(screen.queryByText(UI.en.cursor.action)).toBeNull();
+    expect(screen.queryByText(UI.en.select.action)).toBeNull();
   });
 });
 
@@ -2201,13 +2221,13 @@ describe("Whiteboard — modo lápis", () => {
   it("o cursor do quadro vira lápis com o modo ligado", () => {
     render(<Whiteboard />);
     const surface = screen.getByTestId("viewport-surface");
-    expect(surface.className).toContain("cursor-crosshair");
+    expect(surface.className).toContain("cursor-default");
 
     fireEvent.keyDown(document, { key: "p" });
 
     // O modo muda o que arrastar faz, e o cursor é o que anuncia isso antes do gesto.
     expect(surface.className).toContain("cursor-pencil");
-    expect(surface.className).not.toContain("cursor-crosshair");
+    expect(surface.className).not.toContain("cursor-default");
   });
 
   /**

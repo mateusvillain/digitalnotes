@@ -39,7 +39,7 @@ export interface UiCopy {
   };
   zoom: { out: string; reset: string; in: string };
   /** Nome do botão da ferramenta de seleção (#83) — a mesma ação da tecla `V`. */
-  cursor: { action: string };
+  select: { action: string };
   pencil: {
     /** Dica e `aria-label` do botão que liga o modo lápis (#68). */
     action: string;
@@ -82,7 +82,7 @@ export const UI: Record<Locale, UiCopy> = {
       cancel: "Cancel",
     },
     zoom: { out: "Zoom out", reset: "Reset zoom to 100%", in: "Zoom in" },
-    cursor: { action: "Cursor" },
+    select: { action: "Select" },
     pencil: { action: "Pencil" },
     note: {
       action: "Note",
@@ -135,7 +135,7 @@ export const UI: Record<Locale, UiCopy> = {
       cancel: "Cancelar",
     },
     zoom: { out: "Diminuir zoom", reset: "Voltar o zoom para 100%", in: "Aumentar zoom" },
-    cursor: { action: "Cursor" },
+    select: { action: "Seleção" },
     pencil: { action: "Lápis" },
     note: {
       action: "Nota",

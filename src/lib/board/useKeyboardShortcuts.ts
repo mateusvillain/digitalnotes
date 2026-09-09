@@ -21,10 +21,10 @@ interface KeyboardShortcutsOptions {
   /**
    * `V`: escolher a ferramenta de seleção (#83).
    *
-   * Escolher, e não alternar. O cursor é a ferramenta de partida do quadro, e ela não tem
-   * para onde ser desligada — `V` sobre o cursor já ativo não faz nada.
+   * Escolher, e não alternar. A seleção é a ferramenta de partida do quadro, e ela não tem
+   * para onde ser desligada — `V` sobre ela já ativa não faz nada.
    */
-  onSelectCursor: () => void;
+  onSelectTool: () => void;
   /**
    * `Esc`: largar a ferramenta em curso.
    *
@@ -65,7 +65,7 @@ export function useKeyboardShortcuts({
   onPlaceNote,
   onSave,
   onTogglePencil,
-  onSelectCursor,
+  onSelectTool,
   onCancel,
 }: KeyboardShortcutsOptions): void {
   /**
@@ -79,12 +79,12 @@ export function useKeyboardShortcuts({
     onPlaceNote,
     onSave,
     onTogglePencil,
-    onSelectCursor,
+    onSelectTool,
     onCancel,
   });
   useEffect(() => {
-    handlers.current = { onDelete, onPlaceNote, onSave, onTogglePencil, onSelectCursor, onCancel };
-  }, [onDelete, onPlaceNote, onSave, onTogglePencil, onSelectCursor, onCancel]);
+    handlers.current = { onDelete, onPlaceNote, onSave, onTogglePencil, onSelectTool, onCancel };
+  }, [onDelete, onPlaceNote, onSave, onTogglePencil, onSelectTool, onCancel]);
 
   useEffect(() => {
     function handleKeyDown(event: KeyboardEvent): void {
@@ -134,7 +134,7 @@ export function useKeyboardShortcuts({
 
       if (event.key.toLowerCase() === "v") {
         event.preventDefault();
-        handlers.current.onSelectCursor();
+        handlers.current.onSelectTool();
         return;
       }
 

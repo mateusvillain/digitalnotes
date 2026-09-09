@@ -30,7 +30,7 @@ function opcoes(overrides: Partial<Parameters<typeof useKeyboardShortcuts>[0]>) 
     onPlaceNote: vi.fn(),
     onSave: vi.fn(),
     onTogglePencil: vi.fn(),
-    onSelectCursor: vi.fn(),
+    onSelectTool: vi.fn(),
     onCancel: vi.fn(),
     ...overrides,
   };
@@ -273,37 +273,37 @@ describe("useKeyboardShortcuts — salvar com Ctrl/⌘+S", () => {
   });
 
   it("V pede a ferramenta de seleção", () => {
-    const onSelectCursor = vi.fn();
-    renderHook(() => useKeyboardShortcuts(opcoes({ onSelectCursor })));
+    const onSelectTool = vi.fn();
+    renderHook(() => useKeyboardShortcuts(opcoes({ onSelectTool })));
 
     tecla("v");
     tecla("V");
 
     // Duas vezes, como o `P`: quem sabe qual ferramenta está ativa é o quadro. O atalho só
     // avisa que a tecla foi apertada — e lá, escolher o cursor duas vezes é escolhê-lo.
-    expect(onSelectCursor).toHaveBeenCalledTimes(2);
+    expect(onSelectTool).toHaveBeenCalledTimes(2);
   });
 
   it("V não dispara com o cursor dentro de um post-it", () => {
-    const onSelectCursor = vi.fn();
-    renderHook(() => useKeyboardShortcuts(opcoes({ onSelectCursor })));
+    const onSelectTool = vi.fn();
+    renderHook(() => useKeyboardShortcuts(opcoes({ onSelectTool })));
 
     tecla("v", elemento("textarea"));
     tecla("v", elemento("input"));
 
-    expect(onSelectCursor).not.toHaveBeenCalled();
+    expect(onSelectTool).not.toHaveBeenCalled();
   });
 
   it("V com modificador segurado pertence ao navegador", () => {
-    const onSelectCursor = vi.fn();
-    renderHook(() => useKeyboardShortcuts(opcoes({ onSelectCursor })));
+    const onSelectTool = vi.fn();
+    renderHook(() => useKeyboardShortcuts(opcoes({ onSelectTool })));
 
     // `Ctrl+V` é colar, e é o modificador mais importante a não roubar desta tecla.
     tecla("v", document.body, { ctrlKey: true });
     tecla("v", document.body, { metaKey: true });
     tecla("v", document.body, { altKey: true });
 
-    expect(onSelectCursor).not.toHaveBeenCalled();
+    expect(onSelectTool).not.toHaveBeenCalled();
   });
 
   it("Esc pede para sair do modo em curso", () => {

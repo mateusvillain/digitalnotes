@@ -4,7 +4,7 @@ import { iconButtonClass } from "@/components/ui/iconButton";
 import { Tooltip } from "@/components/ui/Tooltip";
 import { useUi } from "@/lib/i18n/LocaleProvider";
 
-interface CursorButtonProps {
+interface SelectButtonProps {
   /** A ferramenta de seleção é a ativa agora. */
   active: boolean;
   /** Escolhe a ferramenta — a mesma ação da tecla `V`. */
@@ -14,11 +14,11 @@ interface CursorButtonProps {
 /**
  * Seta de ponteiro, no mesmo traço dos outros ícones da moldura.
  *
- * Preenchida, e não só contornada: é o único ícone da pilha que desenha um cursor, e um
- * cursor vazado se lê como uma bandeirinha. O contorno na cor do fundo é o que mantém a
- * silhueta legível quando o botão fica aceso e o fundo escurece.
+ * Preenchida, e não só contornada: é o único ícone da pilha que desenha um ponteiro, e um
+ * ponteiro vazado se lê como uma bandeirinha. É também o mesmo desenho que o cursor do
+ * sistema tem enquanto esta ferramenta está ativa — o botão mostra o que a mão vira.
  */
-function CursorIcon() {
+function SelectIcon() {
   return (
     <svg
       viewBox="0 0 24 24"
@@ -52,22 +52,22 @@ function CursorIcon() {
  * `onSelect` e não `onToggle`, ao contrário dos vizinhos: a ferramenta de partida não tem
  * para onde ser desligada, e clicar no botão já aceso não faz nada.
  */
-export function CursorButton({ active, onSelect }: CursorButtonProps) {
+export function SelectButton({ active, onSelect }: SelectButtonProps) {
   const ui = useUi();
 
   return (
     <div className="rounded-control border border-border bg-surface p-1 shadow-control">
-      <Tooltip label={ui.cursor.action} align="start">
+      <Tooltip label={ui.select.action} align="start">
         <button
           type="button"
           // O fundo do estado ativo é o mesmo que o `hover` já usa: o botão fica com a
           // aparência de quem está sendo apontado, que é o que "ligado" quer dizer aqui.
           className={`${iconButtonClass} ${active ? "bg-canvas text-ink" : ""}`}
           onClick={onSelect}
-          aria-label={ui.cursor.action}
+          aria-label={ui.select.action}
           aria-pressed={active}
         >
-          <CursorIcon />
+          <SelectIcon />
         </button>
       </Tooltip>
     </div>
