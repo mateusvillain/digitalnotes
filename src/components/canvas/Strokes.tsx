@@ -2,8 +2,9 @@
 
 import { strokeColor } from "@/lib/theme/note-colors";
 import { STROKE_COLOR_BLACK, type Stroke } from "@/lib/board/types";
-import type { Point } from "@/lib/canvas/coords";
-import type { ReactNode } from "react";
+import { useRef, type PointerEvent, type ReactNode } from "react";
+import { useDrag } from "@/lib/canvas/useDrag";
+import type { Point, Rect, Size } from "@/lib/canvas/coords";
 
 /**
  * Espessura do traço, em unidades de canvas.
@@ -30,21 +31,22 @@ export const STROKE_WIDTH = 2;
  */
 export const STROKE_HIT_WIDTH = 12;
 
-/**
- * Folga do contorno de seleção, em unidades de canvas de cada lado.
- *
- * É a tradução do `outline-2 outline-offset-2` que o post-it usa: a nota ganha um contorno
- * afastado da borda, e o traço ganha um halo afastado da tinta. Mesma leitura — "isto está
- * marcado" —, na única forma que uma linha aceita.
- */
-const SELECTION_HALO = 3;
-
 interface StrokesProps {
   strokes: readonly Stroke[];
-  /** Ids marcados. Um traço marcado ganha halo e é o que o `Delete` apaga (#70). */
+  /** Ids marcados. Um traço marcado ganha moldura e é o que o `Delete` apaga (#70). */
   selection?: ReadonlySet<string>;
   /** Clique num traço. `additive` vem do shift, que acrescenta em vez de trocar. */
   onSelect?: (id: string, additive: boolean) => void;
+  /** Deslocamento em curso, aplicado a todo traço selecionado. */
+  offset?: Point | null;
+  /** O ponteiro passou da folga: começou um arraste a partir deste traço. */
+  onDragStart?: (id: string) => void;
+  /** Deslocamento em pixels de tela desde a origem do gesto. Quem converte conhece o zoom. */
+  onDragMove?: (delta: Point) => void;
+  onDragEnd?: () => void;
+  onDragCancel?: () => void;
+  /** Tamanho em curso do traço em redimensionamento, com a caixa de onde ele partiu. */
+  resizing?: { id: string; from: Rect; size: Size } | null;
 }
 
 /**
@@ -121,31 +123,121 @@ function InkLine({
 }
 
 /**
- * Um traço gravado: o halo de seleção, a tinta e o alvo de clique.
+ * Um traço gravado: a tinta e o alvo de clique, deslocados e escalados pelo gesto em curso.
  *
- * Três linhas sobre os mesmos pontos, nesta ordem. O halo primeiro, para ficar embaixo da
- * tinta em vez de cobri-la; o alvo por último e invisível, porque é ele que recebe o
- * ponteiro e a ordem de irmãos é o que decide quem o browser acerta.
+ * A moldura de seleção **não** está aqui: ela é um retângulo em volta da área do desenho, e
+ * um `<svg>` sem tamanho útil não é lugar para desenhar caixa e alça. Quem a desenha é o
+ * `StrokeFrame`, em HTML, com as mesmas classes que o post-it usa.
+ *
+ * O gesto é aplicado por `transform`, e não reescrevendo os pontos: o browser compõe a
+ * transformação sem recalcular nada, e os pontos só mudam quando o ponteiro é solto — que é
+ * a mesma escolha que o post-it faz com `left`/`top`.
  */
 function StrokeShape({
   stroke,
   selected,
   onSelect,
+  offset,
+  onDragStart,
+  onDragMove,
+  onDragEnd,
+  onDragCancel,
+  resizing,
 }: {
   stroke: Stroke;
   selected: boolean;
   onSelect?: (id: string, additive: boolean) => void;
+  offset: Point | null;
+  onDragStart?: (id: string) => void;
+  onDragMove?: (delta: Point) => void;
+  onDragEnd?: () => void;
+  onDragCancel?: () => void;
+  resizing: { from: Rect; size: Size } | null;
 }) {
+  /**
+   * Colapso de seleção adiado para o soltar, como no post-it.
+   *
+   * Apertar um traço que já está selecionado não pode desmarcar os outros na hora: o gesto
+   * mais provável dali é arrastar o grupo inteiro. Se o ponteiro subir sem ter arrastado,
+   * aí sim era um clique, e o clique desmarca os demais.
+   */
+  const pendingCollapse = useRef(false);
+  const dragged = useRef(false);
+
+  const drag = useDrag({
+    onStart: () => {
+      dragged.current = true;
+      onDragStart?.(stroke.id);
+    },
+    onMove: (delta) => onDragMove?.(delta),
+    onEnd: (delta) => {
+      // O deslocamento do soltar, e não o do último movimento: soltar o botão pode carregar
+      // uma posição que nenhum pointermove chegou a reportar, e é essa que vai para a store.
+      onDragMove?.(delta);
+      onDragEnd?.();
+    },
+    onCancel: () => onDragCancel?.(),
+  });
+
+  function handlePointerDown(event: PointerEvent<SVGElement>): void {
+    if (event.button !== 0) return;
+    // O gesto para aqui: sem isto o mesmo `pointerdown` chegaria à superfície e começaria um
+    // retângulo de seleção por cima do traço recém-marcado.
+    event.stopPropagation();
+
+    dragged.current = false;
+    pendingCollapse.current = false;
+
+    if (event.shiftKey || !selected) onSelect?.(stroke.id, event.shiftKey);
+    else pendingCollapse.current = true;
+
+    // Shift sobre um traço selecionado o **tira** da seleção: seguir arrastando moveria
+    // justamente o que se acabou de desmarcar.
+    if (event.shiftKey && selected) return;
+
+    drag.onPointerDown(event);
+  }
+
+  function handlePointerUp(event: PointerEvent<SVGElement>): void {
+    drag.onPointerUp(event);
+    if (pendingCollapse.current && !dragged.current) onSelect?.(stroke.id, false);
+    pendingCollapse.current = false;
+  }
+
+  function handlePointerCancel(event: PointerEvent<SVGElement>): void {
+    drag.onPointerCancel(event);
+    pendingCollapse.current = false;
+  }
+
+  /*
+    A transformação do gesto em curso, em coordenadas de canvas.
+
+    A escala vem antes da translação na leitura do SVG (a lista se aplica da direita para a
+    esquerda), e é ancorada no canto da caixa de partida: é a mesma âncora que
+    `scaleStrokePoints` usa ao gravar, e sem ela o traço saltaria de lugar no instante em
+    que o ponteiro é solto.
+  */
+  const partes: string[] = [];
+  if (offset !== null) partes.push(`translate(${offset.x} ${offset.y})`);
+  if (resizing !== null) {
+    const fatorX = resizing.from.w === 0 ? 1 : resizing.size.w / resizing.from.w;
+    const fatorY = resizing.from.h === 0 ? 1 : resizing.size.h / resizing.from.h;
+    partes.push(
+      `translate(${resizing.from.x} ${resizing.from.y})`,
+      `scale(${fatorX} ${fatorY})`,
+      `translate(${-resizing.from.x} ${-resizing.from.y})`,
+    );
+  }
+
   return (
-    <g data-testid="stroke-group" data-stroke-id={stroke.id} data-selected={selected}>
-      {selected ? (
-        <InkLine
-          points={stroke.points}
-          color="var(--color-selection)"
-          width={STROKE_WIDTH + SELECTION_HALO * 2}
-          testId="stroke-selected"
-        />
-      ) : null}
+    <g
+      data-testid="stroke-group"
+      data-stroke-id={stroke.id}
+      data-selected={selected}
+      data-dragging={offset !== null}
+      data-resizing={resizing !== null}
+      transform={partes.length === 0 ? undefined : partes.join(" ")}
+    >
       <InkLine points={stroke.points} color={strokeColor(stroke.color)} testId="stroke" />
       <polyline
         points={polylinePoints(stroke.points)}
@@ -158,13 +250,11 @@ function StrokeShape({
         // miolo de um rabisco fechado — um círculo, uma nuvem — viraria alvo também, e um
         // clique no vazio lá dentro selecionaria um traço que a pessoa não apontou.
         pointerEvents="stroke"
-        className="cursor-pointer"
-        onPointerDown={(event) => {
-          // O gesto para aqui: sem isto o mesmo `pointerdown` chegaria à superfície e
-          // começaria um retângulo de seleção por cima do traço recém-marcado.
-          event.stopPropagation();
-          onSelect?.(stroke.id, event.shiftKey);
-        }}
+        className="cursor-move touch-none"
+        onPointerDown={handlePointerDown}
+        onPointerMove={drag.onPointerMove}
+        onPointerUp={handlePointerUp}
+        onPointerCancel={handlePointerCancel}
         data-testid="stroke-hit"
       />
     </g>
@@ -182,7 +272,17 @@ function StrokeShape({
  * nesta mesma altura: o rabisco não salta de camada ao ser solto. O `z` do traço ordena os
  * traços entre si, que é a pilha à qual ele pertence.
  */
-export function Strokes({ strokes, selection, onSelect }: StrokesProps) {
+export function Strokes({
+  strokes,
+  selection,
+  onSelect,
+  offset = null,
+  onDragStart,
+  onDragMove,
+  onDragEnd,
+  onDragCancel,
+  resizing = null,
+}: StrokesProps) {
   // Ordenado por `z` na hora de desenhar, e não guardado ordenado: a ordem da lista é do
   // board, e é o `z` que diz quem fica por cima.
   const porZ = [...strokes].sort((a, b) => a.z - b.z);
@@ -195,6 +295,14 @@ export function Strokes({ strokes, selection, onSelect }: StrokesProps) {
           stroke={stroke}
           selected={selection?.has(stroke.id) ?? false}
           onSelect={onSelect}
+          // Arrastar move a seleção inteira junto: o gesto começa num traço, mas o
+          // deslocamento vale para todos os que estavam marcados.
+          offset={selection?.has(stroke.id) === true ? offset : null}
+          onDragStart={onDragStart}
+          onDragMove={onDragMove}
+          onDragEnd={onDragEnd}
+          onDragCancel={onDragCancel}
+          resizing={resizing?.id === stroke.id ? resizing : null}
         />
       ))}
     </InkLayer>

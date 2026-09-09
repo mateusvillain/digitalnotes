@@ -92,8 +92,15 @@ export function Whiteboard({ initialBoard, autosave }: WhiteboardProps) {
    * volta para quem acabou de provar que não precisa mais delas — e a peça reapareceria no
    * meio de uma limpeza de quadro, que é justamente quando ela mais atrapalha.
    */
-  const hasNotes = board.notes.length > 0;
-  const [taught, setTaught] = useState(hasNotes);
+  /**
+   * O quadro já tem alguma coisa dentro — nota ou rabisco.
+   *
+   * As duas contam. A apresentação existe para o quadro **vazio**, e quem desenhou um traço
+   * está tão longe do quadro vazio quanto quem criou uma nota; deixar o texto no meio da
+   * tela por cima do próprio desenho é justamente onde ele mais atrapalha.
+   */
+  const hasContent = board.notes.length > 0 || board.strokes.length > 0;
+  const [taught, setTaught] = useState(hasContent);
 
   /** Um gesto de ponteiro em curso sobre um post-it: arrastar ou redimensionar. */
   const inGesture = board.dragOffset !== null || board.resizing !== null;
@@ -153,26 +160,27 @@ export function Whiteboard({ initialBoard, autosave }: WhiteboardProps) {
   );
 
   /*
-    Armar a colocação já dispensa a apresentação, mesmo antes de a nota existir.
+    Ligar qualquer uma das duas ferramentas já dispensa a apresentação, antes mesmo de
+    existir nota ou traço.
 
-    Quem apertou `N` — ou achou o botão — acabou de provar que aprendeu o que a peça tinha
-    para ensinar, e é justamente aí que ela mais atrapalha: o texto fica no meio do quadro,
-    exatamente onde a nota fantasma passa a seguir o cursor.
+    Quem apertou `N` ou `P` — ou achou o botão — acabou de provar que aprendeu o que a peça
+    tinha para ensinar, e é justamente aí que ela mais atrapalha: o texto fica no meio do
+    quadro, exatamente onde a nota fantasma segue o cursor e onde o rabisco vai passar.
 
     Ajuste durante o render, e não num efeito: o efeito só rodaria depois da pintura, e a
     trava chegaria um quadro atrasada. React reinicia o render com o valor novo antes de
     pintar, então ninguém vê o estado intermediário.
   */
-  if ((hasNotes || placing) && !taught) setTaught(true);
+  if ((hasContent || placing || pencil) && !taught) setTaught(true);
 
   /**
    * A apresentação some no mesmo quadro em que o primeiro post-it aparece.
    *
-   * A condição olha `hasNotes` direto, e não só a trava acima: ela é um estado, e esperar
+   * A condição olha `hasContent` direto, e não só a trava acima: ela é um estado, e esperar
    * pelo render seguinte deixaria as instruções um quadro a mais na tela, por cima da nota
    * recém-criada.
    */
-  const showOnboarding = !hasNotes && !taught;
+  const showOnboarding = !hasContent && !taught;
 
   useKeyboardShortcuts({
     onDelete: board.deleteSelection,
@@ -187,7 +195,7 @@ export function Whiteboard({ initialBoard, autosave }: WhiteboardProps) {
       leadingActions={
         <div className="flex flex-col items-start gap-2">
           <NewBoardButton
-            hasNotes={board.notes.length > 0}
+            hasContent={hasContent}
             onNewBoard={board.resetBoard}
             share={share.share}
           />
@@ -237,12 +245,14 @@ export function Whiteboard({ initialBoard, autosave }: WhiteboardProps) {
             onSelect={(id, additive) => board.selectElement("note", id, additive)}
             onSelectStroke={(id, additive) => board.selectElement("stroke", id, additive)}
             dragOffset={board.dragOffset}
-            onDragStart={board.startDrag}
+            onDragStart={(id) => board.startDrag("note", id)}
+            onStrokeDragStart={(id) => board.startDrag("stroke", id)}
             onDragMove={dragBy}
             onDragEnd={board.endDrag}
             onDragCancel={board.cancelDrag}
             resizing={board.resizing}
-            onResizeStart={board.startResize}
+            onResizeStart={(id) => board.startResize("note", id)}
+            onStrokeResizeStart={(id) => board.startResize("stroke", id)}
             onResizeMove={resizeBy}
             onResizeEnd={board.endResize}
             onResizeCancel={board.cancelResize}

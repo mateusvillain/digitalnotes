@@ -2,6 +2,7 @@
 
 import { PostIt } from "@/components/postit/PostIt";
 import { Strokes } from "./Strokes";
+import { StrokeFrame } from "./StrokeFrame";
 import type { Selection } from "@/lib/board/selection";
 import type { Point } from "@/lib/canvas/coords";
 import type { Note, Stroke } from "@/lib/board/types";
@@ -21,6 +22,10 @@ interface BoardProps {
   onSelect?: (id: string, additive: boolean) => void;
   /** Clique num traço (#70). Espécie separada porque os ids só são únicos dentro da própria lista. */
   onSelectStroke?: (id: string, additive: boolean) => void;
+  /** Começou um arraste a partir de um traço (#70). */
+  onStrokeDragStart?: (id: string) => void;
+  /** Começou um redimensionamento a partir da alça de um traço (#70). */
+  onStrokeResizeStart?: (id: string) => void;
   /** Deslocamento em curso, aplicado a todo post-it selecionado. */
   dragOffset?: Point | null;
   onDragStart?: (id: string) => void;
@@ -54,6 +59,8 @@ export function Board({
   onEditCommit,
   onSelect,
   onSelectStroke,
+  onStrokeDragStart,
+  onStrokeResizeStart,
   dragOffset = null,
   onDragStart,
   onDragMove,
@@ -67,7 +74,37 @@ export function Board({
 }: BoardProps) {
   return (
     <>
-      <Strokes strokes={strokes} selection={selection?.strokes} onSelect={onSelectStroke} />
+      <Strokes
+        strokes={strokes}
+        selection={selection?.strokes}
+        onSelect={onSelectStroke}
+        offset={dragOffset}
+        onDragStart={onStrokeDragStart}
+        onDragMove={onDragMove}
+        onDragEnd={onDragEnd}
+        onDragCancel={onDragCancel}
+        resizing={resizing?.kind === "stroke" ? resizing : null}
+      />
+
+      {/*
+        As molduras vêm depois da tinta e antes dos post-its: uma caixa desenhada por baixo
+        do próprio traço ficaria escondida pelo rabisco que ela emoldura, e desenhada por
+        cima das notas apareceria atravessando post-its que não têm nada a ver com ela.
+      */}
+      {strokes
+        .filter((stroke) => selection?.strokes.has(stroke.id) === true)
+        .map((stroke) => (
+          <StrokeFrame
+            key={stroke.id}
+            stroke={stroke}
+            offset={dragOffset}
+            resizing={resizing?.kind === "stroke" && resizing.id === stroke.id ? resizing : null}
+            onResizeStart={onStrokeResizeStart}
+            onResizeMove={onResizeMove}
+            onResizeEnd={onResizeEnd}
+            onResizeCancel={onResizeCancel}
+          />
+        ))}
 
       {notes.map((note) => {
         const selected = selection?.notes.has(note.id) ?? false;
@@ -88,7 +125,7 @@ export function Board({
             onDragMove={onDragMove}
             onDragEnd={onDragEnd}
             onDragCancel={onDragCancel}
-            size={resizing?.id === note.id ? resizing.size : null}
+            size={resizing?.kind === "note" && resizing.id === note.id ? resizing.size : null}
             onResizeStart={onResizeStart}
             onResizeMove={onResizeMove}
             onResizeEnd={onResizeEnd}

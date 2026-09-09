@@ -8,12 +8,12 @@ import { UI } from "@/lib/i18n/ui";
 const SHARED: ShareState = { status: "shared", url: "https://site/board/abc" };
 
 function renderButton({
-  hasNotes = true,
+  hasContent = true,
   shareOutcome = SHARED,
-}: { hasNotes?: boolean; shareOutcome?: ShareState | null } = {}) {
+}: { hasContent?: boolean; shareOutcome?: ShareState | null } = {}) {
   const onNewBoard = vi.fn();
   const share = vi.fn<ShareApi["share"]>().mockResolvedValue(shareOutcome);
-  render(<NewBoardButton hasNotes={hasNotes} onNewBoard={onNewBoard} share={share} />);
+  render(<NewBoardButton hasContent={hasContent} onNewBoard={onNewBoard} share={share} />);
   return { onNewBoard, share };
 }
 
@@ -37,7 +37,7 @@ describe("NewBoardButton", () => {
   });
 
   it("com o quadro vazio, começa um novo sem perguntar nada", async () => {
-    const { onNewBoard } = renderButton({ hasNotes: false });
+    const { onNewBoard } = renderButton({ hasContent: false });
 
     await clickNew();
 
@@ -47,7 +47,7 @@ describe("NewBoardButton", () => {
   });
 
   it("com post-its na tela, oferece o link antes de substituir", async () => {
-    const { onNewBoard } = renderButton({ hasNotes: true });
+    const { onNewBoard } = renderButton({ hasContent: true });
 
     await clickNew();
 
@@ -58,7 +58,7 @@ describe("NewBoardButton", () => {
   });
 
   it("gera o link pelo mesmo caminho de compartilhar e só então limpa", async () => {
-    const { onNewBoard, share } = renderButton({ hasNotes: true });
+    const { onNewBoard, share } = renderButton({ hasContent: true });
     await clickNew();
 
     await userEvent.click(screen.getByRole("button", { name: UI.en.newBoard.saveAndStart }));
@@ -73,7 +73,7 @@ describe("NewBoardButton", () => {
     ["board grande demais", { status: "too-large" } as ShareState],
     ["envio substituído por outro", null],
   ])("não limpa o quadro quando o link não sai: %s", async (_caso, outcome) => {
-    const { onNewBoard } = renderButton({ hasNotes: true, shareOutcome: outcome });
+    const { onNewBoard } = renderButton({ hasContent: true, shareOutcome: outcome });
     await clickNew();
 
     await userEvent.click(screen.getByRole("button", { name: UI.en.newBoard.saveAndStart }));
@@ -86,7 +86,7 @@ describe("NewBoardButton", () => {
   });
 
   it("permite seguir sem gerar link nenhum", async () => {
-    const { onNewBoard, share } = renderButton({ hasNotes: true });
+    const { onNewBoard, share } = renderButton({ hasContent: true });
     await clickNew();
 
     await userEvent.click(screen.getByRole("button", { name: UI.en.newBoard.startWithoutSaving }));
@@ -97,7 +97,7 @@ describe("NewBoardButton", () => {
   });
 
   it("desistir não mexe em nada", async () => {
-    const { onNewBoard, share } = renderButton({ hasNotes: true });
+    const { onNewBoard, share } = renderButton({ hasContent: true });
     await clickNew();
 
     await userEvent.click(screen.getByRole("button", { name: UI.en.newBoard.cancel }));
@@ -108,7 +108,7 @@ describe("NewBoardButton", () => {
   });
 
   it("fecha com Esc e devolve o foco ao botão", async () => {
-    const { onNewBoard } = renderButton({ hasNotes: true });
+    const { onNewBoard } = renderButton({ hasContent: true });
     await clickNew();
 
     await userEvent.keyboard("{Escape}");
@@ -122,7 +122,7 @@ describe("NewBoardButton", () => {
   });
 
   it("devolve o foco ao botão também quando o link é gerado com sucesso", async () => {
-    const { onNewBoard } = renderButton({ hasNotes: true });
+    const { onNewBoard } = renderButton({ hasContent: true });
     await clickNew();
 
     await userEvent.click(screen.getByRole("button", { name: UI.en.newBoard.saveAndStart }));
@@ -141,7 +141,7 @@ describe("NewBoardButton", () => {
         resolveShare = resolve;
       }),
     );
-    render(<NewBoardButton hasNotes onNewBoard={vi.fn()} share={share} />);
+    render(<NewBoardButton hasContent onNewBoard={vi.fn()} share={share} />);
     await clickNew();
 
     await userEvent.click(screen.getByRole("button", { name: UI.en.newBoard.saveAndStart }));

@@ -1,6 +1,13 @@
 import { describe, expect, it } from "vitest";
 import type { Rect } from "@/lib/canvas/coords";
-import { strokeBounds, strokeIntersectsRect, strokePoints } from "./stroke-geometry";
+import {
+  STROKE_MIN_SIZE,
+  scaleStrokePoints,
+  strokeBounds,
+  strokeIntersectsRect,
+  strokePoints,
+  translateStrokePoints,
+} from "./stroke-geometry";
 import type { Stroke } from "./types";
 
 function stroke(points: number[]): Stroke {
@@ -107,5 +114,59 @@ describe("strokeIntersectsRect", () => {
     const zigue = stroke([0, 0, 10, 10, 500, 500, 510, 510]);
 
     expect(strokeIntersectsRect(zigue, rect(200, 200, 50, 50))).toBe(true);
+  });
+});
+
+describe("translateStrokePoints", () => {
+  it("desloca x e y, cada um no próprio eixo", () => {
+    expect(translateStrokePoints(stroke([0, 0, 10, 20]), { x: 5, y: -3 })).toEqual([5, -3, 15, 17]);
+  });
+
+  it("deslocamento nulo devolve os mesmos números", () => {
+    expect(translateStrokePoints(stroke([1, 2, 3, 4]), { x: 0, y: 0 })).toEqual([1, 2, 3, 4]);
+  });
+});
+
+describe("scaleStrokePoints", () => {
+  const de = { x: 0, y: 0, w: 100, h: 100 };
+
+  it("dobra o traço ancorando no canto de partida", () => {
+    const dobrado = scaleStrokePoints(stroke([0, 0, 50, 100]), de, { w: 200, h: 200 });
+
+    // O canto de partida fica parado, e o resto se afasta dele na proporção.
+    expect(dobrado).toEqual([0, 0, 100, 200]);
+  });
+
+  it("ancora no canto de partida mesmo longe da origem", () => {
+    const caixa = { x: 100, y: 100, w: 100, h: 100 };
+    const dobrado = scaleStrokePoints(stroke([100, 100, 200, 200]), caixa, { w: 200, h: 200 });
+
+    expect(dobrado).toEqual([100, 100, 300, 300]);
+  });
+
+  it("encolher também vale", () => {
+    expect(scaleStrokePoints(stroke([0, 0, 100, 100]), de, { w: 50, h: 50 })).toEqual([
+      0, 0, 50, 50,
+    ]);
+  });
+
+  it("tamanho igual devolve o traço onde estava", () => {
+    expect(scaleStrokePoints(stroke([10, 20, 30, 40]), de, { w: 100, h: 100 })).toEqual([
+      10, 20, 30, 40,
+    ]);
+  });
+
+  /**
+   * Um risco perfeitamente horizontal não tem altura. Multiplicar por `size.h / 0` daria
+   * `Infinity` ou `NaN` em todo ponto, e o traço sumiria do quadro em vez de crescer.
+   */
+  it("não divide por zero num eixo sem extensão", () => {
+    const horizontal = stroke([0, 50, 100, 50]);
+    const chato = { x: 0, y: 50, w: 100, h: 0 };
+
+    const esticado = scaleStrokePoints(horizontal, chato, { w: 200, h: STROKE_MIN_SIZE });
+
+    expect(esticado).toEqual([0, 50, 200, 50]);
+    expect(esticado.every((value) => Number.isFinite(value))).toBe(true);
   });
 });

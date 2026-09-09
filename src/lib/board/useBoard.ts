@@ -17,7 +17,12 @@ import {
   type ElementKind,
   type Selection,
 } from "./selection";
-import { strokeBounds } from "./stroke-geometry";
+import {
+  STROKE_MIN_SIZE,
+  scaleStrokePoints,
+  strokeBounds,
+  translateStrokePoints,
+} from "./stroke-geometry";
 import { clampNoteSize } from "./schema";
 import { createBoardStore } from "./store";
 import { useLocalPersistence } from "./useLocalPersistence";
@@ -31,9 +36,20 @@ import {
   type Stroke,
 } from "./types";
 
-/** Um post-it em redimensionamento e o tamanho que ele tem agora, durante o gesto. */
+/**
+ * O elemento em redimensionamento e o tamanho que ele tem agora, durante o gesto.
+ *
+ * `from` é a caixa de quando o gesto começou, e não só a origem: o post-it guarda o próprio
+ * tamanho e poderia ser relido da store, mas o traço não tem tamanho — ele tem pontos, e a
+ * escala aplicada a eles precisa saber de que caixa se partiu. Medi-la de novo a cada
+ * movimento daria uma caixa já reescalada, e o rabisco cresceria em progressão geométrica.
+ */
 export interface Resizing {
+  kind: ElementKind;
   id: string;
+  /** Caixa do elemento no começo do gesto, em coordenadas de canvas. */
+  from: Rect;
+  /** Tamanho agora, já limitado ao que a espécie aceita. */
   size: Size;
 }
 
@@ -85,19 +101,19 @@ export interface BoardApi {
    * arraste. É otimista: mora fora da store até o gesto terminar.
    */
   dragOffset: Point | null;
-  /** Começa a arrastar a partir de um post-it, que já chega selecionado. */
-  startDrag: (id: string) => void;
+  /** Começa a arrastar a partir de um elemento, que já chega selecionado. */
+  startDrag: (kind: ElementKind, id: string) => void;
   /** Move a seleção enquanto o gesto acontece, sem tocar na store. */
   dragBy: (offset: Point) => void;
   /** Grava as posições finais numa publicação só, e encerra o arraste. */
   endDrag: () => void;
   /** Desfaz o arraste sem gravar nada. */
   cancelDrag: () => void;
-  /** Post-it sendo redimensionado e o tamanho que ele tem agora, ou `null`. */
+  /** Elemento sendo redimensionado e o tamanho que ele tem agora, ou `null`. */
   resizing: Resizing | null;
-  /** Começa a redimensionar um post-it. */
-  startResize: (id: string) => void;
-  /** Cresce ou encolhe o post-it em curso, em coordenadas de canvas. */
+  /** Começa a redimensionar um elemento — post-it ou traço. */
+  startResize: (kind: ElementKind, id: string) => void;
+  /** Cresce ou encolhe o elemento em curso, em coordenadas de canvas. */
   resizeBy: (delta: Point) => void;
   endResize: () => void;
   cancelResize: () => void;
@@ -282,12 +298,15 @@ export function useBoard({ initialBoard, autosave = true }: UseBoardOptions = {}
   const clearSelection = useCallback(() => publishSelection(EMPTY_SELECTION), [publishSelection]);
 
   const startDrag = useCallback(
-    (id: string) => {
+    (kind: ElementKind, id: string) => {
       publishDragOffset({ x: 0, y: 0 });
       // Pegar um post-it é apontar para ele, como clicar: ele vai para a frente dos demais.
       // Sem isto, arrastar um post-it de dentro de uma seleção o deixaria atrás — a seleção
       // já existia, então nenhum clique chegou a promovê-lo.
-      store.bringToFront(id);
+      //
+      // O traço não é promovido, pela mesma razão de `selectElement`: a tinta vive numa
+      // camada só, e reordenar rabiscos entre si não muda nada que se veja.
+      if (kind === "note") store.bringToFront(id);
     },
     [publishDragOffset, store],
   );
@@ -299,33 +318,52 @@ export function useBoard({ initialBoard, autosave = true }: UseBoardOptions = {}
     publishDragOffset(null);
     if (offset === null) return;
 
-    // Uma publicação só para a seleção inteira: quem escuta é a persistência, que reescreve
-    // a URL a cada aviso. E inteiros, porque cada casa decimal custa caracteres de link — e
-    // porque o zoom faz o deslocamento chegar aqui fracionado.
-    store.updateNotes(
-      store
-        .getBoard()
-        .notes.filter((note) => selectionRef.current.notes.has(note.id))
+    // Uma publicação só para a seleção inteira, notas e traços juntos: quem escuta é a
+    // persistência, que reescreve a URL a cada aviso. E inteiros, porque cada casa decimal
+    // custa caracteres de link — e porque o zoom faz o deslocamento chegar aqui fracionado.
+    const board = store.getBoard();
+    const arredondado = { x: Math.round(offset.x), y: Math.round(offset.y) };
+
+    store.updateElements(
+      board.notes
+        .filter((note) => selectionRef.current.notes.has(note.id))
         .map((note) => ({
           id: note.id,
-          patch: {
-            x: Math.round(note.x + offset.x),
-            y: Math.round(note.y + offset.y),
-          },
+          patch: { x: note.x + arredondado.x, y: note.y + arredondado.y },
+        })),
+      board.strokes
+        .filter((stroke) => selectionRef.current.strokes.has(stroke.id))
+        .map((stroke) => ({
+          id: stroke.id,
+          patch: { points: translateStrokePoints(stroke, arredondado) },
         })),
     );
   }, [publishDragOffset, store]);
 
   const cancelDrag = useCallback(() => publishDragOffset(null), [publishDragOffset]);
 
-  const startResize = useCallback(
-    (id: string) => {
-      const note = store.getNote(id);
-      if (note === undefined) return;
+  /** A caixa de um elemento agora, em coordenadas de canvas, ou `null` se ele sumiu. */
+  const rectOf = useCallback(
+    (kind: ElementKind, id: string): Rect | null => {
+      if (kind === "note") {
+        const note = store.getNote(id);
+        return note === undefined ? null : { x: note.x, y: note.y, w: note.w, h: note.h };
+      }
 
-      publishResizing({ id, size: { w: note.w, h: note.h } });
+      const stroke = store.getBoard().strokes.find((candidate) => candidate.id === id);
+      return stroke === undefined ? null : strokeBounds(stroke);
     },
-    [publishResizing, store],
+    [store],
+  );
+
+  const startResize = useCallback(
+    (kind: ElementKind, id: string) => {
+      const from = rectOf(kind, id);
+      if (from === null) return;
+
+      publishResizing({ kind, id, from, size: { w: from.w, h: from.h } });
+    },
+    [publishResizing, rectOf],
   );
 
   const resizeBy = useCallback(
@@ -333,21 +371,26 @@ export function useBoard({ initialBoard, autosave = true }: UseBoardOptions = {}
       const current = resizingRef.current;
       if (current === null) return;
 
-      // Medido a partir do tamanho de quando o gesto começou, e não do quadro anterior: o
+      // Medido a partir da caixa de quando o gesto começou, e não da de agora: o
       // deslocamento já vem acumulado desde a origem, e somá-lo ao tamanho atual faria o
-      // post-it crescer o dobro.
-      const note = store.getNote(current.id);
-      if (note === undefined) return;
+      // elemento crescer o dobro.
+      const querido = { w: current.from.w + delta.x, h: current.from.h + delta.y };
 
       // O limite é aplicado enquanto se arrasta, e não só ao gravar: deixar encolher além
-      // do mínimo e devolver o tamanho ao soltar faria o post-it saltar na frente de quem
-      // o estava ajustando.
-      publishResizing({
-        id: current.id,
-        size: clampNoteSize({ w: note.w + delta.x, h: note.h + delta.y }),
-      });
+      // do mínimo e devolver o tamanho ao soltar faria o elemento saltar na frente de quem
+      // o estava ajustando. Cada espécie tem o próprio mínimo — a nota precisa caber texto,
+      // e o rabisco só precisa não achatar até zero.
+      const size =
+        current.kind === "note"
+          ? clampNoteSize(querido)
+          : {
+              w: Math.max(querido.w, STROKE_MIN_SIZE),
+              h: Math.max(querido.h, STROKE_MIN_SIZE),
+            };
+
+      publishResizing({ ...current, size });
     },
-    [publishResizing, store],
+    [publishResizing],
   );
 
   const endResize = useCallback(() => {
@@ -355,12 +398,31 @@ export function useBoard({ initialBoard, autosave = true }: UseBoardOptions = {}
     publishResizing(null);
     if (current === null) return;
 
-    // Inteiros, como na posição: cada casa decimal custa caracteres de link, e o zoom faz o
-    // deslocamento chegar aqui fracionado.
-    store.updateNote(current.id, {
-      w: Math.round(current.size.w),
-      h: Math.round(current.size.h),
-    });
+    if (current.kind === "note") {
+      // Inteiros, como na posição: cada casa decimal custa caracteres de link, e o zoom faz
+      // o deslocamento chegar aqui fracionado.
+      store.updateNote(current.id, {
+        w: Math.round(current.size.w),
+        h: Math.round(current.size.h),
+      });
+      return;
+    }
+
+    const stroke = store.getBoard().strokes.find((candidate) => candidate.id === current.id);
+    if (stroke === undefined) return;
+
+    // Os pontos são arredondados um a um, e não a caixa: é neles que o custo de link mora, e
+    // arredondar só o tamanho deixaria o traço inteiro com casas decimais.
+    store.updateStrokes([
+      {
+        id: current.id,
+        patch: {
+          points: scaleStrokePoints(stroke, current.from, current.size).map((value) =>
+            Math.round(value),
+          ),
+        },
+      },
+    ]);
   }, [publishResizing, store]);
 
   const cancelResize = useCallback(() => publishResizing(null), [publishResizing]);

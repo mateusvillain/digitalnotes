@@ -11,7 +11,13 @@
  * um componente montado para ser testada.
  */
 
-import { rectFromCorners, segmentIntersectsRect, type Point, type Rect } from "@/lib/canvas/coords";
+import {
+  rectFromCorners,
+  segmentIntersectsRect,
+  type Point,
+  type Rect,
+  type Size,
+} from "@/lib/canvas/coords";
 import type { Stroke } from "./types";
 
 /**
@@ -77,4 +83,38 @@ export function strokeIntersectsRect(stroke: Stroke, rect: Rect): boolean {
   }
 
   return false;
+}
+
+/**
+ * Menor lado que um traço pode ter depois de redimensionado, em unidades de canvas.
+ *
+ * Bem menor que o mínimo do post-it, e de propósito: uma nota precisa caber texto, e um
+ * rabisco não precisa caber nada. O que este número impede é o achatamento até zero, do
+ * qual não há volta — um traço sem largura perde a proporção e não cresce de novo, porque
+ * não sobra dimensão para multiplicar.
+ */
+export const STROKE_MIN_SIZE = 4;
+
+/** O traço deslocado, em coordenadas de canvas. Devolve a lista achatada do contrato. */
+export function translateStrokePoints(stroke: Stroke, offset: Point): number[] {
+  return stroke.points.map((value, index) => value + (index % 2 === 0 ? offset.x : offset.y));
+}
+
+/**
+ * O traço reescalado para caber num tamanho novo, ancorado no canto superior esquerdo.
+ *
+ * Mesma âncora do post-it, e pela mesma razão: a alça fica no canto oposto, e crescer para
+ * a direita e para baixo é a única direção em que a posição não precisa mudar junto.
+ *
+ * Um eixo sem extensão — um risco perfeitamente horizontal não tem altura — é deixado como
+ * está, e não multiplicado. Não há proporção a preservar num eixo de tamanho zero, e a
+ * conta seria uma divisão por zero: o traço inteiro viraria `NaN` e sumiria do quadro.
+ */
+export function scaleStrokePoints(stroke: Stroke, from: Rect, size: Size): number[] {
+  const fatorX = from.w === 0 ? 1 : size.w / from.w;
+  const fatorY = from.h === 0 ? 1 : size.h / from.h;
+
+  return stroke.points.map((value, index) =>
+    index % 2 === 0 ? from.x + (value - from.x) * fatorX : from.y + (value - from.y) * fatorY,
+  );
 }
