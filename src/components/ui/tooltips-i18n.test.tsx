@@ -35,6 +35,9 @@ describe("interface do quadro em cada idioma", () => {
       // para o lápis e para a colocação de nota em quem não tem teclado.
       expect(screen.getByRole("button", { name: ui.note.action })).toBeDefined();
       expect(screen.getByRole("button", { name: ui.pencil.action })).toBeDefined();
+      expect(screen.getByRole("button", { name: ui.select.action })).toBeDefined();
+      expect(screen.getByRole("button", { name: ui.history.undo })).toBeDefined();
+      expect(screen.getByRole("button", { name: ui.history.redo })).toBeDefined();
       expect(screen.getByRole("button", { name: ui.zoom.in })).toBeDefined();
       expect(screen.getByRole("button", { name: ui.zoom.out })).toBeDefined();
       expect(screen.getByRole("button", { name: ui.zoom.reset })).toBeDefined();

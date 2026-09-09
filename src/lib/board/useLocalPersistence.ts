@@ -132,8 +132,11 @@ export function useLocalPersistence(store: BoardStore, enabled = true): void {
         // `dirty` com o quadro vazio é o oposto — apagar tudo ou começar um quadro novo
         // (#58). Mesclar aqui ressuscitaria justamente o board que acabou de ser
         // descartado.
-        if (!dirty) store.replaceBoard(board);
-        else if (current.notes.length > 0) store.replaceBoard(mergeBoards(board, current));
+        // `restoreBoard`, e não `replaceBoard`: isto não é uma alteração, é o quadro
+        // chegando. Gravado como passo de desfazer, um `Ctrl+Z` logo depois de abrir a aba
+        // devolveria o board vazio do primeiro render e apagaria a sessão restaurada (#86).
+        if (!dirty) store.restoreBoard(board);
+        else if (current.notes.length > 0) store.restoreBoard(mergeBoards(board, current));
       }
 
       restored = true;

@@ -9,6 +9,7 @@ import { useViewport } from "@/lib/canvas/useViewport";
 import { useTouchPrimary } from "@/lib/dom/useTouchPrimary";
 import { ColorPicker } from "@/components/postit/ColorPicker";
 import { SelectButton } from "@/components/ui/SelectButton";
+import { HistoryButtons } from "@/components/ui/HistoryButtons";
 import { NewBoardButton } from "@/components/ui/NewBoardButton";
 import { NoteButton } from "@/components/ui/NoteButton";
 import { PencilButton } from "@/components/ui/PencilButton";
@@ -207,6 +208,8 @@ export function Whiteboard({ initialBoard, autosave }: WhiteboardProps) {
     onDelete: board.deleteSelection,
     onPlaceNote: togglePlacing,
     onSave: save,
+    onUndo: board.undo,
+    onRedo: board.redo,
     onTogglePencil: togglePencil,
     onCancel: selectTool,
     onSelectTool: selectTool,
@@ -233,7 +236,18 @@ export function Whiteboard({ initialBoard, autosave }: WhiteboardProps) {
         </div>
       }
       trailingActions={
-        <ShareButton state={share.state} share={share.share} dismiss={share.dismiss} />
+        // Desfazer à esquerda de salvar: o canto deixa de ser uma ação só e vira um grupo,
+        // com o histórico antes porque é o que se usa durante o trabalho e o salvar depois,
+        // porque é o que o encerra. `gap-2` é o mesmo respiro da pilha do canto oposto.
+        <div className="flex items-start gap-2">
+          <HistoryButtons
+            canUndo={board.canUndo}
+            canRedo={board.canRedo}
+            onUndo={board.undo}
+            onRedo={board.redo}
+          />
+          <ShareButton state={share.state} share={share.share} dismiss={share.dismiss} />
+        </div>
       }
       controls={
         // No toque a pinça faz o mesmo trabalho, e o painel só disputaria o canto onde o

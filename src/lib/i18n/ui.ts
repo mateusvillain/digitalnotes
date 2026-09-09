@@ -40,6 +40,8 @@ export interface UiCopy {
   zoom: { out: string; reset: string; in: string };
   /** Nome do botão da ferramenta de seleção (#83) — a mesma ação da tecla `V`. */
   select: { action: string };
+  /** Nomes dos botões de desfazer e refazer (#87) — as mesmas ações de `Ctrl+Z` e `Ctrl+Shift+Z`. */
+  history: { undo: string; redo: string };
   pencil: {
     /** Dica e `aria-label` do botão que liga o modo lápis (#68). */
     action: string;
@@ -83,6 +85,7 @@ export const UI: Record<Locale, UiCopy> = {
     },
     zoom: { out: "Zoom out", reset: "Reset zoom to 100%", in: "Zoom in" },
     select: { action: "Select" },
+    history: { undo: "Undo", redo: "Redo" },
     pencil: { action: "Pencil" },
     note: {
       action: "Note",
@@ -136,6 +139,7 @@ export const UI: Record<Locale, UiCopy> = {
     },
     zoom: { out: "Diminuir zoom", reset: "Voltar o zoom para 100%", in: "Aumentar zoom" },
     select: { action: "Seleção" },
+    history: { undo: "Desfazer", redo: "Refazer" },
     pencil: { action: "Lápis" },
     note: {
       action: "Nota",

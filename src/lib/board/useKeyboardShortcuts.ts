@@ -16,6 +16,10 @@ interface KeyboardShortcutsOptions {
   onPlaceNote: () => void;
   /** Salvar o quadro — a mesma ação do botão, num atalho que todo mundo já tem no dedo. */
   onSave: () => void;
+  /** `Ctrl+Z`: desfazer a última alteração do quadro (#86). */
+  onUndo: () => void;
+  /** `Ctrl+Shift+Z` (e `Ctrl+Y`): refazer o que o desfazer levou. */
+  onRedo: () => void;
   /** Ligar e desligar o modo lápis (#68). A mesma tecla faz as duas coisas. */
   onTogglePencil: () => void;
   /**
@@ -64,6 +68,8 @@ export function useKeyboardShortcuts({
   onDelete,
   onPlaceNote,
   onSave,
+  onUndo,
+  onRedo,
   onTogglePencil,
   onSelectTool,
   onCancel,
@@ -78,13 +84,24 @@ export function useKeyboardShortcuts({
     onDelete,
     onPlaceNote,
     onSave,
+    onUndo,
+    onRedo,
     onTogglePencil,
     onSelectTool,
     onCancel,
   });
   useEffect(() => {
-    handlers.current = { onDelete, onPlaceNote, onSave, onTogglePencil, onSelectTool, onCancel };
-  }, [onDelete, onPlaceNote, onSave, onTogglePencil, onSelectTool, onCancel]);
+    handlers.current = {
+      onDelete,
+      onPlaceNote,
+      onSave,
+      onUndo,
+      onRedo,
+      onTogglePencil,
+      onSelectTool,
+      onCancel,
+    };
+  }, [onDelete, onPlaceNote, onSave, onUndo, onRedo, onTogglePencil, onSelectTool, onCancel]);
 
   useEffect(() => {
     function handleKeyDown(event: KeyboardEvent): void {
@@ -100,6 +117,31 @@ export function useKeyboardShortcuts({
         event.preventDefault();
         handlers.current.onSave();
         return;
+      }
+
+      /**
+       * Desfazer e refazer (#86).
+       *
+       * Antes da guarda de tecla nua, porque são atalhos **com** modificador — e com a
+       * guarda do campo de texto por dentro, ao contrário do `Ctrl+S` logo acima. A
+       * diferença é de quem a tecla pertence: salvar o quadro vale mesmo escrevendo, mas
+       * `Ctrl+Z` dentro de um post-it é o desfazer do próprio texto, e roubá-lo tiraria de
+       * quem está digitando a única forma de voltar atrás no que escreveu.
+       *
+       * `Ctrl+Y` refaz também: é a convenção do Windows, e quem a tem no dedo não deveria
+       * ter de aprender a outra.
+       */
+      if ((event.metaKey || event.ctrlKey) && !event.altKey) {
+        const key = event.key.toLowerCase();
+
+        if (key === "z" || key === "y") {
+          if (isEditableTarget(event.target)) return;
+
+          event.preventDefault();
+          if (key === "y" || event.shiftKey) handlers.current.onRedo();
+          else handlers.current.onUndo();
+          return;
+        }
       }
 
       // Daqui para baixo, tudo é atalho de tecla nua. Com um modificador segurado a tecla

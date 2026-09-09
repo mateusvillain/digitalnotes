@@ -467,3 +467,172 @@ describe("subscribe", () => {
     expect(outro).toHaveBeenCalledOnce();
   });
 });
+
+describe("BoardStore — histórico (#86)", () => {
+  it("começa sem nada para desfazer nem refazer", () => {
+    const store = createBoardStore();
+
+    expect(store.getHistory()).toEqual({ canUndo: false, canRedo: false });
+  });
+
+  it("desfaz a última alteração e refaz de volta", () => {
+    const store = createBoardStore();
+    add(store, { x: 0, y: 0 });
+    expect(store.getBoard().notes).toHaveLength(1);
+
+    store.undo();
+    expect(store.getBoard().notes).toEqual([]);
+    expect(store.getHistory()).toEqual({ canUndo: false, canRedo: true });
+
+    store.redo();
+    expect(store.getBoard().notes).toHaveLength(1);
+    expect(store.getHistory()).toEqual({ canUndo: true, canRedo: false });
+  });
+
+  it("desfaz vários passos, na ordem inversa", () => {
+    const store = createBoardStore();
+    add(store, { x: 0, y: 0 });
+    add(store, { x: 100, y: 0 });
+    add(store, { x: 200, y: 0 });
+
+    store.undo();
+    store.undo();
+
+    expect(store.getBoard().notes).toHaveLength(1);
+  });
+
+  /**
+   * A unidade de passo é o `commit`, que já era o gargalo que decidia o que é **uma**
+   * publicação. Um lote apagado de uma vez volta de uma vez, de graça.
+   */
+  it("um lote apagado de uma vez é um passo só", () => {
+    const store = createBoardStore();
+    const a = add(store, { x: 0, y: 0 });
+    const b = add(store, { x: 100, y: 0 });
+
+    store.removeNotes([a.id, b.id]);
+    expect(store.getBoard().notes).toEqual([]);
+
+    store.undo();
+
+    expect(store.getBoard().notes).toHaveLength(2);
+  });
+
+  it("uma alteração nova descarta o que havia para refazer", () => {
+    const store = createBoardStore();
+    add(store, { x: 0, y: 0 });
+    store.undo();
+    expect(store.getHistory().canRedo).toBe(true);
+
+    add(store, { x: 500, y: 500 });
+
+    expect(store.getHistory().canRedo).toBe(false);
+    store.redo();
+    expect(store.getBoard().notes).toHaveLength(1);
+  });
+
+  it("desfazer sem passo guardado não faz nada", () => {
+    const store = createBoardStore();
+    const antes = store.getBoard();
+
+    store.undo();
+    store.redo();
+
+    expect(store.getBoard()).toBe(antes);
+  });
+
+  /**
+   * Uma operação sem efeito não publica — e por isso também não gasta um passo. Sem essa
+   * regra, um `Delete` com a seleção cheia de ids que já não existem encheria o histórico
+   * de passos que não desfazem nada.
+   */
+  it("operação sem efeito não vira passo", () => {
+    const store = createBoardStore();
+    add(store, { x: 0, y: 0 });
+
+    store.removeNotes(["nao-existe"]);
+    store.undo();
+
+    expect(store.getBoard().notes).toEqual([]);
+  });
+
+  it("avisa os inscritos ao desfazer, como em qualquer alteração", () => {
+    const store = createBoardStore();
+    add(store, { x: 0, y: 0 });
+    const listener = vi.fn();
+    store.subscribe(listener);
+
+    store.undo();
+
+    expect(listener).toHaveBeenCalledOnce();
+  });
+
+  /**
+   * `getHistory` devolve o **mesmo** objeto enquanto os dois valores não mudam. É o que o
+   * `useSyncExternalStore` exige: uma leitura que devolvesse objeto novo a cada chamada o
+   * faria renderizar em laço infinito.
+   */
+  it("a leitura do histórico é estável por identidade", () => {
+    const store = createBoardStore();
+
+    expect(store.getHistory()).toBe(store.getHistory());
+
+    add(store, { x: 0, y: 0 });
+    const depois = store.getHistory();
+
+    expect(depois).toBe(store.getHistory());
+    expect(depois.canUndo).toBe(true);
+  });
+
+  it("o novo quadro é desfazível, como qualquer alteração", () => {
+    const store = createBoardStore();
+    add(store, { x: 0, y: 0 });
+
+    store.replaceBoard(createEmptyBoard());
+    expect(store.getBoard().notes).toEqual([]);
+
+    store.undo();
+
+    expect(store.getBoard().notes).toHaveLength(1);
+  });
+
+  /**
+   * Restaurar não é alterar: é o quadro chegando. Gravado como passo, um `Ctrl+Z` logo
+   * depois de abrir a aba devolveria o board vazio do primeiro render e apagaria a sessão
+   * que a restauração acabou de trazer.
+   */
+  it("restaurar não deixa passo, e zera o histórico anterior", () => {
+    const store = createBoardStore();
+    add(store, { x: 0, y: 0 });
+    expect(store.getHistory().canUndo).toBe(true);
+
+    const restaurado: Board = {
+      version: SCHEMA_VERSION,
+      notes: [{ id: "abc123", x: 5, y: 5, w: 100, h: 100, color: 0, text: "salvo", z: 1 }],
+      strokes: [],
+    };
+    store.restoreBoard(restaurado);
+
+    expect(store.getHistory()).toEqual({ canUndo: false, canRedo: false });
+    store.undo();
+    expect(store.getBoard().notes[0]?.text).toBe("salvo");
+  });
+
+  /** O teto existe para limitar memória, e desfazer sempre anda para trás a partir de agora. */
+  it("o passo mais antigo cai fora quando a pilha enche", () => {
+    const store = createBoardStore();
+    const primeira = add(store, { x: 0, y: 0 });
+
+    // Bem acima do teto de 50: o primeiro passo já saiu da pilha muito antes do fim.
+    for (let volta = 0; volta < 80; volta += 1) {
+      store.updateNote(primeira.id, { x: volta + 1 });
+    }
+    for (let volta = 0; volta < 80; volta += 1) {
+      store.undo();
+    }
+
+    // A criação não volta: desfazer não alcança mais o começo da sessão.
+    expect(store.getBoard().notes).toHaveLength(1);
+    expect(store.getHistory().canUndo).toBe(false);
+  });
+});
