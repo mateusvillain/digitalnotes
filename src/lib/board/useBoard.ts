@@ -24,6 +24,7 @@ import {
   strokeBounds,
   translateStrokePoints,
 } from "./stroke-geometry";
+import { parseClipboard, serializeSelection } from "./clipboard";
 import { clampNoteSize } from "./schema";
 import { createBoardStore } from "./store";
 import { useLocalPersistence } from "./useLocalPersistence";
@@ -36,6 +37,16 @@ import {
   type NoteColor,
   type Stroke,
 } from "./types";
+
+/**
+ * Deslocamento de cada colagem, em unidades de canvas (#88).
+ *
+ * Existe porque colar em cima do original é indistinguível de não ter colado: a pessoa vê o
+ * mesmo quadro e só descobre a cópia ao arrastar. O valor é pequeno de propósito — o
+ * bastante para as duas caixas se separarem, pouco o bastante para o colado nascer perto de
+ * onde se estava olhando.
+ */
+const PASTE_OFFSET = 20;
 
 /**
  * O elemento em redimensionamento e o tamanho que ele tem agora, durante o gesto.
@@ -130,6 +141,25 @@ export interface BoardApi {
   clearSelection: () => void;
   /** Marca tudo que existe no quadro, notas e traços (#85). */
   selectEverything: () => void;
+  /**
+   * O recorte marcado, pronto para a área de transferência (#88).
+   *
+   * Devolve o texto em vez de escrever no clipboard: quem sabe pedir permissão e lidar com
+   * a `Promise` do navegador é a camada de cima, e uma função pura de board não deveria
+   * precisar de um `navigator` para ser testada.
+   *
+   * `null` quando não há nada marcado — um `Ctrl+C` sem seleção não pode apagar o que a
+   * pessoa tinha copiado de outro programa.
+   */
+  copySelection: () => string | null;
+  /**
+   * Cola um recorte no quadro, com ids novos, e o deixa marcado (#88).
+   *
+   * Devolve `false` quando o texto não é um recorte deste quadro — texto solto, JSON de
+   * outra coisa, board de uma versão mais nova. Quem chama usa isso para decidir se engole
+   * o evento de colar ou o devolve ao navegador.
+   */
+  pasteFromClipboard: (text: string) => boolean;
   /** As notes marcadas. É por elas que passa o que só vale para post-it: colorir (#17). */
   selected: readonly Note[];
   /**
@@ -328,6 +358,67 @@ export function useBoard({ initialBoard, autosave = true }: UseBoardOptions = {}
     const current = store.getBoard();
     publishSelection(selectAll(current.notes, current.strokes));
   }, [publishSelection, store]);
+
+  const copySelection = useCallback(
+    () => serializeSelection(store.getBoard(), selectionRef.current),
+    [store],
+  );
+
+  /**
+   * Quantas vezes o mesmo recorte já foi colado em seguida.
+   *
+   * É o que faz colar duas vezes dar dois resultados, e não dois elementos empilhados. O
+   * deslocamento cresce a cada colagem seguida do **mesmo** conteúdo; copiar outra coisa
+   * recomeça a contagem, porque aí o ponto de partida é outro.
+   *
+   * Em ref, e não em estado: ninguém desenha isto, e um estado faria o quadro re-renderizar
+   * ao colar duas vezes por um motivo que não aparece na tela.
+   */
+  const pasteCascade = useRef<{ text: string; count: number } | null>(null);
+
+  const pasteFromClipboard = useCallback(
+    (text: string): boolean => {
+      const recorte = parseClipboard(text);
+      if (recorte === null) return false;
+
+      const anterior = pasteCascade.current;
+      const count = anterior !== null && anterior.text === text ? anterior.count + 1 : 1;
+      pasteCascade.current = { text, count };
+
+      const offset = PASTE_OFFSET * count;
+      const criados = store.addElements(
+        recorte.notes.map((note) => ({
+          x: note.x + offset,
+          y: note.y + offset,
+          w: note.w,
+          h: note.h,
+          color: note.color,
+          text: note.text,
+        })),
+        recorte.strokes.map((stroke) => ({
+          color: stroke.color,
+          points: translateStrokePoints(stroke, { x: offset, y: offset }),
+        })),
+      );
+
+      // O lote inteiro pode ter sido descartado pelo contrato. Sem nada criado não há o que
+      // marcar, e trocar a seleção por vazio tiraria da pessoa o que ela tinha marcado.
+      if (criados.notes.length === 0 && criados.strokes.length === 0) return false;
+
+      // O colado nasce marcado: é sobre ele que a próxima ação age, e é também o que torna
+      // visível que alguma coisa aconteceu quando o recorte cai atrás de onde se olhava.
+      publishSelection({
+        notes: new Set(criados.notes.map((note) => note.id)),
+        strokes: new Set(criados.strokes.map((stroke) => stroke.id)),
+      });
+      // Uma nota colada não entra em edição: colar dez post-its não pode abrir um editor, e
+      // abrir só quando é um seria uma regra a mais para quem lê o código adivinhar.
+      setEditingId(null);
+
+      return true;
+    },
+    [publishSelection, store],
+  );
 
   const startDrag = useCallback(
     (kind: ElementKind, id: string) => {
@@ -590,6 +681,8 @@ export function useBoard({ initialBoard, autosave = true }: UseBoardOptions = {}
     selectInRect,
     clearSelection,
     selectEverything,
+    copySelection,
+    pasteFromClipboard,
     selected,
     selectedRects,
     selectionColor,

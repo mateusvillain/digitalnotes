@@ -23,6 +23,14 @@ interface KeyboardShortcutsOptions {
    * o texto, e roubá-la tiraria de quem escreve a única forma de marcar o que escreveu.
    */
   onSelectAll: () => void;
+  /**
+   * `Ctrl+C`: copiar a seleção (#88).
+   *
+   * Só copiar mora aqui. Colar chega pelo evento `paste`, e não pela tecla, porque `Ctrl+V`
+   * visto como tecla não traz o que há na área de transferência — o conteúdo só existe
+   * dentro do evento nativo.
+   */
+  onCopy: () => void;
   /** `Ctrl+Z`: desfazer a última alteração do quadro (#86). */
   onUndo: () => void;
   /** `Ctrl+Shift+Z` (e `Ctrl+Y`): refazer o que o desfazer levou. */
@@ -76,6 +84,7 @@ export function useKeyboardShortcuts({
   onPlaceNote,
   onSave,
   onSelectAll,
+  onCopy,
   onUndo,
   onRedo,
   onTogglePencil,
@@ -93,6 +102,7 @@ export function useKeyboardShortcuts({
     onPlaceNote,
     onSave,
     onSelectAll,
+    onCopy,
     onUndo,
     onRedo,
     onTogglePencil,
@@ -105,6 +115,7 @@ export function useKeyboardShortcuts({
       onPlaceNote,
       onSave,
       onSelectAll,
+      onCopy,
       onUndo,
       onRedo,
       onTogglePencil,
@@ -116,6 +127,7 @@ export function useKeyboardShortcuts({
     onPlaceNote,
     onSave,
     onSelectAll,
+    onCopy,
     onUndo,
     onRedo,
     onTogglePencil,
@@ -177,6 +189,21 @@ export function useKeyboardShortcuts({
 
           event.preventDefault();
           handlers.current.onSelectAll();
+          return;
+        }
+
+        /**
+         * Copiar a seleção (#88).
+         *
+         * Sem `preventDefault`. Ao contrário dos vizinhos, aqui não há nada do navegador a
+         * impedir: fora de um campo de texto e sem seleção de texto no documento — o quadro
+         * tem `select-none` —, o `Ctrl+C` nativo não copiaria nada. Engoli-lo só tiraria a
+         * chance de o navegador fazer algo melhor num caso que não previmos.
+         */
+        if (key === "c" && !event.shiftKey) {
+          if (isEditableTarget(event.target)) return;
+
+          handlers.current.onCopy();
           return;
         }
       }

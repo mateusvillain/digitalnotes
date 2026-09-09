@@ -7,6 +7,7 @@ import { useKeyboardShortcuts } from "@/lib/board/useKeyboardShortcuts";
 import type { Point } from "@/lib/canvas/coords";
 import { useViewport } from "@/lib/canvas/useViewport";
 import { useTouchPrimary } from "@/lib/dom/useTouchPrimary";
+import { usePaste } from "@/lib/dom/usePaste";
 import { ColorPicker } from "@/components/postit/ColorPicker";
 import { SelectButton } from "@/components/ui/SelectButton";
 import { HistoryButtons } from "@/components/ui/HistoryButtons";
@@ -123,6 +124,26 @@ export function Whiteboard({ initialBoard, autosave }: WhiteboardProps) {
   const save = useCallback(() => void share.share(), [share]);
 
   /**
+   * Copiar a seleção para a área de transferência do sistema (#88).
+   *
+   * `writeText`, e não o evento `copy`: a escrita programática funciona em todo navegador
+   * dentro de um gesto do usuário, enquanto o evento `copy` depende de haver seleção de
+   * texto no documento — e o quadro tem `select-none`, então ela nunca existe.
+   *
+   * A promessa é engolida de propósito. Ela recusa em contexto inseguro ou sem permissão, e
+   * um quadro que estourasse por causa disso seria pior do que um `Ctrl+C` que não copiou:
+   * copiar é uma ação sem consequência visível, e o próximo `Ctrl+V` já denuncia a falha.
+   */
+  const copy = useCallback(() => {
+    const recorte = board.copySelection();
+    if (recorte === null) return;
+
+    void navigator.clipboard?.writeText(recorte)?.catch(() => {});
+  }, [board]);
+
+  usePaste(board.pasteFromClipboard);
+
+  /**
    * O modo em curso: um estado só, e não uma flag por ferramenta.
    *
    * "O lápis e a colocação de nota não podem estar ligados ao mesmo tempo" (#73) é uma
@@ -209,6 +230,7 @@ export function Whiteboard({ initialBoard, autosave }: WhiteboardProps) {
     onPlaceNote: togglePlacing,
     onSave: save,
     onSelectAll: board.selectEverything,
+    onCopy: copy,
     onUndo: board.undo,
     onRedo: board.redo,
     onTogglePencil: togglePencil,
