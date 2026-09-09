@@ -311,10 +311,16 @@ export function Viewport({
   /**
    * O que precisa ser decidido na **descida** do evento, antes de um post-it pará-lo.
    *
-   * São dois casos, pelo mesmo motivo: o post-it interrompe o `pointerdown` antes de ele
-   * chegar à superfície, e ambos os gestos valem sobre o quadro inteiro, notas inclusive.
-   * O pan com espaço reivindica o gesto aqui; a contagem de dedos da pinça (#57) precisa
-   * enxergar o toque mesmo quando ele começa sobre uma nota.
+   * Todos os casos aqui existem pelo mesmo motivo: o post-it interrompe o `pointerdown`
+   * antes de ele chegar à superfície, e estes gestos valem sobre o quadro inteiro, notas
+   * inclusive. São quatro, nesta ordem de prioridade:
+   *
+   * 1. A contagem de dedos da pinça (#57), que precisa enxergar o toque mesmo quando ele
+   *    começa sobre uma nota — e que abre a pinça quando o segundo dedo encosta.
+   * 2. O traço com um dedo, dentro dessa contagem, com o lápis ligado (#71).
+   * 3. O traço com o mouse ou a caneta, também com o lápis ligado (#68).
+   * 4. O pan com a barra de espaço segurada, que ganha do lápis: navegar é o gesto que
+   *    precisa existir em qualquer modo.
    */
   const handlePointerDownCapture = useCallback(
     (event: PointerEvent<HTMLDivElement>) => {
@@ -436,6 +442,16 @@ export function Viewport({
       // quadro por lá. Os dois dedos da pinça já foram contados na fase de captura (#57), e
       // selecionar por retângulo fica para quem tem ponteiro.
       if (event.pointerType === "touch") {
+        /*
+          Com o lápis ligado, nenhum dedo navega (#71).
+
+          Os dois primeiros nem chegam aqui — a captura reivindica um para o traço e o outro
+          para a pinça. Quem chega é o terceiro dedo em diante, que a contagem ignora de
+          propósito; sem esta guarda ele armaria um pan por baixo da pinça em curso, e o
+          quadro andaria com um dedo justamente no modo em que um dedo não move nada.
+        */
+        if (pencil) return;
+
         drag.current = {
           kind: "pan",
           pointerId: event.pointerId,
@@ -454,7 +470,7 @@ export function Viewport({
         started: false,
       };
     },
-    [isBackground, localPoint, spaceHeld],
+    [isBackground, localPoint, pencil, spaceHeld],
   );
 
   const handlePointerMove = useCallback(

@@ -1037,6 +1037,11 @@ function escalaAtual(): string {
   );
 }
 
+/** Os traços gravados no board, cada um com o atributo `points` do SVG. */
+function tracos(): (string | null)[] {
+  return screen.queryAllByTestId("stroke").map((element) => element.getAttribute("points"));
+}
+
 /** Pinça dois dedos sobre o quadro, do afastamento inicial para o final. */
 function pinca(de: number, para: number): void {
   const surface = screen.getByTestId("viewport-surface");
@@ -1568,11 +1573,6 @@ describe("Whiteboard — modo lápis", () => {
     return botaoLapis().getAttribute("aria-pressed") === "true";
   }
 
-  /** Os traços gravados no board, cada um com o atributo `points` do SVG. */
-  function tracos(): (string | null)[] {
-    return screen.queryAllByTestId("stroke").map((element) => element.getAttribute("points"));
-  }
-
   /**
    * Rabisca de um ponto ao outro, passando por `intermediarios` pontos de tela.
    *
@@ -1852,11 +1852,15 @@ describe("Whiteboard — modo lápis no toque", () => {
     vi.unstubAllGlobals();
   });
 
-  function tracos(): (string | null)[] {
-    return screen.queryAllByTestId("stroke").map((element) => element.getAttribute("points"));
-  }
+  /*
+    Os casos abaixo alternam entre `aparelhoDeToque(true)` e `(false)`, e a escolha não é
+    descuido: o gesto é sempre de toque, porque quem decide isso é o `pointerType` do evento.
+    O que a consulta de mídia muda é a moldura — num aparelho de toque o painel de zoom some
+    (#57), e é dele que `escalaAtual()` lê. Quem precisa conferir a escala pede `(false)`.
+  */
 
-  function ligaOLapis(): void {
+  /** Aperta `P`, que liga o modo lápis — e, apertado de novo, desliga. */
+  function alternaOLapis(): void {
     fireEvent.keyDown(document, { key: "p" });
   }
 
@@ -1871,6 +1875,7 @@ describe("Whiteboard — modo lápis no toque", () => {
     });
   }
 
+  /** Arrasta um dedo que já está encostado. */
   function arrasta(pointerId: number, x: number, y: number): void {
     fireEvent.pointerMove(screen.getByTestId("viewport-surface"), {
       pointerId,
@@ -1880,6 +1885,7 @@ describe("Whiteboard — modo lápis no toque", () => {
     });
   }
 
+  /** Tira o dedo da tela. */
   function levanta(pointerId: number, x: number, y: number): void {
     fireEvent.pointerUp(screen.getByTestId("viewport-surface"), {
       pointerId,
@@ -1894,7 +1900,7 @@ describe("Whiteboard — modo lápis no toque", () => {
     render(<Whiteboard />);
     const layer = screen.getByTestId("viewport-layer");
     const antes = layer.style.transform;
-    ligaOLapis();
+    alternaOLapis();
 
     encosta(1, 100, 100);
     arrasta(1, 160, 140);
@@ -1909,8 +1915,8 @@ describe("Whiteboard — modo lápis no toque", () => {
     aparelhoDeToque(true);
     render(<Whiteboard />);
     const layer = screen.getByTestId("viewport-layer");
-    ligaOLapis();
-    fireEvent.keyDown(document, { key: "p" });
+    alternaOLapis();
+    alternaOLapis();
 
     encosta(1, 100, 100);
     arrasta(1, 160, 140);
@@ -1925,7 +1931,7 @@ describe("Whiteboard — modo lápis no toque", () => {
     render(<Whiteboard />);
     const layer = screen.getByTestId("viewport-layer");
     const antes = layer.style.transform;
-    ligaOLapis();
+    alternaOLapis();
 
     pinca(100, 200);
 
@@ -1939,7 +1945,7 @@ describe("Whiteboard — modo lápis no toque", () => {
   it("o segundo dedo vira pinça sem deixar traço pela metade", () => {
     aparelhoDeToque(false);
     render(<Whiteboard />);
-    ligaOLapis();
+    alternaOLapis();
 
     // Um dedo começa a desenhar…
     encosta(1, 0, 0);
@@ -1965,7 +1971,7 @@ describe("Whiteboard — modo lápis no toque", () => {
     aparelhoDeToque(false);
     render(<Whiteboard />);
     const layer = screen.getByTestId("viewport-layer");
-    ligaOLapis();
+    alternaOLapis();
 
     encosta(1, 0, 0);
     encosta(2, 100, 0);
@@ -1985,7 +1991,7 @@ describe("Whiteboard — modo lápis no toque", () => {
     duploCliqueNoFundo(150, 150);
     fireEvent.blur(screen.getByRole("textbox", { name: UI.en.note.text }));
     const antes = postIt(0).style.left;
-    ligaOLapis();
+    alternaOLapis();
 
     fireEvent.pointerDown(postIt(0), {
       pointerId: 1,
@@ -2004,16 +2010,20 @@ describe("Whiteboard — modo lápis no toque", () => {
   it("um terceiro dedo durante a pinça não começa um traço por baixo do gesto", () => {
     aparelhoDeToque(false);
     render(<Whiteboard />);
-    ligaOLapis();
+    alternaOLapis();
 
     encosta(1, 0, 0);
     encosta(2, 100, 0);
+    const antes = screen.getByTestId("viewport-layer").style.transform;
     encosta(3, 50, 200);
     arrasta(3, 60, 210);
     levanta(3, 60, 210);
 
     expect(tracos()).toEqual([]);
     expect(screen.queryByTestId("stroke-preview")).toBeNull();
+    // Nem traço, nem navegação: o terceiro dedo não é contado pela pinça, e com o lápis
+    // ligado um dedo não move o quadro — nem pelas costas do gesto que já acontece.
+    expect(screen.getByTestId("viewport-layer").style.transform).toBe(antes);
   });
 
   /**
