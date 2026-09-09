@@ -29,6 +29,7 @@ function opcoes(overrides: Partial<Parameters<typeof useKeyboardShortcuts>[0]>) 
     onDelete: vi.fn(),
     onPlaceNote: vi.fn(),
     onSave: vi.fn(),
+    onSelectAll: vi.fn(),
     onUndo: vi.fn(),
     onRedo: vi.fn(),
     onTogglePencil: vi.fn(),
@@ -306,6 +307,63 @@ describe("useKeyboardShortcuts — salvar com Ctrl/⌘+S", () => {
     tecla("v", document.body, { altKey: true });
 
     expect(onSelectTool).not.toHaveBeenCalled();
+  });
+
+  it("Ctrl+A e ⌘+A marcam tudo", () => {
+    const onSelectAll = vi.fn();
+    renderHook(() => useKeyboardShortcuts(opcoes({ onSelectAll })));
+
+    tecla("a", document.body, { ctrlKey: true });
+    tecla("A", document.body, { metaKey: true });
+
+    expect(onSelectAll).toHaveBeenCalledTimes(2);
+  });
+
+  /**
+   * Dentro de um post-it `Ctrl+A` seleciona o texto, e é a única forma que quem escreve tem
+   * de marcar o que escreveu. É a mesma guarda do desfazer, e o oposto do `Ctrl+S`.
+   */
+  it("Ctrl+A dentro de um campo de texto pertence ao texto", () => {
+    const onSelectAll = vi.fn();
+    renderHook(() => useKeyboardShortcuts(opcoes({ onSelectAll })));
+
+    tecla("a", elemento("textarea"), { ctrlKey: true });
+    tecla("a", elemento("input"), { metaKey: true });
+
+    expect(onSelectAll).not.toHaveBeenCalled();
+  });
+
+  it("A sem modificador não marca nada", () => {
+    const onSelectAll = vi.fn();
+    renderHook(() => useKeyboardShortcuts(opcoes({ onSelectAll })));
+
+    tecla("a");
+
+    expect(onSelectAll).not.toHaveBeenCalled();
+  });
+
+  /** `Ctrl+Shift+A` é atalho de outras coisas por aí; o quadro não o reivindica. */
+  it("Ctrl+Shift+A não marca tudo", () => {
+    const onSelectAll = vi.fn();
+    renderHook(() => useKeyboardShortcuts(opcoes({ onSelectAll })));
+
+    tecla("a", document.body, { ctrlKey: true, shiftKey: true });
+
+    expect(onSelectAll).not.toHaveBeenCalled();
+  });
+
+  it("engole a tecla, para o navegador não selecionar a página inteira", () => {
+    renderHook(() => useKeyboardShortcuts(opcoes({})));
+
+    const event = new KeyboardEvent("keydown", {
+      key: "a",
+      ctrlKey: true,
+      bubbles: true,
+      cancelable: true,
+    });
+    document.body.dispatchEvent(event);
+
+    expect(event.defaultPrevented).toBe(true);
   });
 
   it("Ctrl+Z e ⌘+Z desfazem", () => {

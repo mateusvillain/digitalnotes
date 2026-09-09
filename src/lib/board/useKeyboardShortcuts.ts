@@ -16,6 +16,13 @@ interface KeyboardShortcutsOptions {
   onPlaceNote: () => void;
   /** Salvar o quadro — a mesma ação do botão, num atalho que todo mundo já tem no dedo. */
   onSave: () => void;
+  /**
+   * `Ctrl+A`: marcar tudo que existe no quadro (#85).
+   *
+   * Com a guarda de campo de texto, como o desfazer: dentro de um post-it a tecla seleciona
+   * o texto, e roubá-la tiraria de quem escreve a única forma de marcar o que escreveu.
+   */
+  onSelectAll: () => void;
   /** `Ctrl+Z`: desfazer a última alteração do quadro (#86). */
   onUndo: () => void;
   /** `Ctrl+Shift+Z` (e `Ctrl+Y`): refazer o que o desfazer levou. */
@@ -68,6 +75,7 @@ export function useKeyboardShortcuts({
   onDelete,
   onPlaceNote,
   onSave,
+  onSelectAll,
   onUndo,
   onRedo,
   onTogglePencil,
@@ -84,6 +92,7 @@ export function useKeyboardShortcuts({
     onDelete,
     onPlaceNote,
     onSave,
+    onSelectAll,
     onUndo,
     onRedo,
     onTogglePencil,
@@ -95,13 +104,24 @@ export function useKeyboardShortcuts({
       onDelete,
       onPlaceNote,
       onSave,
+      onSelectAll,
       onUndo,
       onRedo,
       onTogglePencil,
       onSelectTool,
       onCancel,
     };
-  }, [onDelete, onPlaceNote, onSave, onUndo, onRedo, onTogglePencil, onSelectTool, onCancel]);
+  }, [
+    onDelete,
+    onPlaceNote,
+    onSave,
+    onSelectAll,
+    onUndo,
+    onRedo,
+    onTogglePencil,
+    onSelectTool,
+    onCancel,
+  ]);
 
   useEffect(() => {
     function handleKeyDown(event: KeyboardEvent): void {
@@ -140,6 +160,23 @@ export function useKeyboardShortcuts({
           event.preventDefault();
           if (key === "y" || event.shiftKey) handlers.current.onRedo();
           else handlers.current.onUndo();
+          return;
+        }
+
+        /**
+         * Selecionar tudo (#85).
+         *
+         * Mesma guarda do desfazer, e pelo mesmo motivo: dentro de um post-it `Ctrl+A`
+         * seleciona o texto, e é a única forma que quem escreve tem de marcar o que
+         * escreveu. Fora dali não há texto disputando a tecla — o quadro não é um documento
+         * —, e `preventDefault` impede o navegador de selecionar a página inteira por baixo
+         * da seleção do board.
+         */
+        if (key === "a" && !event.shiftKey) {
+          if (isEditableTarget(event.target)) return;
+
+          event.preventDefault();
+          handlers.current.onSelectAll();
           return;
         }
       }

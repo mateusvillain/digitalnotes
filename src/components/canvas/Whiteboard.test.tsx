@@ -1921,6 +1921,141 @@ describe("Whiteboard — colocar nota (#73)", () => {
   });
 });
 
+describe("Whiteboard — selecionar tudo (#85)", () => {
+  function criaPostIt(x: number, y: number): void {
+    duploCliqueNoFundo(x, y);
+    fireEvent.keyDown(screen.getByTestId("post-it-editor"), { key: "Escape" });
+  }
+
+  function desenha(de: [number, number], ate: [number, number]): void {
+    const surface = screen.getByTestId("viewport-surface");
+
+    fireEvent.keyDown(document, { key: "p" });
+    fireEvent.pointerDown(surface, { pointerId: 1, button: 0, clientX: de[0], clientY: de[1] });
+    fireEvent.pointerMove(surface, { pointerId: 1, clientX: ate[0], clientY: ate[1] });
+    fireEvent.pointerUp(surface, { pointerId: 1, clientX: ate[0], clientY: ate[1] });
+    fireEvent.keyDown(document, { key: "v" });
+  }
+
+  function marcados(): { notas: number; tracos: number } {
+    return {
+      notas: postIts().filter((element) => element.dataset.selected === "true").length,
+      tracos: screen
+        .queryAllByTestId("stroke-group")
+        .filter((element) => element.dataset.selected === "true").length,
+    };
+  }
+
+  function selecionaTudo(): void {
+    fireEvent.keyDown(document, { key: "a", ctrlKey: true });
+  }
+
+  it("Ctrl+A marca notas e traços de uma vez", () => {
+    render(<Whiteboard />);
+    criaPostIt(200, 200);
+    criaPostIt(600, 200);
+    desenha([100, 400], [300, 500]);
+
+    selecionaTudo();
+
+    expect(marcados()).toEqual({ notas: 2, tracos: 1 });
+  });
+
+  it("⌘+A faz o mesmo, para quem está no Mac", () => {
+    render(<Whiteboard />);
+    criaPostIt(200, 200);
+
+    fireEvent.keyDown(document, { key: "a", metaKey: true });
+
+    expect(marcados().notas).toBe(1);
+  });
+
+  it("marca também o que estava fora da seleção anterior", () => {
+    render(<Whiteboard />);
+    criaPostIt(200, 200);
+    criaPostIt(600, 200);
+    criaPostIt(900, 200);
+    // A criação já deixa marcada só a última.
+    expect(marcados().notas).toBe(1);
+
+    selecionaTudo();
+
+    expect(marcados().notas).toBe(3);
+  });
+
+  it("num quadro vazio não deixa seleção fantasma", () => {
+    render(<Whiteboard />);
+
+    selecionaTudo();
+
+    expect(marcados()).toEqual({ notas: 0, tracos: 0 });
+    // Sem seleção não há barra de ações: a peça não pode aparecer ancorada em nada.
+    expect(screen.queryByTestId("selection-toolbar")).toBeNull();
+  });
+
+  it("Delete depois de Ctrl+A esvazia o quadro", () => {
+    render(<Whiteboard />);
+    criaPostIt(200, 200);
+    criaPostIt(600, 200);
+    desenha([100, 400], [300, 500]);
+
+    selecionaTudo();
+    fireEvent.keyDown(document, { key: "Delete" });
+
+    expect(postIts()).toEqual([]);
+    expect(screen.queryAllByTestId("stroke-group")).toEqual([]);
+  });
+
+  /**
+   * Uma publicação só, e por isso um passo só de desfazer (#86): a unidade de passo é o
+   * `commit` da store, e apagar notas e traços juntos passa por `removeElements`.
+   */
+  it("o quadro esvaziado por Ctrl+A e Delete volta inteiro num Ctrl+Z", () => {
+    render(<Whiteboard />);
+    criaPostIt(200, 200);
+    criaPostIt(600, 200);
+    desenha([100, 400], [300, 500]);
+
+    selecionaTudo();
+    fireEvent.keyDown(document, { key: "Delete" });
+    fireEvent.keyDown(document, { key: "z", ctrlKey: true });
+
+    expect(postIts()).toHaveLength(2);
+    expect(screen.queryAllByTestId("stroke-group")).toHaveLength(1);
+  });
+
+  /**
+   * Dentro de um post-it a tecla é do texto. É a única forma que quem escreve tem de marcar
+   * o que escreveu, e roubá-la seria pior do que não ter o atalho.
+   */
+  it("Ctrl+A dentro do editor pertence ao texto", () => {
+    render(<Whiteboard />);
+    criaPostIt(200, 200);
+    // Criar já marca a nota nova, e só ela: é essa marcação que precisa continuar de pé.
+    duploCliqueNoFundo(600, 200);
+    expect(marcados().notas).toBe(1);
+
+    fireEvent.keyDown(screen.getByTestId("post-it-editor"), { key: "a", ctrlKey: true });
+
+    // Continua uma, e não duas: o quadro não viu a tecla, e a nota antiga segue desmarcada.
+    expect(marcados().notas).toBe(1);
+  });
+
+  /** Seleção mista: a barra aparece e colorir alcança só as notas (a #70 já definiu isso). */
+  it("a barra de ações se comporta como numa seleção mista", () => {
+    render(<Whiteboard />);
+    criaPostIt(200, 200);
+    desenha([100, 400], [300, 500]);
+
+    selecionaTudo();
+
+    expect(screen.getByTestId("selection-toolbar")).toBeTruthy();
+    fireEvent.click(screen.getByLabelText(UI.en.note.colors.green));
+    expect(postIt(0).style.backgroundColor).toBe("var(--color-note-green)");
+    expect(screen.queryAllByTestId("stroke-group")).toHaveLength(1);
+  });
+});
+
 describe("Whiteboard — desfazer e refazer (#86, #87)", () => {
   function desfazer(): HTMLElement {
     return screen.getByLabelText(UI.en.history.undo);

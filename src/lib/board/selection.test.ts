@@ -5,6 +5,7 @@ import {
   elementsInRect,
   intersects,
   isSelected,
+  selectAll,
   selectOnly,
   selectedNotes,
   selectedStrokes,
@@ -263,5 +264,42 @@ describe("sharedColor", () => {
   it("distingue a cor 0 da ausência de cor comum", () => {
     // Amarelo é o índice 0, e um `?? null` descuidado o transformaria em "sem cor comum".
     expect(sharedColor([note({ color: 0 }), note({ color: 0 })])).toBe(0);
+  });
+});
+
+describe("selectAll", () => {
+  it("marca todas as notas e todos os traços", () => {
+    const notes = [note({ id: "n1" }), note({ id: "n2" })];
+    const strokes = [stroke({ id: "t1" })];
+
+    expect(marcados(selectAll(notes, strokes))).toEqual({
+      notes: ["n1", "n2"],
+      strokes: ["t1"],
+    });
+  });
+
+  /**
+   * Sem caso especial para o quadro vazio: os dois conjuntos saem vazios sozinhos, que é a
+   * resposta certa — `Ctrl+A` num quadro sem nada não pode deixar seleção fantasma.
+   */
+  it("num quadro vazio não marca nada", () => {
+    expect(marcados(selectAll([], []))).toEqual(marcados(EMPTY_SELECTION));
+    expect(selectionSize(selectAll([], []))).toBe(0);
+  });
+
+  it("marca só as notas quando não há traço", () => {
+    expect(marcados(selectAll([note({ id: "n1" })], []))).toEqual({
+      notes: ["n1"],
+      strokes: [],
+    });
+  });
+
+  /** Ids iguais em espécies diferentes continuam sendo dois elementos (a decisão da #70). */
+  it("uma nota e um traço de mesmo id entram como dois", () => {
+    const tudo = selectAll([note({ id: "igual" })], [stroke({ id: "igual" })]);
+
+    expect(selectionSize(tudo)).toBe(2);
+    expect(isSelected(tudo, "note", "igual")).toBe(true);
+    expect(isSelected(tudo, "stroke", "igual")).toBe(true);
   });
 });

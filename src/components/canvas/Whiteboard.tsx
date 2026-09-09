@@ -208,6 +208,7 @@ export function Whiteboard({ initialBoard, autosave }: WhiteboardProps) {
     onDelete: board.deleteSelection,
     onPlaceNote: togglePlacing,
     onSave: save,
+    onSelectAll: board.selectEverything,
     onUndo: board.undo,
     onRedo: board.redo,
     onTogglePencil: togglePencil,

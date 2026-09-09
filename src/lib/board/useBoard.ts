@@ -8,6 +8,7 @@ import {
   elementsInRect,
   isEmpty,
   isSelected,
+  selectAll,
   selectOnly,
   selectedNotes,
   selectedStrokes,
@@ -127,6 +128,8 @@ export interface BoardApi {
   /** Marca o que o retângulo toca — notas e traços —, somado à base de `beginRectSelection`. */
   selectInRect: (rect: Rect) => void;
   clearSelection: () => void;
+  /** Marca tudo que existe no quadro, notas e traços (#85). */
+  selectEverything: () => void;
   /** As notes marcadas. É por elas que passa o que só vale para post-it: colorir (#17). */
   selected: readonly Note[];
   /**
@@ -313,6 +316,18 @@ export function useBoard({ initialBoard, autosave = true }: UseBoardOptions = {}
   );
 
   const clearSelection = useCallback(() => publishSelection(EMPTY_SELECTION), [publishSelection]);
+
+  /**
+   * Marca tudo (#85).
+   *
+   * Lê o board da store na hora, e não da lista renderizada: é a mesma escolha do retângulo
+   * de seleção logo acima, e ela mantém a marcação certa mesmo se o atalho chegar entre uma
+   * alteração e a pintura que a mostra.
+   */
+  const selectEverything = useCallback(() => {
+    const current = store.getBoard();
+    publishSelection(selectAll(current.notes, current.strokes));
+  }, [publishSelection, store]);
 
   const startDrag = useCallback(
     (kind: ElementKind, id: string) => {
@@ -574,6 +589,7 @@ export function useBoard({ initialBoard, autosave = true }: UseBoardOptions = {}
     beginRectSelection,
     selectInRect,
     clearSelection,
+    selectEverything,
     selected,
     selectedRects,
     selectionColor,
