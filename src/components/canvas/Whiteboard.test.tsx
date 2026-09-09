@@ -848,6 +848,116 @@ describe("Whiteboard — apagar com Delete", () => {
   });
 });
 
+describe("Whiteboard — mover a seleção com as setas", () => {
+  /** Cria um post-it e sai da edição, como nos blocos acima. */
+  function criaPostIt(x: number, y: number): void {
+    duploCliqueNoFundo(x, y);
+    fireEvent.keyDown(screen.getByTestId("post-it-editor"), { key: "Escape" });
+  }
+
+  /** A tecla chega pelo documento, que é onde o atalho global ouve. */
+  function seta(key: string, init: KeyboardEventInit = {}): boolean {
+    return !fireEvent.keyDown(document, { key, ...init });
+  }
+
+  /** Aperta e solta, que é o gesto de quem dá um toque na seta. */
+  function toque(key: string, init: KeyboardEventInit = {}): boolean {
+    const engolida = seta(key, init);
+    fireEvent.keyUp(document, { key });
+    return engolida;
+  }
+
+  function posicao(indice: number): { x: number; y: number } {
+    const element = postIt(indice);
+    return {
+      x: Number.parseFloat(element.style.left),
+      y: Number.parseFloat(element.style.top),
+    };
+  }
+
+  function cliqueNoFundoLimpando(): void {
+    const surface = screen.getByTestId("viewport-surface");
+
+    fireEvent.pointerDown(surface, { pointerId: 1, button: 0, clientX: 900, clientY: 600 });
+    fireEvent.pointerUp(surface, { pointerId: 1, clientX: 900, clientY: 600 });
+  }
+
+  it("move o post-it selecionado uma unidade por tecla", () => {
+    render(<Whiteboard />);
+    criaPostIt(400, 400);
+    const antes = posicao(0);
+
+    toque("ArrowRight");
+    toque("ArrowDown");
+
+    expect(posicao(0)).toEqual({ x: antes.x + 1, y: antes.y + 1 });
+  });
+
+  it("com Shift o passo é grande", () => {
+    render(<Whiteboard />);
+    criaPostIt(400, 400);
+    const antes = posicao(0);
+
+    toque("ArrowLeft", { shiftKey: true });
+
+    expect(posicao(0)).toEqual({ x: antes.x - 10, y: antes.y });
+  });
+
+  it("segurar a seta move continuamente", () => {
+    render(<Whiteboard />);
+    criaPostIt(400, 400);
+    const antes = posicao(0);
+
+    // A repetição do teclado chega como uma sequência de `keydown`, e é assim que ela é
+    // exercitada: dez teclas, dez unidades.
+    for (let i = 0; i < 10; i += 1) seta("ArrowUp", { repeat: i > 0 });
+
+    expect(posicao(0)).toEqual({ x: antes.x, y: antes.y - 10 });
+  });
+
+  it("duas setas seguradas movem na diagonal", () => {
+    render(<Whiteboard />);
+    criaPostIt(400, 400);
+    const antes = posicao(0);
+
+    // `↑` continua apertada quando `→` chega: o sistema repete só a última tecla, e é a
+    // soma das seguradas que mantém o movimento na diagonal.
+    seta("ArrowUp");
+    seta("ArrowRight");
+    seta("ArrowRight", { repeat: true });
+
+    // Um passo para cima, e depois dois na diagonal.
+    expect(posicao(0)).toEqual({ x: antes.x + 2, y: antes.y - 3 });
+  });
+
+  it("sem seleção a seta não mexe no quadro nem é engolida", () => {
+    render(<Whiteboard />);
+    criaPostIt(400, 400);
+    cliqueNoFundoLimpando();
+    const antes = posicao(0);
+
+    // Devolvida ao navegador: sem nada marcado, a seta ainda é a tecla que rola a página.
+    expect(toque("ArrowRight")).toBe(false);
+    expect(posicao(0)).toEqual(antes);
+  });
+
+  it("não move o quadro enquanto se escreve dentro do post-it", () => {
+    render(<Whiteboard />);
+    duploCliqueNoFundo(400, 400);
+    const editor = screen.getByTestId("post-it-editor");
+
+    // O erro clássico do atalho global: mover o post-it em vez de andar pelo texto.
+    fireEvent.keyDown(editor, { key: "ArrowLeft" });
+    fireEvent.keyDown(editor, { key: "ArrowUp" });
+
+    fireEvent.keyDown(editor, { key: "Escape" });
+    expect(posicao(0)).toEqual({
+      x: 400 - NOTE_SIZE.defaultWidth / 2,
+      y: 400 - NOTE_SIZE.defaultHeight / 2,
+    });
+  });
+});
+
 describe("Whiteboard — seleção por arrasto no fundo", () => {
   function criaPostIt(x: number, y: number): void {
     duploCliqueNoFundo(x, y);

@@ -220,6 +220,7 @@ export function Whiteboard({ initialBoard, autosave }: WhiteboardProps) {
     onTogglePencil: togglePencil,
     onCancel: selectTool,
     onSelectTool: selectTool,
+    onNudge: board.nudgeSelection,
   });
 
   return (

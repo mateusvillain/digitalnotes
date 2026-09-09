@@ -121,6 +121,16 @@ export interface BoardApi {
   endDrag: () => void;
   /** Desfaz o arraste sem gravar nada. */
   cancelDrag: () => void;
+  /**
+   * Move o que está marcado por um deslocamento em unidades de canvas (#74).
+   *
+   * Devolve `false` quando não havia nada marcado — quem chama usa isso para decidir se
+   * engole a tecla ou a devolve ao navegador, que sem seleção ainda tem o que fazer com ela.
+   *
+   * Recebe o deslocamento pronto, e não a direção e o passo: o tamanho do passo é decisão
+   * de quem tem a tecla na mão, e o board só sabe mover.
+   */
+  nudgeSelection: (delta: Point) => boolean;
   /** Elemento sendo redimensionado e o tamanho que ele tem agora, ou `null`. */
   resizing: Resizing | null;
   /** Começa a redimensionar um elemento — post-it ou traço. */
@@ -436,32 +446,74 @@ export function useBoard({ initialBoard, autosave = true }: UseBoardOptions = {}
 
   const dragBy = publishDragOffset;
 
+  /**
+   * Move tudo que está marcado — notas e traços — numa publicação só.
+   *
+   * Uma função para os dois caminhos que movem a seleção, o arraste e as setas (#74): é a
+   * mesma pergunta feita por dois gestos, e duas cópias divergiriam no dia em que a
+   * resposta mudasse. Quem chama entrega o deslocamento já em unidades de canvas.
+   *
+   * Uma publicação só, notas e traços juntos: quem escuta é a persistência, que reescreve a
+   * URL a cada aviso — e é ela também que decide o que é **um** passo de desfazer.
+   *
+   * Os limites de coordenada do board não são checados aqui: a store normaliza tudo que
+   * entra, e uma segunda regra sobre onde um elemento pode estar divergiria da primeira.
+   */
+  const translateSelection = useCallback(
+    (delta: Point) => {
+      const board = store.getBoard();
+      const marcado = selectionRef.current;
+
+      store.updateElements(
+        board.notes
+          .filter((note) => marcado.notes.has(note.id))
+          .map((note) => ({
+            id: note.id,
+            patch: { x: note.x + delta.x, y: note.y + delta.y },
+          })),
+        board.strokes
+          .filter((stroke) => marcado.strokes.has(stroke.id))
+          .map((stroke) => ({
+            id: stroke.id,
+            patch: { points: translateStrokePoints(stroke, delta) },
+          })),
+      );
+    },
+    [store],
+  );
+
   const endDrag = useCallback(() => {
     const offset = dragOffsetRef.current;
     publishDragOffset(null);
     if (offset === null) return;
 
-    // Uma publicação só para a seleção inteira, notas e traços juntos: quem escuta é a
-    // persistência, que reescreve a URL a cada aviso. E inteiros, porque cada casa decimal
-    // custa caracteres de link — e porque o zoom faz o deslocamento chegar aqui fracionado.
-    const board = store.getBoard();
-    const arredondado = { x: Math.round(offset.x), y: Math.round(offset.y) };
+    // Inteiros, porque cada casa decimal custa caracteres de link — e porque o zoom faz o
+    // deslocamento chegar aqui fracionado.
+    translateSelection({ x: Math.round(offset.x), y: Math.round(offset.y) });
+  }, [publishDragOffset, translateSelection]);
 
-    store.updateElements(
-      board.notes
-        .filter((note) => selectionRef.current.notes.has(note.id))
-        .map((note) => ({
-          id: note.id,
-          patch: { x: note.x + arredondado.x, y: note.y + arredondado.y },
-        })),
-      board.strokes
-        .filter((stroke) => selectionRef.current.strokes.has(stroke.id))
-        .map((stroke) => ({
-          id: stroke.id,
-          patch: { points: translateStrokePoints(stroke, arredondado) },
-        })),
-    );
-  }, [publishDragOffset, store]);
+  /**
+   * Move a seleção pelas setas do teclado (#74).
+   *
+   * Uma publicação por tecla, e não uma por espécie: segurar a seta repete o evento dezenas
+   * de vezes por segundo, e é o debounce do autosave que junta a rajada numa gravação só —
+   * o que não pode acontecer é cada tecla virar dois avisos à persistência.
+   *
+   * Devolve se a tecla era do quadro. Com a seleção vazia ela não é: as setas continuam
+   * rolando a página, que é o que fazem em qualquer lugar onde não há nada marcado.
+   */
+  const nudgeSelection = useCallback(
+    (delta: Point): boolean => {
+      // A seleção, e não o que ela alcança: ids que apontam para o que já sumiu não movem
+      // nada, mas a tecla ainda era do quadro, e devolvê-la ao navegador faria a página
+      // rolar por baixo de quem só errou o alvo.
+      if (isEmpty(selectionRef.current)) return false;
+
+      translateSelection(delta);
+      return true;
+    },
+    [translateSelection],
+  );
 
   const cancelDrag = useCallback(() => publishDragOffset(null), [publishDragOffset]);
 
@@ -671,6 +723,7 @@ export function useBoard({ initialBoard, autosave = true }: UseBoardOptions = {}
     dragBy,
     endDrag,
     cancelDrag,
+    nudgeSelection,
     resizing,
     startResize,
     resizeBy,

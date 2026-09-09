@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { defined } from "@/test-utils/defined";
 import { desvioMaximo, pontosDe } from "@/test-utils/geometry";
 import { SIMPLIFY_TOLERANCE } from "@/lib/canvas/simplify";
-import { NOTE_COLORS, NOTE_SIZE, STROKE_COLOR_BLACK } from "./types";
+import { CANVAS_MAX_ABS_COORDINATE, NOTE_COLORS, NOTE_SIZE, STROKE_COLOR_BLACK } from "./types";
 import { selectionSize } from "./selection";
 import { useBoard } from "./useBoard";
 
@@ -955,5 +955,106 @@ describe("useBoard — traço à mão livre", () => {
     act(() => result.current.addStroke([{ x: 5, y: 5 }]));
 
     expect(result.current.strokes).toEqual([]);
+  });
+});
+
+describe("useBoard — mover a seleção pelo teclado", () => {
+  /** Um quadro com um post-it e um traço, cada um com posição conhecida. */
+  function comNotaETraço() {
+    const hook = renderHook(() => useBoard());
+    act(() => hook.result.current.createNoteAt({ x: 300, y: 200 }));
+    act(() =>
+      hook.result.current.addStroke([
+        { x: 0, y: 0 },
+        { x: 40, y: 40 },
+      ]),
+    );
+
+    return {
+      hook,
+      note: defined(hook.result.current.notes[0], "o post-it"),
+      stroke: defined(hook.result.current.strokes[0], "o traço"),
+    };
+  }
+
+  it("move o que está marcado pelo deslocamento pedido", () => {
+    const { hook, note } = comNotaETraço();
+
+    act(() => hook.result.current.selectElement("note", note.id));
+    act(() => {
+      hook.result.current.nudgeSelection({ x: 1, y: -1 });
+    });
+
+    const movida = defined(hook.result.current.notes[0], "o post-it movido");
+    expect({ x: movida.x, y: movida.y }).toEqual({ x: note.x + 1, y: note.y - 1 });
+  });
+
+  it("move notas e traços juntos, num passo de desfazer só", () => {
+    const { hook, note, stroke } = comNotaETraço();
+
+    act(() => hook.result.current.selectEverything());
+    act(() => {
+      hook.result.current.nudgeSelection({ x: 10, y: 10 });
+    });
+
+    expect(defined(hook.result.current.strokes[0], "o traço movido").points).toEqual(
+      stroke.points.map((valor) => valor + 10),
+    );
+
+    // Um `Ctrl+Z` devolve os dois: a seleção inteira é uma publicação, e é isso que a torna
+    // um passo só — quem escuta é a persistência e o histórico, pelo mesmo aviso.
+    act(() => hook.result.current.undo());
+
+    const voltou = defined(hook.result.current.notes[0], "o post-it de volta");
+    expect({ x: voltou.x, y: voltou.y }).toEqual({ x: note.x, y: note.y });
+    expect(defined(hook.result.current.strokes[0], "o traço de volta").points).toEqual(
+      stroke.points,
+    );
+  });
+
+  it("não move quem está fora da seleção", () => {
+    const { hook, note, stroke } = comNotaETraço();
+
+    act(() => hook.result.current.selectElement("note", note.id));
+    act(() => {
+      hook.result.current.nudgeSelection({ x: 25, y: 0 });
+    });
+
+    expect(defined(hook.result.current.strokes[0], "o traço parado").points).toEqual(stroke.points);
+  });
+
+  it("sem seleção não move nada, e devolve a tecla a quem a tinha", () => {
+    const { hook, note } = comNotaETraço();
+    let moveu = true;
+
+    // Criar já marca o que nasceu (#73), então a seleção precisa ser desfeita para o caso
+    // ser o que ele diz ser.
+    act(() => hook.result.current.clearSelection());
+    act(() => {
+      moveu = hook.result.current.nudgeSelection({ x: 10, y: 10 });
+    });
+
+    // `false` é o que faz a seta continuar rolando a página lá em cima: sem nada marcado, a
+    // tecla não é do quadro.
+    expect(moveu).toBe(false);
+    const parada = defined(hook.result.current.notes[0], "o post-it parado");
+    expect({ x: parada.x, y: parada.y }).toEqual({ x: note.x, y: note.y });
+  });
+
+  it("respeita os limites de coordenada do board", () => {
+    const hook = renderHook(() => useBoard());
+    act(() => hook.result.current.createNoteAt({ x: CANVAS_MAX_ABS_COORDINATE, y: 0 }));
+    const note = defined(hook.result.current.notes[0], "o post-it na borda");
+
+    act(() => hook.result.current.selectElement("note", note.id));
+    act(() => {
+      hook.result.current.nudgeSelection({ x: 5_000, y: 0 });
+    });
+
+    // O limite é da store, e não das setas: quem move não precisa saber onde o quadro
+    // acaba, e uma segunda regra sobre isso divergiria da primeira.
+    expect(defined(hook.result.current.notes[0], "o post-it na borda").x).toBe(
+      CANVAS_MAX_ABS_COORDINATE,
+    );
   });
 });
