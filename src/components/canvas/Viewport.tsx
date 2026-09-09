@@ -707,8 +707,13 @@ export function Viewport({
 
   /*
     O cursor conta qual gesto o arrasto vai virar: mão com espaço, lápis com o modo ligado,
-    cruz para selecionar. Na mesma ordem em que os gestos se decidem no `pointerdown`, senão
-    o desenho prometeria uma coisa e o gesto faria outra.
+    cruz para mirar a nota. Na mesma ordem em que os gestos se decidem no `pointerdown`,
+    senão o desenho prometeria uma coisa e o gesto faria outra.
+
+    A ferramenta de seleção fica com a seta do sistema, e é a única que não desenha nada
+    próprio. É o gesto que a pessoa já conhece de qualquer outra tela: apontar e clicar.
+    A cruz que ficava aqui prometia mira, que é o que a colocação de nota faz — e num
+    quadro em que a seleção é a ferramenta de partida, era a mira que estava sempre ligada.
 
     Muda por classe, e não por estado de gesto: arrastar não precisa de re-render.
   */
@@ -716,7 +721,9 @@ export function Viewport({
     ? "cursor-grab active:cursor-grabbing"
     : pencil
       ? "cursor-pencil"
-      : "cursor-crosshair";
+      : placing
+        ? "cursor-crosshair"
+        : "cursor-default";
 
   return (
     <div

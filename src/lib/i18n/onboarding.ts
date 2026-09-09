@@ -62,6 +62,12 @@ export interface OnboardingCopy {
  * nenhum, é um botão que está na tela o tempo todo. A apresentação existe para ensinar o
  * que não se descobre olhando; mandar tocar num botão visível é gastar uma das poucas
  * linhas com o que a própria tela já diz.
+ *
+ * O cursor (#83) foi a primeira ferramenta a bater no teto de quatro, e não entrou. Não foi
+ * por falta de espaço: `V` leva à ferramenta em que o quadro **já começa**, e ensinar como
+ * chegar onde a pessoa está é a linha menos útil que esta lista poderia ter. O botão dele
+ * fica visível na moldura o tempo todo, que é a mesma razão pela qual o lápis não entrou na
+ * lista de toque.
  */
 export const ONBOARDING: Record<Locale, OnboardingCopy> = {
   en: {

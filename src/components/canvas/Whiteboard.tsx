@@ -8,6 +8,7 @@ import type { Point } from "@/lib/canvas/coords";
 import { useViewport } from "@/lib/canvas/useViewport";
 import { useTouchPrimary } from "@/lib/dom/useTouchPrimary";
 import { ColorPicker } from "@/components/postit/ColorPicker";
+import { SelectButton } from "@/components/ui/SelectButton";
 import { NewBoardButton } from "@/components/ui/NewBoardButton";
 import { NoteButton } from "@/components/ui/NoteButton";
 import { PencilButton } from "@/components/ui/PencilButton";
@@ -22,13 +23,19 @@ import { ViewportControls } from "./ViewportControls";
 type WhiteboardProps = Pick<UseBoardOptions, "initialBoard" | "autosave">;
 
 /**
- * A ferramenta armada no quadro, ou nenhuma.
+ * A ferramenta ativa no quadro.
  *
  * As ferramentas são exclusivas entre si por natureza — um gesto de ponteiro faz uma coisa
  * de cada vez —, e este tipo é onde isso fica dito. É a mesma escolha que o `DragState` do
  * `Viewport` faz para os gestos.
+ *
+ * `"select"` no lugar do antigo `"none"` (#83). O estado sempre existiu: era ele que fazia
+ * arrastar o fundo desenhar o retângulo de seleção. O que faltava era nome e rosto — sem
+ * eles, sair do lápis era uma ação sem destino, e a ferramenta mais usada do quadro era a
+ * única sem representação na tela. Não há mais "nenhuma": há sempre uma ferramenta, e a
+ * de partida é a de selecionar.
  */
-type BoardMode = "none" | "pencil" | "placing";
+type BoardMode = "select" | "pencil" | "placing";
 
 /**
  * O quadro: junta o estado de viewport à superfície navegável, aos controles e aos post-its.
@@ -126,20 +133,34 @@ export function Whiteboard({ initialBoard, autosave }: WhiteboardProps) {
    * quem obedece é o `Viewport`. Guardá-lo lá dentro obrigaria a moldura a perguntar à
    * superfície o que ela está fazendo para saber o que desenhar.
    */
-  const [mode, setMode] = useState<BoardMode>("none");
+  const [mode, setMode] = useState<BoardMode>("select");
+  const selecting = mode === "select";
   const pencil = mode === "pencil";
   const placing = mode === "placing";
 
-  /** Liga a ferramenta pedida, ou desliga se ela já era a que estava ligada. */
-  const toggleMode = useCallback((wanted: Exclude<BoardMode, "none">) => {
-    setMode((current) => (current === wanted ? "none" : wanted));
+  /**
+   * Liga a ferramenta pedida, ou volta ao cursor se ela já era a ativa.
+   *
+   * `P` no lápis ligado desliga o lápis — e desligar, agora, quer dizer voltar para a
+   * seleção. É a mesma tecla fazendo as duas coisas, como sempre fez; o que mudou é que o
+   * destino tem nome.
+   */
+  const toggleMode = useCallback((wanted: Exclude<BoardMode, "select">) => {
+    setMode((current) => (current === wanted ? "select" : wanted));
   }, []);
 
   const togglePencil = useCallback(() => toggleMode("pencil"), [toggleMode]);
   const togglePlacing = useCallback(() => toggleMode("placing"), [toggleMode]);
-  // `Esc` desliga, e não alterna: quem aperta `Esc` está saindo de alguma coisa, e sair de
-  // um modo que não estava ligado não pode ligá-lo.
-  const exitMode = useCallback(() => setMode("none"), []);
+  /**
+   * Escolher a seleção, e não alternar para ela.
+   *
+   * `V` sobre a seleção já ativa não faz nada, e é isso mesmo: a ferramenta de partida não
+   * tem para onde ser desligada. Alternar aqui exigiria um estado "nenhuma ferramenta" de
+   * volta, que é exatamente o que esta issue veio tirar.
+   *
+   * `Esc` chega pelo mesmo caminho: sair de alguma coisa é voltar para a seleção.
+   */
+  const selectTool = useCallback(() => setMode("select"), []);
 
   /**
    * O clique que fixa a nota: é aqui, e só aqui, que a store é tocada (#73).
@@ -154,7 +175,7 @@ export function Whiteboard({ initialBoard, autosave }: WhiteboardProps) {
   const placeNote = useCallback(
     (point: Point) => {
       board.createNoteAt(point);
-      setMode("none");
+      setMode("select");
     },
     [board],
   );
@@ -187,7 +208,8 @@ export function Whiteboard({ initialBoard, autosave }: WhiteboardProps) {
     onPlaceNote: togglePlacing,
     onSave: save,
     onTogglePencil: togglePencil,
-    onCancel: exitMode,
+    onCancel: selectTool,
+    onSelectTool: selectTool,
   });
 
   return (
@@ -199,8 +221,13 @@ export function Whiteboard({ initialBoard, autosave }: WhiteboardProps) {
             onNewBoard={board.resetBoard}
             share={share.share}
           />
-          {/* A nota acima do lápis: é a ferramenta principal do quadro, e o rabisco é o
-              que se faz em volta dela. */}
+          {/*
+            A pilha de ferramentas, da mais usada para a menos: selecionar, criar nota,
+            rabiscar. A seleção no topo porque é a ferramenta de partida — o estado em que o
+            quadro começa e para onde `Esc` sempre volta —, e o rabisco por último porque é
+            o que se faz em volta das notas.
+          */}
+          <SelectButton active={selecting} onSelect={selectTool} />
           <NoteButton active={placing} onToggle={togglePlacing} />
           <PencilButton active={pencil} onToggle={togglePencil} />
         </div>
