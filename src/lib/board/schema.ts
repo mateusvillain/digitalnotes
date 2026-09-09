@@ -88,6 +88,11 @@ export function normalizeNote(input: unknown): Note | null {
  * Um número não finito não é descartado sozinho — descartar um `x` sem o `y` que vem depois
  * quebraria o pareamento de todo o resto da lista. Em vez disso, o par inteiro que contém um
  * valor inválido é removido.
+ *
+ * As coordenadas são arredondadas para inteiro aqui, na fronteira de gravação (issue #67):
+ * `123.4567891` custa nove caracteres a mais que `123` dentro da URL, por uma fração de
+ * unidade de canvas que ninguém vê — e é por onde passa todo traço que entra no board, tanto
+ * o recém-desenhado quanto o que veio de um link.
  */
 function normalizePoints(input: unknown): number[] | null {
   if (!Array.isArray(input)) return null;
@@ -101,8 +106,8 @@ function normalizePoints(input: unknown): number[] | null {
     if (!isFiniteNumber(x) || !isFiniteNumber(y)) continue;
 
     points.push(
-      clampOr(x, -CANVAS_MAX_ABS_COORDINATE, CANVAS_MAX_ABS_COORDINATE, 0),
-      clampOr(y, -CANVAS_MAX_ABS_COORDINATE, CANVAS_MAX_ABS_COORDINATE, 0),
+      Math.round(clampOr(x, -CANVAS_MAX_ABS_COORDINATE, CANVAS_MAX_ABS_COORDINATE, 0)),
+      Math.round(clampOr(y, -CANVAS_MAX_ABS_COORDINATE, CANVAS_MAX_ABS_COORDINATE, 0)),
     );
   }
 

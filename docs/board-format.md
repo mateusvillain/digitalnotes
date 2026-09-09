@@ -24,7 +24,9 @@ Stroke = { id: string; color: 0..6; points: number[]; z: number }
   `{x, y}`. Comprimento par, com ao menos dois pontos (quatro números). É a mesma lógica da
   cor por índice — o traço é o rabisco inteiro, e cada ponto dele custa bytes de link — mas
   aqui o formato plano evita que cada ponto pague a chave `x`/`y` no JSON, o que custaria
-  cerca do dobro por ponto num traço de qualquer tamanho.
+  cerca do dobro por ponto num traço de qualquer tamanho. As coordenadas são **inteiras**:
+  `parseBoard` arredonda na gravação, porque a fração de unidade de canvas que se perde é
+  invisível e cada casa decimal é um caractere a mais no link (issue #67).
 - `STROKE_MAX_POINTS` e `STROKE_MAX_COUNT` (em `types.ts`) tetam pontos por traço e traços
   por board, no mesmo espírito de `CANVAS_MAX_ABS_COORDINATE` e `NOTE_MAX_TEXT_LENGTH`.
 
@@ -43,6 +45,11 @@ compete com o limite prático de tamanho de link. As decisões que seguem dessa 
    viewport) entra no board. O estado de viewport — pan e zoom — é efêmero e nunca é
    serializado.
 4. **Sem formatação de texto.** Texto puro elimina toda uma árvore de marcação do payload.
+   No traço, o equivalente é a **lista achatada de coordenadas inteiras**: sem chave `x`/`y`
+   por ponto e sem casa decimal. O traço também chega ao board já simplificado por
+   Ramer–Douglas–Peucker (`src/lib/canvas/simplify.ts`, issue #67) — o ponteiro reporta
+   centenas de pontos por rabisco, e quase todos caem em cima da reta que os vizinhos já
+   descrevem.
 5. **Limites explícitos** (`NOTE_MAX_TEXT_LENGTH`, `CANVAS_MAX_ABS_COORDINATE`, tamanho
    máximo de note)
    dão um teto previsível ao tamanho do link, que a issue #23 usa para avisar o usuário
