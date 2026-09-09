@@ -27,31 +27,49 @@ export interface OnboardingGesture {
 
 export interface OnboardingCopy {
   title: string;
+  /**
+   * A frase sob o título.
+   *
+   * Não conta os itens, e é uma só para as duas listas — que não têm o mesmo tamanho. Um
+   * número aqui estaria errado em metade dos aparelhos, e prenderia a frase ao comprimento
+   * da lista: acrescentar uma linha exigiria lembrar de reescrever o texto acima dela.
+   */
   subtitle: string;
-  /** Quem tem teclado: os três atalhos que abrem o quadro inteiro. */
+  /** Quem tem teclado: os atalhos que abrem o quadro inteiro. */
   shortcuts: readonly OnboardingShortcut[];
   /** Quem tem só o dedo — onde não existe tecla nenhuma para apertar. */
   touch: readonly OnboardingGesture[];
 }
 
 /**
- * As três linhas que aparecem no quadro vazio (onboarding do canvas).
+ * As linhas que aparecem no quadro vazio (onboarding do canvas).
  *
- * Três, e não a lista inteira de atalhos: quem acabou de chegar não decora um manual, e o
+ * Poucas, e não a lista inteira de atalhos: quem acabou de chegar não decora um manual, e o
  * resto da interface se explica ao ser tocada. As escolhidas são as que não têm como ser
- * descobertas por tentativa — nada na tela sugere que existe uma tecla que cria nota,
- * outra que navega, e que o quadro precisa ser salvo para sobreviver à aba fechada.
+ * descobertas por tentativa — nada na tela sugere que existe uma tecla que cria nota, outra
+ * que navega, outra que desenha, e que o quadro precisa ser salvo para sobreviver à aba
+ * fechada.
+ *
+ * O lápis (#72) entrou como quarta linha, e não no lugar de nenhuma: quatro ainda se leem de
+ * relance, e a partir da quinta a peça começa a virar manual. É o teto — a próxima
+ * ferramenta que quiser uma linha aqui vai ter de tirar outra.
  *
  * As duas listas existem porque o quadro responde a coisas diferentes em cada aparelho
  * (#57): no toque não há teclado, um dedo navega e a pinça amplia. Ensinar `Ctrl+S` num
  * celular é pior do que não ensinar nada — é mandar apertar uma tecla que não existe.
+ *
+ * E é por isso que o lápis **não** ganhou linha na lista de toque: lá ele não é gesto
+ * nenhum, é um botão que está na tela o tempo todo. A apresentação existe para ensinar o
+ * que não se descobre olhando; mandar tocar num botão visível é gastar uma das poucas
+ * linhas com o que a própria tela já diz.
  */
 export const ONBOARDING: Record<Locale, OnboardingCopy> = {
   en: {
     title: "Welcome to Virtual Notes",
-    subtitle: "An empty board. Three things and you're set.",
+    subtitle: "An empty board. A few things and you're set.",
     shortcuts: [
       { keys: ["N"], label: "Note" },
+      { keys: ["P"], label: "Pencil" },
       { keys: ["Space"], label: "Movement" },
       { keys: ["mod", "S"], label: "Save" },
     ],
@@ -63,9 +81,10 @@ export const ONBOARDING: Record<Locale, OnboardingCopy> = {
   },
   pt: {
     title: "Boas-vindas ao Virtual Notes",
-    subtitle: "O quadro está vazio. Três coisas e você já sabe usar.",
+    subtitle: "O quadro está vazio. Só isso e você já sabe usar.",
     shortcuts: [
       { keys: ["N"], label: "Nota" },
+      { keys: ["P"], label: "Lápis" },
       { keys: ["Espaço"], label: "Movimentação" },
       { keys: ["mod", "S"], label: "Salvar" },
     ],

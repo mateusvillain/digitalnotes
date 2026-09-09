@@ -5,6 +5,7 @@ import { LocaleProvider } from "@/lib/i18n/LocaleProvider";
 import type { Locale } from "@/lib/seo/site";
 import { Onboarding } from "./Onboarding";
 import { ONBOARDING } from "@/lib/i18n/onboarding";
+import { UI } from "@/lib/i18n/ui";
 
 afterEach(() => vi.unstubAllGlobals());
 
@@ -38,11 +39,15 @@ describe("apresentação do quadro vazio", () => {
     expect(screen.getByText(ONBOARDING.en.shortcuts[0]!.label)).toBeDefined();
   });
 
-  it("ensina três coisas, e não a lista inteira de atalhos", () => {
+  /**
+   * Quatro é o teto que a peça aguenta de relance; a quinta linha já é manual. Se este
+   * número subir, é sinal de que uma linha antiga devia ter saído no lugar.
+   */
+  it("ensina quatro coisas, e não a lista inteira de atalhos", () => {
     aparelho();
     renderiza("pt");
 
-    expect(screen.getAllByRole("listitem")).toHaveLength(3);
+    expect(screen.getAllByRole("listitem")).toHaveLength(4);
   });
 
   it("mostra as teclas como teclas", () => {
@@ -51,7 +56,7 @@ describe("apresentação do quadro vazio", () => {
 
     const teclas = [...container.querySelectorAll("kbd")].map((it) => it.textContent);
 
-    expect(teclas).toEqual(["N", "Espaço", "Ctrl", "S"]);
+    expect(teclas).toEqual(["N", "P", "Espaço", "Ctrl", "S"]);
   });
 
   /**
@@ -74,8 +79,46 @@ describe("apresentação do quadro vazio", () => {
   });
 
   /**
+   * O rótulo, e não só a tecla: a tecla já está coberta pelo caso acima, e o que este
+   * guarda é a palavra — que precisa existir nos dois idiomas e ser a mesma que o botão do
+   * lápis usa, senão a apresentação e a interface passam a chamar a mesma coisa de dois
+   * nomes.
+   */
+  it("dá ao lápis um rótulo próprio nos dois idiomas", () => {
+    aparelho();
+    const { unmount } = renderiza("pt");
+
+    expect(screen.getByText("Lápis").textContent).toBe(UI.pt.pencil.action);
+
+    unmount();
+    aparelho();
+    renderiza("en");
+
+    expect(screen.getByText("Pencil").textContent).toBe(UI.en.pencil.action);
+  });
+
+  /**
+   * No toque o lápis não é gesto nenhum: é um botão que fica na tela o tempo todo. A
+   * apresentação existe para ensinar o que não se descobre olhando, e uma linha mandando
+   * tocar num botão visível gastaria uma das poucas que cabem.
+   */
+  it("não leva o lápis para a lista de toque, onde não há tecla para apertar", () => {
+    aparelho({ toque: true });
+    const { unmount } = renderiza("pt");
+
+    expect(screen.getAllByRole("listitem")).toHaveLength(3);
+    expect(screen.queryByText("Lápis")).toBeNull();
+
+    unmount();
+    aparelho({ toque: true });
+    renderiza("en");
+
+    expect(screen.queryByText("Pencil")).toBeNull();
+  });
+
+  /**
    * A dica errada é pior do que dica nenhuma: num celular não há tecla nenhuma para
-   * apertar, então as três linhas viram gestos.
+   * apertar, então as linhas viram gestos.
    */
   it("no toque, troca as teclas por gestos", () => {
     aparelho({ toque: true });
