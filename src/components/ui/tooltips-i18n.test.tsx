@@ -31,6 +31,10 @@ describe("interface do quadro em cada idioma", () => {
 
       expect(screen.getByRole("button", { name: ui.save.action })).toBeDefined();
       expect(screen.getByRole("button", { name: ui.newBoard.action })).toBeDefined();
+      // Os dois botões de modo entram aqui pela mesma razão que os outros: são a única porta
+      // para o lápis e para a colocação de nota em quem não tem teclado.
+      expect(screen.getByRole("button", { name: ui.note.action })).toBeDefined();
+      expect(screen.getByRole("button", { name: ui.pencil.action })).toBeDefined();
       expect(screen.getByRole("button", { name: ui.zoom.in })).toBeDefined();
       expect(screen.getByRole("button", { name: ui.zoom.out })).toBeDefined();
       expect(screen.getByRole("button", { name: ui.zoom.reset })).toBeDefined();

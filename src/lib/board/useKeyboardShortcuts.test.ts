@@ -27,7 +27,7 @@ function tecla(
 function opcoes(overrides: Partial<Parameters<typeof useKeyboardShortcuts>[0]>) {
   return {
     onDelete: vi.fn(),
-    onCreateNote: vi.fn(),
+    onPlaceNote: vi.fn(),
     onSave: vi.fn(),
     onTogglePencil: vi.fn(),
     onCancel: vi.fn(),
@@ -164,30 +164,30 @@ describe("useKeyboardShortcuts", () => {
 
 describe("useKeyboardShortcuts — criar post-it com N", () => {
   it("N cria um post-it", () => {
-    const onCreateNote = vi.fn();
-    renderHook(() => useKeyboardShortcuts(opcoes({ onCreateNote })));
+    const onPlaceNote = vi.fn();
+    renderHook(() => useKeyboardShortcuts(opcoes({ onPlaceNote })));
 
     tecla("n");
 
-    expect(onCreateNote).toHaveBeenCalledOnce();
+    expect(onPlaceNote).toHaveBeenCalledOnce();
   });
 
   it("aceita a maiúscula: quem segurou Shift sem querer não fica sem o atalho", () => {
-    const onCreateNote = vi.fn();
-    renderHook(() => useKeyboardShortcuts(opcoes({ onCreateNote })));
+    const onPlaceNote = vi.fn();
+    renderHook(() => useKeyboardShortcuts(opcoes({ onPlaceNote })));
 
     tecla("N", document.body, { shiftKey: true });
 
-    expect(onCreateNote).toHaveBeenCalledOnce();
+    expect(onPlaceNote).toHaveBeenCalledOnce();
   });
 
   it("não cria enquanto se digita num post-it", () => {
-    const onCreateNote = vi.fn();
-    renderHook(() => useKeyboardShortcuts(opcoes({ onCreateNote })));
+    const onPlaceNote = vi.fn();
+    renderHook(() => useKeyboardShortcuts(opcoes({ onPlaceNote })));
 
     tecla("n", elemento("textarea"));
 
-    expect(onCreateNote).not.toHaveBeenCalled();
+    expect(onPlaceNote).not.toHaveBeenCalled();
   });
 
   /**
@@ -195,12 +195,12 @@ describe("useKeyboardShortcuts — criar post-it com N", () => {
    * quisesse a janela sem ela — e ninguém que aperta esse par está pedindo um post-it.
    */
   it("não rouba o Ctrl+N nem o ⌘+N do navegador", () => {
-    const onCreateNote = vi.fn();
-    renderHook(() => useKeyboardShortcuts(opcoes({ onCreateNote })));
+    const onPlaceNote = vi.fn();
+    renderHook(() => useKeyboardShortcuts(opcoes({ onPlaceNote })));
 
     expect(tecla("n", document.body, { ctrlKey: true })).toBe(false);
     expect(tecla("n", document.body, { metaKey: true })).toBe(false);
-    expect(onCreateNote).not.toHaveBeenCalled();
+    expect(onPlaceNote).not.toHaveBeenCalled();
   });
 });
 

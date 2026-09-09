@@ -1,4 +1,4 @@
-import { createEvent, fireEvent, render, screen } from "@testing-library/react";
+import { act, createEvent, fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { defined } from "@/test-utils/defined";
@@ -28,11 +28,18 @@ function navegaOQuadro(dx: number, dy: number): void {
   fireEvent.keyUp(document, { key: " " });
 }
 
-/** Rola a roda sobre o quadro. O listener é nativo, então o evento também precisa ser. */
+/**
+ * Rola a roda sobre o quadro. O listener é nativo, então o evento também precisa ser.
+ *
+ * Dentro de `act` porque o `dispatchEvent` cru não passa pelo empacotamento que o
+ * `fireEvent` faz: o `setState` do listener nativo fica agendado e não pintado, e quem
+ * afirmasse alguma coisa sobre o que apareceu na tela leria o quadro anterior à rolagem.
+ */
 function rola(init: WheelEventInit): void {
-  screen
-    .getByTestId("viewport-surface")
-    .dispatchEvent(new WheelEvent("wheel", { bubbles: true, cancelable: true, ...init }));
+  const surface = screen.getByTestId("viewport-surface");
+  act(() => {
+    surface.dispatchEvent(new WheelEvent("wheel", { bubbles: true, cancelable: true, ...init }));
+  });
 }
 
 function postIts(): HTMLElement[] {
@@ -1424,36 +1431,19 @@ describe("Whiteboard — atalhos de teclado", () => {
     vi.restoreAllMocks();
   });
 
-  it("N cria um post-it já pronto para escrever", () => {
-    stubMatchMedia(false);
-    render(<Whiteboard />);
-
-    fireEvent.keyDown(document, { key: "n" });
-
-    expect(postIts()).toHaveLength(1);
-    expect(document.activeElement).toBe(screen.getByTestId("post-it-editor"));
-  });
-
   /**
-   * Sem cursor não há ponto para obedecer. O centro da área visível é a única resposta que
-   * não depende de onde o quadro foi arrastado — criar sempre na origem do canvas colocaria
-   * o post-it fora da tela de quem já navegou para longe dela.
+   * `N` deixou de criar (#73). Ele arma a colocação, e quem diz onde a nota fica é o clique
+   * seguinte — a mesma precisão que o duplo clique sempre teve, agora para quem está no
+   * teclado. Criar no centro da área visível era pôr a nota num lugar que ninguém escolheu.
    */
-  it("põe o post-it do teclado no centro do que está visível", () => {
+  it("N não cria nada sozinho: arma a colocação e espera o clique", () => {
     stubMatchMedia(false);
-    // O jsdom não faz layout: sem medida, toda área do quadro tem 0×0 e o "centro" seria a
-    // origem, indistinguível de criar sempre no mesmo lugar. A medida entra no protótipo
-    // porque quem é medido aqui é a moldura interna, que não tem testid próprio.
-    vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockReturnValue(
-      new DOMRect(0, 0, 800, 600),
-    );
     render(<Whiteboard />);
 
     fireEvent.keyDown(document, { key: "n" });
 
-    const nota = postIt(0);
-    expect(Number.parseFloat(nota.style.left) + Number.parseFloat(nota.style.width) / 2).toBe(400);
-    expect(Number.parseFloat(nota.style.top) + Number.parseFloat(nota.style.height) / 2).toBe(300);
+    expect(postIts()).toEqual([]);
+    expect(screen.getByTestId("viewport-surface").dataset.placing).toBe("true");
   });
 
   it("N também dispensa a apresentação do quadro vazio", () => {
@@ -1560,6 +1550,281 @@ describe("Whiteboard — navegar com a rodinha apertada", () => {
     arrastaComARodinha(-400, -300);
 
     expect(screen.queryByTestId("selection-box")).toBeNull();
+  });
+});
+
+describe("Whiteboard — colocar nota (#73)", () => {
+  /** O botão da moldura, que é a porta do modo para quem não tem teclado. */
+  function botaoNota(): HTMLElement {
+    return screen.getByLabelText(UI.en.note.action);
+  }
+
+  function modoArmado(): boolean {
+    return botaoNota().getAttribute("aria-pressed") === "true";
+  }
+
+  function previa(): HTMLElement | null {
+    return screen.queryByTestId("note-placement-preview");
+  }
+
+  /** Move o ponteiro sobre o quadro, que é o que a prévia segue. */
+  function moveOPonteiro(x: number, y: number): void {
+    fireEvent.pointerMove(screen.getByTestId("viewport-surface"), {
+      pointerId: 1,
+      clientX: x,
+      clientY: y,
+    });
+  }
+
+  /** Clica no quadro: com o modo armado, é o gesto que fixa a nota. */
+  function clicaNoQuadro(x: number, y: number): void {
+    const surface = screen.getByTestId("viewport-surface");
+
+    fireEvent.pointerDown(surface, { pointerId: 1, button: 0, clientX: x, clientY: y });
+    fireEvent.pointerUp(surface, { pointerId: 1, clientX: x, clientY: y });
+  }
+
+  /** Canto superior esquerdo da prévia, em unidades de canvas. */
+  function cantoDaPrevia(): { x: number; y: number } {
+    const caixa = screen.getByTestId("note-placement-preview");
+    return {
+      x: Number.parseFloat(caixa.style.left),
+      y: Number.parseFloat(caixa.style.top),
+    };
+  }
+
+  it("N arma o modo, e N de novo desarma", () => {
+    render(<Whiteboard />);
+
+    expect(modoArmado()).toBe(false);
+
+    fireEvent.keyDown(document, { key: "n" });
+    expect(modoArmado()).toBe(true);
+
+    fireEvent.keyDown(document, { key: "n" });
+    expect(modoArmado()).toBe(false);
+  });
+
+  it("o botão da moldura arma e desarma, como a tecla", async () => {
+    const user = userEvent.setup();
+    render(<Whiteboard />);
+
+    await user.click(botaoNota());
+    expect(modoArmado()).toBe(true);
+    expect(screen.getByTestId("viewport-surface").dataset.placing).toBe("true");
+
+    await user.click(botaoNota());
+    expect(modoArmado()).toBe(false);
+  });
+
+  it("a nota translúcida acompanha o cursor", () => {
+    render(<Whiteboard />);
+    fireEvent.keyDown(document, { key: "n" });
+
+    moveOPonteiro(300, 240);
+    // O centro da nota vai para o cursor, então o canto sobe metade do tamanho.
+    expect(cantoDaPrevia()).toEqual({
+      x: 300 - NOTE_SIZE.defaultWidth / 2,
+      y: 240 - NOTE_SIZE.defaultHeight / 2,
+    });
+
+    moveOPonteiro(500, 400);
+    expect(cantoDaPrevia()).toEqual({
+      x: 500 - NOTE_SIZE.defaultWidth / 2,
+      y: 400 - NOTE_SIZE.defaultHeight / 2,
+    });
+  });
+
+  /**
+   * O critério que este caso guarda é literal: "sem ponteiro sobre o quadro, a
+   * pré-visualização não aparece em um canto arbitrário". Depois de `N` com o cursor fora
+   * da janela não há ponto nenhum para obedecer, e desenhar na origem — ou em qualquer
+   * outro lugar escolhido por falta de resposta — seria pior do que não desenhar.
+   */
+  it("sem ponteiro sobre o quadro, não desenha prévia nenhuma", () => {
+    render(<Whiteboard />);
+
+    fireEvent.keyDown(document, { key: "n" });
+
+    expect(modoArmado()).toBe(true);
+    expect(previa()).toBeNull();
+  });
+
+  it("o cursor saindo do quadro leva a prévia junto", () => {
+    render(<Whiteboard />);
+    fireEvent.keyDown(document, { key: "n" });
+    moveOPonteiro(300, 240);
+
+    fireEvent.pointerLeave(screen.getByTestId("viewport-surface"), { pointerId: 1 });
+
+    expect(previa()).toBeNull();
+  });
+
+  /**
+   * A promessa da prévia é "o que você vê é o que vai ficar". Por isso o tamanho e a cor
+   * são comparados com um post-it de verdade, e não com literais: um valor escrito à mão
+   * aqui continuaria passando no dia em que a nota mudasse de tamanho ou de cor padrão.
+   */
+  it("tem o tamanho e a cor da nota que será criada", () => {
+    render(<Whiteboard />);
+    duploCliqueNoFundo(600, 500);
+    fireEvent.keyDown(screen.getByTestId("post-it-editor"), { key: "Escape" });
+    const notaDeVerdade = postIt(0);
+
+    fireEvent.keyDown(document, { key: "n" });
+    moveOPonteiro(300, 240);
+    const caixa = screen.getByTestId("note-placement-preview");
+
+    expect(caixa.style.width).toBe(notaDeVerdade.style.width);
+    expect(caixa.style.height).toBe(notaDeVerdade.style.height);
+    expect(caixa.style.backgroundColor).toBe(notaDeVerdade.style.backgroundColor);
+  });
+
+  it("não captura o ponteiro: o clique atravessa e chega ao quadro", () => {
+    render(<Whiteboard />);
+    fireEvent.keyDown(document, { key: "n" });
+    moveOPonteiro(300, 240);
+
+    expect(screen.getByTestId("note-placement-preview").className).toContain("pointer-events-none");
+  });
+
+  it("o clique fixa a nota naquele ponto, já pronta para escrever", () => {
+    render(<Whiteboard />);
+    fireEvent.keyDown(document, { key: "n" });
+    moveOPonteiro(300, 240);
+
+    clicaNoQuadro(300, 240);
+
+    expect(postIts()).toHaveLength(1);
+    const nota = postIt(0);
+    expect(Number.parseFloat(nota.style.left) + Number.parseFloat(nota.style.width) / 2).toBe(300);
+    expect(Number.parseFloat(nota.style.top) + Number.parseFloat(nota.style.height) / 2).toBe(240);
+    expect(document.activeElement).toBe(screen.getByTestId("post-it-editor"));
+  });
+
+  /**
+   * Colocar encerra o modo. Um modo que ficasse armado transformaria o clique seguinte —
+   * dado para marcar a nota que acabou de nascer — numa segunda nota por cima dela.
+   */
+  it("colocar desarma o modo, e a prévia some junto", () => {
+    render(<Whiteboard />);
+    fireEvent.keyDown(document, { key: "n" });
+    moveOPonteiro(300, 240);
+
+    clicaNoQuadro(300, 240);
+
+    expect(modoArmado()).toBe(false);
+    expect(previa()).toBeNull();
+  });
+
+  /**
+   * O critério mais importante da issue: um `N` cancelado não deixa rastro. Nada chega à
+   * store até o clique — a prévia é estado de gesto e vive dentro do `Viewport` —, e é por
+   * isso que o autosave, que escuta a store, não tem o que gravar.
+   */
+  it("Esc sai do modo sem criar nada", () => {
+    render(<Whiteboard />);
+    fireEvent.keyDown(document, { key: "n" });
+    moveOPonteiro(300, 240);
+    moveOPonteiro(420, 360);
+    moveOPonteiro(150, 90);
+
+    fireEvent.keyDown(document, { key: "Escape" });
+
+    expect(postIts()).toEqual([]);
+    expect(modoArmado()).toBe(false);
+    expect(previa()).toBeNull();
+  });
+
+  it("N de novo também cancela, sem criar nada", () => {
+    render(<Whiteboard />);
+    fireEvent.keyDown(document, { key: "n" });
+    moveOPonteiro(300, 240);
+
+    fireEvent.keyDown(document, { key: "n" });
+
+    expect(postIts()).toEqual([]);
+    expect(previa()).toBeNull();
+  });
+
+  /**
+   * A prévia é desenhada dentro da camada transformada, mas o ponto é guardado em pixels de
+   * tela: é o que a mantém sob o cursor quando quem anda é o quadro. Guardado em canvas, o
+   * fantasma ficaria grudado no ponto do quadro e escaparia do cursor durante um pan.
+   *
+   * A roda é o gesto certo para provar isso porque ela move o quadro **sem** mover o
+   * ponteiro: se a posição só se corrigisse no `pointermove` seguinte, este caso falharia.
+   */
+  it("a prévia continua sob o cursor quando o quadro anda por baixo", () => {
+    render(<Whiteboard />);
+    fireEvent.keyDown(document, { key: "n" });
+    moveOPonteiro(300, 240);
+    const antes = cantoDaPrevia();
+
+    rola({ deltaY: 100 });
+
+    // O quadro subiu 100px, então o mesmo pixel de tela passou a ser 100 unidades mais
+    // abaixo no canvas — e é para lá que a prévia vai, para continuar sob o cursor.
+    expect(cantoDaPrevia()).toEqual({ x: antes.x, y: antes.y + 100 });
+  });
+
+  it("dispensa a apresentação do quadro vazio, mesmo antes de a nota existir", () => {
+    stubMatchMedia(false);
+    render(<Whiteboard />);
+
+    fireEvent.keyDown(document, { key: "n" });
+
+    expect(screen.queryByTestId("onboarding")).toBeNull();
+  });
+
+  /**
+   * Os dois modos são exclusivos por natureza — um gesto de ponteiro faz uma coisa de cada
+   * vez —, e o quadro guarda um modo só. Este caso é o que impede alguém de trocar aquele
+   * estado por dois booleanos e reabrir a possibilidade de os dois ficarem ligados juntos.
+   */
+  it("armar a colocação desliga o lápis, e ligar o lápis desarma a colocação", () => {
+    render(<Whiteboard />);
+    const lapisLigado = () =>
+      screen.getByLabelText(UI.en.pencil.action).getAttribute("aria-pressed") === "true";
+
+    fireEvent.keyDown(document, { key: "p" });
+    fireEvent.keyDown(document, { key: "n" });
+    expect(modoArmado()).toBe(true);
+    expect(lapisLigado()).toBe(false);
+
+    fireEvent.keyDown(document, { key: "p" });
+    expect(lapisLigado()).toBe(true);
+    expect(modoArmado()).toBe(false);
+  });
+
+  /**
+   * Colocar ganha do retângulo de seleção: com o modo armado, arrastar o fundo deixaria a
+   * nota nascer no fim de uma seleção que ninguém pediu.
+   */
+  it("o clique com o modo armado não desenha retângulo de seleção", () => {
+    render(<Whiteboard />);
+    fireEvent.keyDown(document, { key: "n" });
+
+    const surface = screen.getByTestId("viewport-surface");
+    fireEvent.pointerDown(surface, { pointerId: 1, button: 0, clientX: 100, clientY: 100 });
+    fireEvent.pointerMove(surface, { pointerId: 1, clientX: 400, clientY: 300 });
+
+    expect(screen.queryByTestId("selection-box")).toBeNull();
+    expect(postIts()).toHaveLength(1);
+  });
+
+  /**
+   * Navegar é o gesto que precisa existir em qualquer modo, e quem segurou espaço está
+   * procurando onde colocar a nota — não colocando-a.
+   */
+  it("com espaço segurado, arrastar navega em vez de colocar", () => {
+    render(<Whiteboard />);
+    fireEvent.keyDown(document, { key: "n" });
+
+    navegaOQuadro(120, 80);
+
+    expect(postIts()).toEqual([]);
+    expect(modoArmado()).toBe(true);
   });
 });
 

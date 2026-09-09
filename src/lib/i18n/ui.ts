@@ -43,6 +43,8 @@ export interface UiCopy {
     action: string;
   };
   note: {
+    /** Nome do botão que arma a colocação de uma nota (#73) — a mesma ação da tecla `N`. */
+    action: string;
     /** `aria-label` de uma nota sem texto, que não teria como ser anunciada. */
     empty: string;
     text: string;
@@ -80,6 +82,7 @@ export const UI: Record<Locale, UiCopy> = {
     zoom: { out: "Zoom out", reset: "Reset zoom to 100%", in: "Zoom in" },
     pencil: { action: "Pencil" },
     note: {
+      action: "Note",
       empty: "Empty note",
       text: "Note text",
       color: "Note colour",
@@ -131,6 +134,7 @@ export const UI: Record<Locale, UiCopy> = {
     zoom: { out: "Diminuir zoom", reset: "Voltar o zoom para 100%", in: "Aumentar zoom" },
     pencil: { action: "Lápis" },
     note: {
+      action: "Nota",
       empty: "Nota vazia",
       text: "Texto da nota",
       color: "Cor da nota",
