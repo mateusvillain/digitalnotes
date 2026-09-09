@@ -144,6 +144,14 @@ export interface BoardApi {
   deleteSelection: () => void;
   /** Grava o texto e fecha a edição. */
   commitText: (id: string, text: string) => void;
+  /** Desfaz a última alteração do quadro (#86). Sem nada a desfazer, não faz nada. */
+  undo: () => void;
+  /** Refaz o que o último desfazer levou. Sem nada desfeito, não faz nada. */
+  redo: () => void;
+  /** Há passo guardado para desfazer. É o que desabilita o botão (#87). */
+  canUndo: boolean;
+  /** Há passo guardado para refazer. */
+  canRedo: boolean;
 }
 
 export interface UseBoardOptions {
@@ -229,6 +237,15 @@ export function useBoard({ initialBoard, autosave = true }: UseBoardOptions = {}
   // O mesmo `getBoard` nos dois argumentos: o board inicial no servidor é o mesmo objeto do
   // primeiro render no cliente, então não há divergência de hidratação a conciliar.
   const board: Board = useSyncExternalStore(store.subscribe, store.getBoard, store.getBoard);
+
+  /**
+   * O que o histórico permite agora (#86).
+   *
+   * Pela mesma inscrição do board, e não por uma segunda: as duas coisas mudam juntas, na
+   * mesma publicação — desfazer troca o board **e** as pilhas. A store devolve sempre o
+   * mesmo objeto enquanto os dois valores não mudam, que é o que este hook exige.
+   */
+  const history = useSyncExternalStore(store.subscribe, store.getHistory, store.getHistory);
 
   const createNoteAt = useCallback(
     (point: Point) => {
@@ -502,6 +519,28 @@ export function useBoard({ initialBoard, autosave = true }: UseBoardOptions = {}
     publishSelection(EMPTY_SELECTION);
   }, [publishSelection, store]);
 
+  /**
+   * Desfazer e refazer, com a edição fechada junto.
+   *
+   * A edição precisa fechar. O editor do post-it é não controlado — quem manda enquanto se
+   * digita é o DOM —, e desfazer por baixo dele deixaria um textarea escrevendo num texto
+   * que o board já não tem; ao sair, ele gravaria de volta justamente o que se acabou de
+   * desfazer.
+   *
+   * A seleção fica como está, e de propósito. Ids que apontam para o que sumiu já são
+   * filtrados em todo lugar que lê a seleção, e limpá-la a cada passo tiraria de quem
+   * desfez a marcação que ele ainda vai usar na ação seguinte.
+   */
+  const undo = useCallback(() => {
+    setEditingId(null);
+    store.undo();
+  }, [store]);
+
+  const redo = useCallback(() => {
+    setEditingId(null);
+    store.redo();
+  }, [store]);
+
   const commitText = useCallback(
     (id: string, text: string) => {
       store.updateNote(id, { text });
@@ -540,5 +579,9 @@ export function useBoard({ initialBoard, autosave = true }: UseBoardOptions = {}
     selectionColor,
     colorSelection,
     deleteSelection,
+    undo,
+    redo,
+    canUndo: history.canUndo,
+    canRedo: history.canRedo,
   };
 }

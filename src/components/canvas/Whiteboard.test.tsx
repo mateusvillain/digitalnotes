@@ -1848,6 +1848,221 @@ describe("Whiteboard — colocar nota (#73)", () => {
   });
 });
 
+describe("Whiteboard — desfazer e refazer (#86, #87)", () => {
+  function desfazer(): HTMLElement {
+    return screen.getByLabelText(UI.en.history.undo);
+  }
+
+  function refazer(): HTMLElement {
+    return screen.getByLabelText(UI.en.history.redo);
+  }
+
+  function criaPostIt(x: number, y: number): void {
+    duploCliqueNoFundo(x, y);
+    fireEvent.keyDown(screen.getByTestId("post-it-editor"), { key: "Escape" });
+  }
+
+  function ctrl(key: string, extra: Record<string, unknown> = {}): void {
+    fireEvent.keyDown(document, { key, ctrlKey: true, ...extra });
+  }
+
+  it("Ctrl+Z desfaz a criação de um post-it", () => {
+    render(<Whiteboard />);
+    criaPostIt(200, 200);
+    expect(postIts()).toHaveLength(1);
+
+    ctrl("z");
+
+    expect(postIts()).toEqual([]);
+  });
+
+  it("Ctrl+Shift+Z refaz o que o desfazer levou", () => {
+    render(<Whiteboard />);
+    criaPostIt(200, 200);
+    ctrl("z");
+
+    ctrl("z", { shiftKey: true });
+
+    expect(postIts()).toHaveLength(1);
+  });
+
+  /** É a convenção do Windows, e quem a tem no dedo não deveria ter de aprender a outra. */
+  it("Ctrl+Y também refaz", () => {
+    render(<Whiteboard />);
+    criaPostIt(200, 200);
+    ctrl("z");
+
+    ctrl("y");
+
+    expect(postIts()).toHaveLength(1);
+  });
+
+  it("desfaz o apagamento e devolve o que foi apagado", () => {
+    render(<Whiteboard />);
+    criaPostIt(200, 200);
+    fireEvent.keyDown(document, { key: "Delete" });
+    expect(postIts()).toEqual([]);
+
+    ctrl("z");
+
+    expect(postIts()).toHaveLength(1);
+  });
+
+  /**
+   * O critério que a issue chamou de mais importante: uma seleção de vários apagada de uma
+   * vez volta de uma vez. Sai de graça porque a unidade de passo é o `commit` da store, que
+   * já era o mesmo gargalo que decidia o que é **uma** publicação.
+   */
+  it("uma seleção apagada de uma vez volta de uma vez", () => {
+    render(<Whiteboard />);
+    criaPostIt(200, 200);
+    criaPostIt(500, 200);
+    criaPostIt(800, 200);
+    fireEvent.keyDown(document, { key: "a", ctrlKey: true });
+    // Sem `Ctrl+A` ainda (#85): o retângulo de seleção faz o mesmo trabalho aqui.
+    const surface = screen.getByTestId("viewport-surface");
+    fireEvent.pointerDown(surface, { pointerId: 3, button: 0, clientX: 0, clientY: 0 });
+    fireEvent.pointerMove(surface, { pointerId: 3, clientX: 1200, clientY: 600 });
+    fireEvent.pointerUp(surface, { pointerId: 3, clientX: 1200, clientY: 600 });
+    fireEvent.keyDown(document, { key: "Delete" });
+    expect(postIts()).toEqual([]);
+
+    ctrl("z");
+
+    expect(postIts()).toHaveLength(3);
+  });
+
+  it("desfaz o rabisco", () => {
+    render(<Whiteboard />);
+    fireEvent.keyDown(document, { key: "p" });
+    const surface = screen.getByTestId("viewport-surface");
+    fireEvent.pointerDown(surface, { pointerId: 1, button: 0, clientX: 100, clientY: 100 });
+    fireEvent.pointerMove(surface, { pointerId: 1, clientX: 200, clientY: 160 });
+    fireEvent.pointerUp(surface, { pointerId: 1, clientX: 200, clientY: 160 });
+    fireEvent.keyDown(document, { key: "v" });
+    expect(screen.queryAllByTestId("stroke-group")).toHaveLength(1);
+
+    ctrl("z");
+
+    expect(screen.queryAllByTestId("stroke-group")).toEqual([]);
+  });
+
+  it("desfaz o arraste, devolvendo a posição anterior", () => {
+    render(<Whiteboard />);
+    criaPostIt(200, 200);
+    const antes = postIt(0).style.left;
+    const nota = postIt(0);
+    fireEvent.pointerDown(nota, { pointerId: 4, button: 0, clientX: 0, clientY: 0 });
+    fireEvent.pointerMove(nota, { pointerId: 4, clientX: 90, clientY: 0 });
+    fireEvent.pointerUp(nota, { pointerId: 4, clientX: 90, clientY: 0 });
+    expect(postIt(0).style.left).not.toBe(antes);
+
+    ctrl("z");
+
+    expect(postIt(0).style.left).toBe(antes);
+  });
+
+  /**
+   * Fazer algo novo apaga o que havia para refazer: o futuro guardado era o de outra linha
+   * do tempo, e colá-lo depois seria trazer um estado que nunca veio daqui.
+   */
+  it("alterar depois de desfazer descarta o refazer", () => {
+    render(<Whiteboard />);
+    criaPostIt(200, 200);
+    ctrl("z");
+    // Desfeito, há o que refazer.
+    expect(refazer().hasAttribute("disabled")).toBe(false);
+
+    criaPostIt(600, 400);
+
+    // E a alteração nova apaga esse futuro: ele era de outra linha do tempo.
+    expect(refazer().hasAttribute("disabled")).toBe(true);
+    expect(postIts()).toHaveLength(1);
+  });
+
+  it("desfazer num quadro intocado não faz nada", () => {
+    render(<Whiteboard />);
+
+    ctrl("z");
+    ctrl("z");
+
+    expect(postIts()).toEqual([]);
+  });
+
+  /**
+   * `Ctrl+Z` dentro de um post-it é o desfazer do próprio texto. Roubá-lo tiraria de quem
+   * está escrevendo a única forma de voltar atrás no que escreveu.
+   */
+  it("Ctrl+Z dentro do editor pertence ao texto", () => {
+    render(<Whiteboard />);
+    criaPostIt(200, 200);
+    criaPostIt(600, 200);
+    duploCliqueNoFundo(900, 200);
+
+    fireEvent.keyDown(screen.getByTestId("post-it-editor"), { key: "z", ctrlKey: true });
+
+    // Nenhum post-it desapareceu: o quadro não viu a tecla.
+    expect(postIts()).toHaveLength(3);
+  });
+
+  it("os botões começam desabilitados e habilitam com o histórico", () => {
+    render(<Whiteboard />);
+
+    expect(desfazer().hasAttribute("disabled")).toBe(true);
+    expect(refazer().hasAttribute("disabled")).toBe(true);
+
+    criaPostIt(200, 200);
+    expect(desfazer().hasAttribute("disabled")).toBe(false);
+    expect(refazer().hasAttribute("disabled")).toBe(true);
+
+    ctrl("z");
+    expect(desfazer().hasAttribute("disabled")).toBe(true);
+    expect(refazer().hasAttribute("disabled")).toBe(false);
+  });
+
+  it("os botões fazem o mesmo que os atalhos", async () => {
+    const user = userEvent.setup();
+    render(<Whiteboard />);
+    criaPostIt(200, 200);
+
+    await user.click(desfazer());
+    expect(postIts()).toEqual([]);
+
+    await user.click(refazer());
+    expect(postIts()).toHaveLength(1);
+  });
+
+  /**
+   * O editor é não controlado — quem manda enquanto se digita é o DOM. Desfazer por baixo
+   * dele deixaria um textarea escrevendo num texto que o board já não tem, e ao sair ele
+   * gravaria de volta justamente o que se acabou de desfazer.
+   */
+  it("desfazer fecha a edição em curso", () => {
+    render(<Whiteboard />);
+    duploCliqueNoFundo(200, 200);
+    expect(screen.getByTestId("post-it-editor")).toBeTruthy();
+
+    ctrl("z");
+
+    expect(screen.queryByTestId("post-it-editor")).toBeNull();
+  });
+
+  it("desfazer o novo quadro devolve o que havia nele", async () => {
+    const user = userEvent.setup();
+    render(<Whiteboard />);
+    criaPostIt(200, 200);
+
+    await user.click(screen.getByLabelText(UI.en.newBoard.action));
+    await user.click(screen.getByRole("button", { name: UI.en.newBoard.startWithoutSaving }));
+    expect(postIts()).toEqual([]);
+
+    ctrl("z");
+
+    // A ação mais destrutiva do quadro é a que mais precisa de volta.
+    expect(postIts()).toHaveLength(1);
+  });
+});
+
 describe("Whiteboard — ferramenta de seleção (#83)", () => {
   function botao(nome: string): HTMLElement {
     return screen.getByLabelText(nome);

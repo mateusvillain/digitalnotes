@@ -29,6 +29,8 @@ function opcoes(overrides: Partial<Parameters<typeof useKeyboardShortcuts>[0]>) 
     onDelete: vi.fn(),
     onPlaceNote: vi.fn(),
     onSave: vi.fn(),
+    onUndo: vi.fn(),
+    onRedo: vi.fn(),
     onTogglePencil: vi.fn(),
     onSelectTool: vi.fn(),
     onCancel: vi.fn(),
@@ -304,6 +306,54 @@ describe("useKeyboardShortcuts — salvar com Ctrl/⌘+S", () => {
     tecla("v", document.body, { altKey: true });
 
     expect(onSelectTool).not.toHaveBeenCalled();
+  });
+
+  it("Ctrl+Z e ⌘+Z desfazem", () => {
+    const onUndo = vi.fn();
+    renderHook(() => useKeyboardShortcuts(opcoes({ onUndo })));
+
+    tecla("z", document.body, { ctrlKey: true });
+    tecla("z", document.body, { metaKey: true });
+
+    expect(onUndo).toHaveBeenCalledTimes(2);
+  });
+
+  it("Ctrl+Shift+Z e Ctrl+Y refazem", () => {
+    const onRedo = vi.fn();
+    const onUndo = vi.fn();
+    renderHook(() => useKeyboardShortcuts(opcoes({ onRedo, onUndo })));
+
+    tecla("z", document.body, { ctrlKey: true, shiftKey: true });
+    tecla("y", document.body, { ctrlKey: true });
+
+    expect(onRedo).toHaveBeenCalledTimes(2);
+    expect(onUndo).not.toHaveBeenCalled();
+  });
+
+  /**
+   * Ao contrário do `Ctrl+S`, que vale mesmo escrevendo: `Ctrl+Z` dentro de um post-it é o
+   * desfazer do próprio texto, e roubá-lo tiraria de quem digita a única forma de voltar
+   * atrás no que escreveu.
+   */
+  it("Ctrl+Z dentro de um campo de texto pertence ao texto", () => {
+    const onUndo = vi.fn();
+    const onRedo = vi.fn();
+    renderHook(() => useKeyboardShortcuts(opcoes({ onUndo, onRedo })));
+
+    tecla("z", elemento("textarea"), { ctrlKey: true });
+    tecla("z", elemento("input"), { ctrlKey: true, shiftKey: true });
+
+    expect(onUndo).not.toHaveBeenCalled();
+    expect(onRedo).not.toHaveBeenCalled();
+  });
+
+  it("Z sem modificador não desfaz nada", () => {
+    const onUndo = vi.fn();
+    renderHook(() => useKeyboardShortcuts(opcoes({ onUndo })));
+
+    tecla("z");
+
+    expect(onUndo).not.toHaveBeenCalled();
   });
 
   it("Esc pede para sair do modo em curso", () => {

@@ -29,6 +29,25 @@ import {
 /** Comprimento do id de um post-it. Curto porque vai serializado dentro da URL. */
 const ID_LENGTH = 6;
 
+/**
+ * Passos de desfazer guardados (#86).
+ *
+ * Um teto, e não memória livre: um quadro editado por horas não pode acumular histórico sem
+ * fim. Cinquenta cobre com folga o arrependimento real — quem desfaz, desfaz os últimos
+ * gestos — sem virar um segundo lugar onde o board mora.
+ *
+ * O custo de cada passo é menor do que parece. Os boards são imutáveis e compartilham as
+ * notes e os traços que não mudaram: um passo guarda as duas listas, não cópias do conteúdo
+ * delas. Mover um post-it num quadro de quinhentos traços custa a lista, e não os traços.
+ */
+const HISTORY_LIMIT = 50;
+
+/** O que o histórico permite agora. Valor, para a interface poder assinar as mudanças. */
+export interface HistoryState {
+  canUndo: boolean;
+  canRedo: boolean;
+}
+
 /** Campos que uma atualização pode tocar: tudo menos o id, que é a identidade da note. */
 export type NotePatch = Partial<Omit<Note, "id">>;
 
@@ -112,8 +131,25 @@ export interface BoardStore {
    * reescreve a URL a cada aviso.
    */
   removeElements: (noteIds: readonly string[], strokeIds: readonly string[]) => void;
-  /** Substitui o board inteiro — usado pela restauração do autosave local (#22). */
+  /** Substitui o board inteiro. Conta como um passo de desfazer, como qualquer alteração. */
   replaceBoard: (board: Board) => void;
+  /**
+   * Instala um board vindo de fora, sem histórico — a restauração do autosave local (#22).
+   *
+   * Separado de `replaceBoard` porque **não** é uma alteração: é o quadro chegando. Gravado
+   * como passo, um `Ctrl+Z` logo depois de abrir a aba devolveria o board vazio do primeiro
+   * render e apagaria a sessão que a restauração acabou de trazer.
+   *
+   * O histórico é zerado junto: o que veio do armazenamento é o novo ponto de partida, e os
+   * passos anteriores apontam para boards de antes da restauração.
+   */
+  restoreBoard: (board: Board) => void;
+  /** O que o histórico permite agora. Muda junto com o board, e pela mesma notificação. */
+  getHistory: () => HistoryState;
+  /** Volta ao estado anterior à última alteração. Sem passo guardado, não faz nada. */
+  undo: () => void;
+  /** Refaz o que o último `undo` desfez. Sem nada desfeito, não faz nada. */
+  redo: () => void;
 }
 
 /** Gera um id curto e livre dentro do board. */
@@ -186,21 +222,97 @@ export function createBoardStore(initial: Board = createEmptyBoard()): BoardStor
   const listeners = new Set<() => void>();
 
   /**
-   * Publica um board novo e avisa os inscritos.
+   * Os boards de antes e de depois, para desfazer e refazer (#86).
+   *
+   * Boards inteiros, e não diferenças. O board deste projeto já é um valor imutável que cabe
+   * numa URL — a store publica uma referência nova a cada alteração —, então a pilha é uma
+   * lista de referências e não uma máquina de aplicar e reverter patches. É a solução que
+   * aproveita a decisão de design que já estava tomada.
+   */
+  const past: Board[] = [];
+  const future: Board[] = [];
+
+  /**
+   * O que o histórico permite, como valor estável.
+   *
+   * Só troca de identidade quando um dos dois muda de verdade. Quem lê é o
+   * `useSyncExternalStore`, que compara por identidade e entraria em laço infinito se cada
+   * leitura devolvesse um objeto novo.
+   */
+  let history: HistoryState = { canUndo: false, canRedo: false };
+
+  function refreshHistory(): void {
+    const canUndo = past.length > 0;
+    const canRedo = future.length > 0;
+    if (canUndo !== history.canUndo || canRedo !== history.canRedo) {
+      history = { canUndo, canRedo };
+    }
+  }
+
+  /**
+   * Instala um board e avisa os inscritos, sem tocar no histórico.
    *
    * A lista de ouvintes é copiada antes da iteração: um ouvinte que escreve na store
    * dispara outra publicação no meio desta, e sem a cópia os avisos restantes sairiam
    * misturando dois estados.
    */
+  function publish(next: Board): void {
+    board = next;
+    for (const listener of [...listeners]) listener();
+  }
+
+  /**
+   * Publica uma alteração e guarda o estado anterior como um passo de desfazer.
+   *
+   * O histórico mora aqui, e não em quem chama, porque `commit` já é o gargalo por onde toda
+   * alteração passa — e já é também a fronteira que decide o que é **uma** publicação. Um
+   * gesto que hoje avisa a persistência uma vez vira um passo de desfazer pela mesma regra,
+   * sem ninguém precisar lembrar de registrá-lo: foi para isso que `updateNotes`,
+   * `updateElements` e `removeElements` existem.
+   */
   function commit(next: { notes?: Note[]; strokes?: Stroke[] }): void {
+    const previous = board;
+
     // A versão é sempre a atual: o board na memória é, por definição, o que este código
     // entende. Board de outra versão entra pelo parseBoard antes de chegar aqui.
-    board = guard({
+    const built = guard({
       version: SCHEMA_VERSION,
       notes: next.notes ?? board.notes,
       strokes: next.strokes ?? board.strokes,
     });
-    for (const listener of [...listeners]) listener();
+
+    past.push(previous);
+    // O passo mais antigo cai fora, e não o mais novo: o teto existe para limitar memória,
+    // e desfazer sempre anda para trás a partir de agora.
+    if (past.length > HISTORY_LIMIT) past.shift();
+    // Fazer algo novo apaga o que havia para refazer. O futuro guardado era o de outra
+    // linha do tempo, e mantê-lo deixaria `redo` colar um estado que nunca veio daqui.
+    future.length = 0;
+    refreshHistory();
+
+    publish(built);
+  }
+
+  function undo(): void {
+    const previous = past.pop();
+    if (previous === undefined) return;
+
+    future.push(board);
+    refreshHistory();
+    publish(previous);
+  }
+
+  function redo(): void {
+    const next = future.pop();
+    if (next === undefined) return;
+
+    past.push(board);
+    refreshHistory();
+    publish(next);
+  }
+
+  function getHistory(): HistoryState {
+    return history;
   }
 
   function getBoard(): Board {
@@ -374,13 +486,27 @@ export function createBoardStore(initial: Board = createEmptyBoard()): BoardStor
     updateNote(id, { z: top + 1 });
   }
 
-  function replaceBoard(next: Board): void {
-    // Cópia das notes e dos traços, e não das listas só: quem chamou não pode continuar
-    // segurando as mesmas referências que a store passou a tratar como imutáveis.
-    commit({
+  /**
+   * Cópia das notes e dos traços, e não das listas só: quem chamou não pode continuar
+   * segurando as mesmas referências que a store passou a tratar como imutáveis.
+   */
+  function copyOf(next: Board): { notes: Note[]; strokes: Stroke[] } {
+    return {
       notes: next.notes.map((note) => ({ ...note })),
       strokes: next.strokes.map((stroke) => ({ ...stroke, points: [...stroke.points] })),
-    });
+    };
+  }
+
+  function replaceBoard(next: Board): void {
+    commit(copyOf(next));
+  }
+
+  function restoreBoard(next: Board): void {
+    past.length = 0;
+    future.length = 0;
+    refreshHistory();
+
+    publish(guard({ version: SCHEMA_VERSION, ...copyOf(next) }));
   }
 
   // Funções soltas, e não métodos: a interface vai desestruturar a store, e método com
@@ -402,5 +528,9 @@ export function createBoardStore(initial: Board = createEmptyBoard()): BoardStor
     removeStrokes,
     removeElements,
     replaceBoard,
+    restoreBoard,
+    getHistory,
+    undo,
+    redo,
   };
 }
