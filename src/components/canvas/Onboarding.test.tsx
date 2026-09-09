@@ -38,11 +38,15 @@ describe("apresentação do quadro vazio", () => {
     expect(screen.getByText(ONBOARDING.en.shortcuts[0]!.label)).toBeDefined();
   });
 
-  it("ensina três coisas, e não a lista inteira de atalhos", () => {
+  /**
+   * Quatro é o teto que a peça aguenta de relance; a quinta linha já é manual. Se este
+   * número subir, é sinal de que uma linha antiga devia ter saído no lugar.
+   */
+  it("ensina quatro coisas, e não a lista inteira de atalhos", () => {
     aparelho();
     renderiza("pt");
 
-    expect(screen.getAllByRole("listitem")).toHaveLength(3);
+    expect(screen.getAllByRole("listitem")).toHaveLength(4);
   });
 
   it("mostra as teclas como teclas", () => {
@@ -51,7 +55,7 @@ describe("apresentação do quadro vazio", () => {
 
     const teclas = [...container.querySelectorAll("kbd")].map((it) => it.textContent);
 
-    expect(teclas).toEqual(["N", "Espaço", "Ctrl", "S"]);
+    expect(teclas).toEqual(["N", "P", "Espaço", "Ctrl", "S"]);
   });
 
   /**
@@ -74,8 +78,61 @@ describe("apresentação do quadro vazio", () => {
   });
 
   /**
+   * O lápis é o único que a apresentação anuncia por tecla e não por gesto: no toque ele é
+   * um botão que está na tela o tempo todo, e gastar uma das poucas linhas mandando tocar
+   * num botão visível é ensinar o que a tela já diz.
+   */
+  it("anuncia o lápis na lista de teclado, nos dois idiomas", () => {
+    aparelho();
+    const { container, unmount } = renderiza("pt");
+
+    expect(screen.getByText("Lápis")).toBeDefined();
+    expect([...container.querySelectorAll("kbd")].map((it) => it.textContent)).toContain("P");
+
+    unmount();
+    aparelho();
+    const ingles = renderiza("en");
+
+    expect(screen.getByText("Pencil")).toBeDefined();
+    expect([...ingles.container.querySelectorAll("kbd")].map((it) => it.textContent)).toContain(
+      "P",
+    );
+  });
+
+  it("não leva o lápis para a lista de toque, onde não há tecla para apertar", () => {
+    aparelho({ toque: true });
+    const { unmount } = renderiza("pt");
+
+    expect(screen.getAllByRole("listitem")).toHaveLength(3);
+    expect(screen.queryByText("Lápis")).toBeNull();
+
+    unmount();
+    aparelho({ toque: true });
+    renderiza("en");
+
+    expect(screen.queryByText("Pencil")).toBeNull();
+  });
+
+  /**
+   * A frase não conta os itens: são quatro no teclado e três no toque, e um número ali
+   * estaria errado em metade dos aparelhos.
+   */
+  it("o subtítulo não promete um número de linhas", () => {
+    aparelho();
+    const { unmount } = renderiza("pt");
+
+    expect(screen.getByText(ONBOARDING.pt.subtitle).textContent).not.toMatch(/\d|três|quatro/i);
+
+    unmount();
+    aparelho();
+    renderiza("en");
+
+    expect(screen.getByText(ONBOARDING.en.subtitle).textContent).not.toMatch(/\d|three|four/i);
+  });
+
+  /**
    * A dica errada é pior do que dica nenhuma: num celular não há tecla nenhuma para
-   * apertar, então as três linhas viram gestos.
+   * apertar, então as linhas viram gestos.
    */
   it("no toque, troca as teclas por gestos", () => {
     aparelho({ toque: true });
