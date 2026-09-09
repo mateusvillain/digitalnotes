@@ -2538,6 +2538,23 @@ describe("Whiteboard — selecionar e apagar rabiscos (#70)", () => {
     expect(tracos()).toHaveLength(1);
   });
 
+  /**
+   * A moldura é só contorno: nada de fundo.
+   *
+   * O azul translúcido que aparecia dentro dela não vinha de classe nenhuma deste projeto —
+   * era o realce de seleção de texto do navegador, criado por arrastar sobre o quadro e
+   * pintado por cima de toda caixa dentro do intervalo, inclusive de uma caixa vazia. Quem
+   * o impede é o `select-none` da superfície, e é ele que este caso guarda.
+   */
+  it("a moldura é só contorno, e o quadro não deixa nascer seleção de texto", () => {
+    render(<Whiteboard />);
+    desenha([100, 100], [300, 200]);
+    clicaNoTraco(0);
+
+    expect(screen.getByTestId("stroke-frame").className).not.toMatch(/\bbg-/);
+    expect(screen.getByTestId("viewport-surface").className).toContain("select-none");
+  });
+
   it("clicar num traço não deixa o retângulo de seleção nascer por baixo", () => {
     render(<Whiteboard />);
     desenha([100, 100], [300, 200]);
