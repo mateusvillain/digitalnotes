@@ -1,5 +1,6 @@
 import { renderHook } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
+import type { Point } from "@/lib/canvas/coords";
 import { useKeyboardShortcuts } from "./useKeyboardShortcuts";
 
 /** Dispara uma tecla no documento, opcionalmente a partir de um alvo. */
@@ -35,6 +36,9 @@ function opcoes(overrides: Partial<Parameters<typeof useKeyboardShortcuts>[0]>) 
     onTogglePencil: vi.fn(),
     onSelectTool: vi.fn(),
     onCancel: vi.fn(),
+    // Por padrão o quadro tinha algo marcado: quem exercita a seleção vazia diz isso no
+    // próprio caso.
+    onNudge: vi.fn(() => true),
     ...overrides,
   };
 }
@@ -445,5 +449,74 @@ describe("useKeyboardShortcuts — salvar com Ctrl/⌘+S", () => {
     tecla("s");
 
     expect(onSave).not.toHaveBeenCalled();
+  });
+
+  it("as setas movem a seleção, uma unidade de canvas por vez", () => {
+    const deslocamentos: Point[] = [];
+    const onNudge = (delta: Point) => {
+      deslocamentos.push(delta);
+      return true;
+    };
+    renderHook(() => useKeyboardShortcuts(opcoes({ onNudge })));
+
+    tecla("ArrowUp");
+    tecla("ArrowDown");
+    tecla("ArrowLeft");
+    tecla("ArrowRight");
+
+    // Em unidades de canvas, e não de tela: o passo é o mesmo em qualquer zoom.
+    expect(deslocamentos).toEqual([
+      { x: 0, y: -1 },
+      { x: 0, y: 1 },
+      { x: -1, y: 0 },
+      { x: 1, y: 0 },
+    ]);
+  });
+
+  it("com Shift o passo é grande", () => {
+    const onNudge = vi.fn(() => true);
+    renderHook(() => useKeyboardShortcuts(opcoes({ onNudge })));
+
+    tecla("ArrowRight", document.body, { shiftKey: true });
+
+    expect(onNudge).toHaveBeenCalledWith({ x: 10, y: 0 });
+  });
+
+  it("a seta que moveu alguma coisa não rola a página por baixo", () => {
+    renderHook(() => useKeyboardShortcuts(opcoes({ onNudge: vi.fn(() => true) })));
+
+    expect(tecla("ArrowDown")).toBe(true);
+  });
+
+  it("sem seleção a seta continua sendo do navegador", () => {
+    const onNudge = vi.fn(() => false);
+    renderHook(() => useKeyboardShortcuts(opcoes({ onNudge })));
+
+    // O hook não sabe o que está marcado — quem sabe é o board, e é a resposta dele que
+    // decide se a tecla foi engolida.
+    expect(tecla("ArrowDown")).toBe(false);
+    expect(onNudge).toHaveBeenCalledOnce();
+  });
+
+  it("as setas dentro de um post-it são de quem está escrevendo", () => {
+    const onNudge = vi.fn(() => true);
+    renderHook(() => useKeyboardShortcuts(opcoes({ onNudge })));
+
+    tecla("ArrowLeft", elemento("textarea"));
+    tecla("ArrowRight", elemento("input"));
+
+    expect(onNudge).not.toHaveBeenCalled();
+  });
+
+  it("com Ctrl ou Cmd a seta não é do quadro", () => {
+    const onNudge = vi.fn(() => true);
+    renderHook(() => useKeyboardShortcuts(opcoes({ onNudge })));
+
+    // No Mac essas combinações andam por palavra e por linha; no navegador, voltam página.
+    tecla("ArrowRight", document.body, { ctrlKey: true });
+    tecla("ArrowRight", document.body, { metaKey: true });
+    tecla("ArrowRight", document.body, { altKey: true });
+
+    expect(onNudge).not.toHaveBeenCalled();
   });
 });

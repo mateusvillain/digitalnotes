@@ -2,6 +2,7 @@
 
 import { useEffect, useRef } from "react";
 import { isEditableTarget } from "@/lib/dom/target";
+import type { Point } from "@/lib/canvas/coords";
 
 interface KeyboardShortcutsOptions {
   /** Apagar o que está marcado. Não recebe nada: quem sabe o que está marcado é quem trata. */
@@ -37,6 +38,14 @@ interface KeyboardShortcutsOptions {
    */
   onSelectTool: () => void;
   /**
+   * Setas: mover o que está marcado (#74).
+   *
+   * Recebe o deslocamento já pronto, em unidades de canvas, e devolve se a tecla era do
+   * quadro — sem seleção ela não é, e engoli-la tiraria de quem não marcou nada a rolagem
+   * que a página sempre teve.
+   */
+  onNudge: (delta: Point) => boolean;
+  /**
    * `Esc`: largar a ferramenta em curso.
    *
    * Genérico de propósito. `Esc` significa "sai disso", e quem sabe do que se está saindo é
@@ -53,6 +62,36 @@ interface KeyboardShortcutsOptions {
  * um atalho que só ouvisse `Delete` seria inalcançável na maior parte dos laptops.
  */
 const DELETE_KEYS = new Set(["Delete", "Backspace"]);
+
+/**
+ * Passo das setas, em unidades de canvas (#74).
+ *
+ * Uma unidade porque é para isso que as setas existem aqui: o mouse já move em grosso, e o
+ * que falta é o ajuste fino que arrastar não dá — em zoom alto, um pixel de tela nem chega
+ * a ser um pixel de canvas.
+ *
+ * Em unidades de canvas, e não de tela: o deslocamento é o mesmo em qualquer zoom, como o
+ * resto do que o board guarda. Converter pela escala faria a mesma tecla mover mais longe
+ * quanto mais perto se estivesse olhando.
+ */
+const NUDGE_STEP = 1;
+
+/**
+ * Passo com `Shift` segurado.
+ *
+ * Dez, e não um número redondo qualquer: é a convenção que todo editor gráfico usa, e quem
+ * já tem o gesto no dedo não deveria ter de descobrir o daqui. Grande o bastante para
+ * atravessar o quadro sem cansar, pequeno o bastante para ainda ser posicionamento.
+ */
+const NUDGE_STEP_WITH_SHIFT = 10;
+
+/** A direção de cada seta, em passos. Quem não está aqui não move nada. */
+const ARROW_DIRECTIONS: Readonly<Record<string, Point>> = {
+  ArrowUp: { x: 0, y: -1 },
+  ArrowDown: { x: 0, y: 1 },
+  ArrowLeft: { x: -1, y: 0 },
+  ArrowRight: { x: 1, y: 0 },
+};
 
 /** A tecla veio sozinha, sem nenhum modificador segurado junto. */
 function isBareKey(event: KeyboardEvent): boolean {
@@ -81,6 +120,7 @@ export function useKeyboardShortcuts({
   onTogglePencil,
   onSelectTool,
   onCancel,
+  onNudge,
 }: KeyboardShortcutsOptions): void {
   /**
    * Os tratadores atuais, lidos por ref dentro do ouvinte.
@@ -98,6 +138,7 @@ export function useKeyboardShortcuts({
     onTogglePencil,
     onSelectTool,
     onCancel,
+    onNudge,
   });
   useEffect(() => {
     handlers.current = {
@@ -110,6 +151,7 @@ export function useKeyboardShortcuts({
       onTogglePencil,
       onSelectTool,
       onCancel,
+      onNudge,
     };
   }, [
     onDelete,
@@ -121,6 +163,7 @@ export function useKeyboardShortcuts({
     onTogglePencil,
     onSelectTool,
     onCancel,
+    onNudge,
   ]);
 
   useEffect(() => {
@@ -214,6 +257,32 @@ export function useKeyboardShortcuts({
       if (event.key.toLowerCase() === "v") {
         event.preventDefault();
         handlers.current.onSelectTool();
+        return;
+      }
+
+      /**
+       * As setas movem o que está marcado (#74).
+       *
+       * Depois da guarda de tecla nua e da de campo de texto, e é por elas que a seta dentro
+       * de um post-it continua andando pelo texto: com o cursor no meio de uma frase, a
+       * tecla é de quem escreve, não do quadro. Com `Ctrl`/`⌘` ela também não é nossa — no
+       * Mac essas combinações andam por palavra e por linha, e no navegador voltam página.
+       *
+       * `Shift` passa: é o modificador do passo grande, e não um dono a mais da tecla.
+       *
+       * O `preventDefault` só sai se algo se moveu. É a diferença entre um atalho e um
+       * sequestro: com a seleção vazia a seta continua rolando a página, que é o que ela
+       * faz em qualquer lugar onde não há nada marcado.
+       */
+      const direction = ARROW_DIRECTIONS[event.key];
+      if (direction !== undefined) {
+        const step = event.shiftKey ? NUDGE_STEP_WITH_SHIFT : NUDGE_STEP;
+        const moved = handlers.current.onNudge({
+          x: direction.x * step,
+          y: direction.y * step,
+        });
+
+        if (moved) event.preventDefault();
         return;
       }
 
