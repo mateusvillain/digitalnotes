@@ -107,6 +107,23 @@ export function elementsInRect(
   };
 }
 
+/**
+ * Tudo que existe no quadro, marcado (#85).
+ *
+ * Uma seleção montada a partir do board, e não uma capacidade nova: a estrutura já sabia
+ * misturar as duas espécies desde a #70, e "selecionar tudo" é só entregar a ela as duas
+ * listas inteiras.
+ *
+ * Sem caso especial para o quadro vazio: os dois conjuntos saem vazios sozinhos, que é
+ * exatamente a resposta certa — `Ctrl+A` num quadro sem nada não deixa seleção fantasma.
+ */
+export function selectAll(notes: readonly Note[], strokes: readonly Stroke[]): Selection {
+  return {
+    notes: new Set(notes.map((note) => note.id)),
+    strokes: new Set(strokes.map((stroke) => stroke.id)),
+  };
+}
+
 /** As notes marcadas, na ordem em que o board as guarda. */
 export function selectedNotes(notes: readonly Note[], selection: Selection): Note[] {
   return notes.filter((note) => selection.notes.has(note.id));
