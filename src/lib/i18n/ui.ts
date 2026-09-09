@@ -38,6 +38,10 @@ export interface UiCopy {
     cancel: string;
   };
   zoom: { out: string; reset: string; in: string };
+  pencil: {
+    /** Dica e `aria-label` do botão que liga o modo lápis (#68). */
+    action: string;
+  };
   note: {
     /** `aria-label` de uma nota sem texto, que não teria como ser anunciada. */
     empty: string;
@@ -74,6 +78,7 @@ export const UI: Record<Locale, UiCopy> = {
       cancel: "Cancel",
     },
     zoom: { out: "Zoom out", reset: "Reset zoom to 100%", in: "Zoom in" },
+    pencil: { action: "Pencil" },
     note: {
       empty: "Empty note",
       text: "Note text",
@@ -124,6 +129,7 @@ export const UI: Record<Locale, UiCopy> = {
       cancel: "Cancelar",
     },
     zoom: { out: "Diminuir zoom", reset: "Voltar o zoom para 100%", in: "Aumentar zoom" },
+    pencil: { action: "Lápis" },
     note: {
       empty: "Nota vazia",
       text: "Texto da nota",

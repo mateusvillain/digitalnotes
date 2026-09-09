@@ -25,7 +25,14 @@ function tecla(
  * exige, e deixá-los explícitos em todo teste esconderia qual deles é o assunto ali.
  */
 function opcoes(overrides: Partial<Parameters<typeof useKeyboardShortcuts>[0]>) {
-  return { onDelete: vi.fn(), onCreateNote: vi.fn(), onSave: vi.fn(), ...overrides };
+  return {
+    onDelete: vi.fn(),
+    onCreateNote: vi.fn(),
+    onSave: vi.fn(),
+    onTogglePencil: vi.fn(),
+    onCancel: vi.fn(),
+    ...overrides,
+  };
 }
 
 /** Cria um elemento anexado ao documento, para o evento ter caminho de propagação. */
@@ -229,6 +236,63 @@ describe("useKeyboardShortcuts — salvar com Ctrl/⌘+S", () => {
     tecla("s", elemento("textarea"), { metaKey: true });
 
     expect(onSave).toHaveBeenCalledOnce();
+  });
+
+  it("P alterna o modo lápis", () => {
+    const onTogglePencil = vi.fn();
+    renderHook(() => useKeyboardShortcuts(opcoes({ onTogglePencil })));
+
+    tecla("p");
+    tecla("P");
+
+    // Duas vezes, e não uma que liga e outra que desliga: quem sabe em que estado o modo
+    // está é o quadro. O atalho só avisa que a tecla foi apertada.
+    expect(onTogglePencil).toHaveBeenCalledTimes(2);
+  });
+
+  it("P não alterna com o cursor dentro de um post-it", () => {
+    const onTogglePencil = vi.fn();
+    renderHook(() => useKeyboardShortcuts(opcoes({ onTogglePencil })));
+
+    tecla("p", elemento("textarea"));
+    tecla("p", elemento("input"));
+
+    expect(onTogglePencil).not.toHaveBeenCalled();
+  });
+
+  it("P com modificador segurado pertence ao navegador", () => {
+    const onTogglePencil = vi.fn();
+    renderHook(() => useKeyboardShortcuts(opcoes({ onTogglePencil })));
+
+    tecla("p", document.body, { ctrlKey: true });
+    tecla("p", document.body, { metaKey: true });
+    tecla("p", document.body, { altKey: true });
+
+    expect(onTogglePencil).not.toHaveBeenCalled();
+  });
+
+  it("Esc pede para sair do modo em curso", () => {
+    const onCancel = vi.fn();
+    renderHook(() => useKeyboardShortcuts(opcoes({ onCancel })));
+
+    tecla("Escape");
+
+    expect(onCancel).toHaveBeenCalledOnce();
+  });
+
+  it("Esc não é engolido: fora do quadro ele ainda é a tecla de sair do navegador", () => {
+    renderHook(() => useKeyboardShortcuts(opcoes({})));
+
+    expect(tecla("Escape")).toBe(false);
+  });
+
+  it("Esc dentro de um post-it é de quem está escrevendo", () => {
+    const onCancel = vi.fn();
+    renderHook(() => useKeyboardShortcuts(opcoes({ onCancel })));
+
+    tecla("Escape", elemento("textarea"));
+
+    expect(onCancel).not.toHaveBeenCalled();
   });
 
   it("o S sozinho não salva nem apaga nada", () => {

@@ -10,6 +10,16 @@ interface KeyboardShortcutsOptions {
   onCreateNote: () => void;
   /** Salvar o quadro — a mesma ação do botão, num atalho que todo mundo já tem no dedo. */
   onSave: () => void;
+  /** Ligar e desligar o modo lápis (#68). A mesma tecla faz as duas coisas. */
+  onTogglePencil: () => void;
+  /**
+   * `Esc`: sair do modo em curso.
+   *
+   * Genérico de propósito. `Esc` significa "desfaz o que está ligado", e quem sabe o que
+   * está ligado é o quadro — hoje o lápis, e o que vier depois entra no mesmo lugar em vez
+   * de pendurar um segundo ouvinte de teclado na mesma tecla.
+   */
+  onCancel: () => void;
 }
 
 /**
@@ -41,6 +51,8 @@ export function useKeyboardShortcuts({
   onDelete,
   onCreateNote,
   onSave,
+  onTogglePencil,
+  onCancel,
 }: KeyboardShortcutsOptions): void {
   /**
    * Os tratadores atuais, lidos por ref dentro do ouvinte.
@@ -48,10 +60,10 @@ export function useKeyboardShortcuts({
    * Sem isto, um `onDelete` recriado a cada render faria o efeito remover e registrar o
    * ouvinte no documento a cada quadro do arraste.
    */
-  const handlers = useRef({ onDelete, onCreateNote, onSave });
+  const handlers = useRef({ onDelete, onCreateNote, onSave, onTogglePencil, onCancel });
   useEffect(() => {
-    handlers.current = { onDelete, onCreateNote, onSave };
-  }, [onDelete, onCreateNote, onSave]);
+    handlers.current = { onDelete, onCreateNote, onSave, onTogglePencil, onCancel };
+  }, [onDelete, onCreateNote, onSave, onTogglePencil, onCancel]);
 
   useEffect(() => {
     function handleKeyDown(event: KeyboardEvent): void {
@@ -90,7 +102,19 @@ export function useKeyboardShortcuts({
       if (event.key.toLowerCase() === "n") {
         event.preventDefault();
         handlers.current.onCreateNote();
+        return;
       }
+
+      if (event.key.toLowerCase() === "p") {
+        event.preventDefault();
+        handlers.current.onTogglePencil();
+        return;
+      }
+
+      // Sem `preventDefault`: `Esc` é a tecla de "sai disso" do navegador inteiro, e engoli-la
+      // aqui tiraria de quem não tem modo nenhum ligado o que ela já fazia — fechar um
+      // diálogo, interromper um carregamento.
+      if (event.key === "Escape") handlers.current.onCancel();
     }
 
     document.addEventListener("keydown", handleKeyDown, true);

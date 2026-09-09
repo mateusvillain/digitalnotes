@@ -23,6 +23,7 @@ import { pinchChange, pinchSnapshot, type PinchSnapshot } from "@/lib/canvas/pin
 import { cancelPointerGesture, releaseCapture } from "@/lib/canvas/pointer-capture";
 import { useSpaceHeld } from "@/lib/canvas/useSpaceHeld";
 import { SelectionBox } from "./SelectionBox";
+import { StrokePreview } from "./Strokes";
 import type { ViewportApi } from "@/lib/canvas/useViewport";
 
 /**
@@ -54,6 +55,10 @@ type ViewportProps = Pick<ViewportApi, "viewport" | "pan" | "zoomBy"> & {
   onSelectionStart?: (additive: boolean) => void;
   /** Retângulo de seleção em curso, em coordenadas de canvas. */
   onSelectionRect?: (rect: Rect) => void;
+  /** Modo lápis ligado: arrastar desenha em vez de selecionar (#68). */
+  pencil?: boolean;
+  /** Traço concluído, em coordenadas de canvas, ainda sem simplificação. */
+  onStrokeEnd?: (points: Point[]) => void;
   children?: ReactNode;
 };
 
@@ -101,6 +106,12 @@ function wheelPan(event: WheelEvent): Point {
 type DragState =
   | { kind: "pan"; pointerId: number; last: Point }
   | {
+      kind: "draw";
+      pointerId: number;
+      /** O traço em curso, em coordenadas de canvas, na ordem em que foi desenhado. */
+      points: Point[];
+    }
+  | {
       kind: "marquee";
       pointerId: number;
       /** Origem em pixels de tela, para separar clique de arrasto. */
@@ -141,6 +152,8 @@ export function Viewport({
   onBackgroundClick,
   onSelectionStart,
   onSelectionRect,
+  pencil = false,
+  onStrokeEnd,
   children,
 }: ViewportProps) {
   const spaceHeld = useSpaceHeld();
@@ -183,6 +196,14 @@ export function Viewport({
    * transform, mas um retângulo que não redesenha não é um retângulo.
    */
   const [marquee, setMarquee] = useState<Rect | null>(null);
+  /**
+   * O traço em curso, espelhado em estado para poder ser desenhado.
+   *
+   * A lista de verdade é a do gesto, na ref: é dela que sai o traço gravado ao soltar. Esta
+   * é a cópia que o React redesenha a cada ponto — sem ela, o rabisco só apareceria depois
+   * de solto, e desenhar às cegas não é desenhar.
+   */
+  const [drawing, setDrawing] = useState<Point[] | null>(null);
 
   /** Posição do ponteiro relativa ao canto do container — é o que as conversões esperam. */
   const localPoint = useCallback((event: { clientX: number; clientY: number }): Point => {
@@ -309,6 +330,27 @@ export function Viewport({
         }
       }
 
+      /*
+        O lápis reivindica o gesto na descida, pelo mesmo motivo do pan com espaço: com o
+        modo ligado o quadro inteiro é superfície de desenho, e um traço que começasse sobre
+        uma nota viraria arraste dela — a nota para o `pointerdown` antes de ele chegar aqui.
+
+        Espaço continua ganhando do lápis: navegar é o gesto que precisa existir em qualquer
+        modo, e é o único que não tem alternativa com o lápis ligado.
+
+        O toque fica de fora: lá um dedo navega, e trocar isso é a issue #71.
+      */
+      if (pencil && !spaceHeld && event.button === 0 && event.pointerType !== "touch") {
+        event.stopPropagation();
+        event.preventDefault();
+        event.currentTarget.setPointerCapture(event.pointerId);
+
+        const point = screenToCanvas(localPoint(event), viewportRef.current);
+        drag.current = { kind: "draw", pointerId: event.pointerId, points: [point] };
+        setDrawing([point]);
+        return;
+      }
+
       if (!spaceHeld || event.button !== 0) return;
 
       event.stopPropagation();
@@ -320,7 +362,7 @@ export function Viewport({
         last: { x: event.clientX, y: event.clientY },
       };
     },
-    [restartPinch, spaceHeld],
+    [localPoint, pencil, restartPinch, spaceHeld],
   );
 
   const handlePointerDown = useCallback(
@@ -415,6 +457,14 @@ export function Viewport({
         return;
       }
 
+      if (state.kind === "draw") {
+        // Em coordenadas de canvas desde já: o traço é conteúdo do quadro, e guardá-lo em
+        // pixels de tela o prenderia ao zoom e ao pan do instante em que foi desenhado.
+        state.points.push(screenToCanvas(localPoint(event), viewportRef.current));
+        setDrawing([...state.points]);
+        return;
+      }
+
       const here = { x: event.clientX, y: event.clientY };
       if (!state.started) {
         // Nada de retângulo antes da folga: sem isto um clique no fundo desenharia uma caixa
@@ -463,6 +513,7 @@ export function Viewport({
 
       drag.current = null;
       setMarquee(null);
+      setDrawing(null);
 
       return state;
     },
@@ -472,7 +523,16 @@ export function Viewport({
   const handlePointerUp = useCallback(
     (event: PointerEvent<HTMLDivElement>) => {
       const state = endDrag(event);
-      if (state === null || state.kind !== "marquee") return;
+      if (state === null) return;
+
+      if (state.kind === "draw") {
+        // Dois pontos é o mínimo que o contrato aceita, e é também o mínimo que significa
+        // alguma coisa: um clique parado com o lápis ligado não é um traço, é um clique.
+        if (state.points.length >= 2) onStrokeEnd?.(state.points);
+        return;
+      }
+
+      if (state.kind !== "marquee") return;
 
       // Um retângulo que nunca chegou a começar foi um clique, e clique no fundo limpa a
       // seleção. Navegar não passa por aqui: mover o quadro não desmarca nada.
@@ -481,7 +541,7 @@ export function Viewport({
       // shift-clique que errou o alvo não pode desfazer a seleção que ele ia ampliar.
       if (!state.started && !state.additive) onBackgroundClick?.();
     },
-    [endDrag, onBackgroundClick],
+    [endDrag, onBackgroundClick, onStrokeEnd],
   );
 
   /**
@@ -503,16 +563,23 @@ export function Viewport({
 
   const origin = canvasToScreen({ x: 0, y: 0 }, viewport);
 
+  /*
+    O cursor conta qual gesto o arrasto vai virar: mão com espaço, lápis com o modo ligado,
+    cruz para selecionar. Na mesma ordem em que os gestos se decidem no `pointerdown`, senão
+    o desenho prometeria uma coisa e o gesto faria outra.
+
+    Muda por classe, e não por estado de gesto: arrastar não precisa de re-render.
+  */
+  const cursorClass = spaceHeld
+    ? "cursor-grab active:cursor-grabbing"
+    : pencil
+      ? "cursor-pencil"
+      : "cursor-crosshair";
+
   return (
     <div
       ref={surfaceRef}
-      // O cursor muda por CSS, e não por estado: arrastar não precisa de re-render.
-      // O cursor conta qual gesto o arrasto vai virar: mão só com espaço, cruz para
-      // selecionar. Muda por CSS e por classe, não por estado de gesto: arrastar não
-      // precisa de re-render.
-      className={`whiteboard-surface absolute inset-0 touch-none overflow-hidden ${
-        spaceHeld ? "cursor-grab active:cursor-grabbing" : "cursor-crosshair"
-      }`}
+      className={`whiteboard-surface absolute inset-0 touch-none overflow-hidden ${cursorClass}`}
       style={
         {
           // A malha acompanha o zoom e o pan, senão o fundo fica parado e o quadro parece
@@ -533,6 +600,7 @@ export function Viewport({
       onPointerUp={handlePointerUp}
       onPointerCancel={handlePointerCancel}
       data-space-held={spaceHeld}
+      data-pencil={pencil}
       data-testid="viewport-surface"
     >
       <div
@@ -544,6 +612,7 @@ export function Viewport({
         data-testid="viewport-layer"
       >
         {children}
+        <StrokePreview points={drawing} />
         <SelectionBox rect={marquee} />
       </div>
     </div>

@@ -1557,3 +1557,292 @@ describe("Whiteboard — navegar com a rodinha apertada", () => {
     expect(screen.queryByTestId("selection-box")).toBeNull();
   });
 });
+
+describe("Whiteboard — modo lápis", () => {
+  /** O botão do lápis na moldura, que é a indicação visível de que o modo está ligado. */
+  function botaoLapis(): HTMLElement {
+    return screen.getByLabelText(UI.en.pencil.action);
+  }
+
+  function modoLigado(): boolean {
+    return botaoLapis().getAttribute("aria-pressed") === "true";
+  }
+
+  /** Os traços gravados no board, cada um com o atributo `points` do SVG. */
+  function tracos(): (string | null)[] {
+    return screen.queryAllByTestId("stroke").map((element) => element.getAttribute("points"));
+  }
+
+  /**
+   * Rabisca de um ponto ao outro, passando por `intermediarios` pontos de tela.
+   *
+   * Vários `pointermove`, e não um só: é assim que o ponteiro reporta um traço, e é o que
+   * separa "desenhou uma linha" de "clicou e soltou noutro lugar".
+   */
+  function rabisca(de: [number, number], ate: [number, number], intermediarios = 4): void {
+    const surface = screen.getByTestId("viewport-surface");
+
+    fireEvent.pointerDown(surface, { pointerId: 1, button: 0, clientX: de[0], clientY: de[1] });
+    for (let passo = 1; passo <= intermediarios; passo += 1) {
+      fireEvent.pointerMove(surface, {
+        pointerId: 1,
+        clientX: de[0] + ((ate[0] - de[0]) * passo) / intermediarios,
+        clientY: de[1] + ((ate[1] - de[1]) * passo) / intermediarios,
+      });
+    }
+    fireEvent.pointerUp(surface, { pointerId: 1, clientX: ate[0], clientY: ate[1] });
+  }
+
+  it("P liga o modo, e P de novo desliga", () => {
+    render(<Whiteboard />);
+
+    expect(modoLigado()).toBe(false);
+
+    fireEvent.keyDown(document, { key: "p" });
+    expect(modoLigado()).toBe(true);
+
+    fireEvent.keyDown(document, { key: "p" });
+    expect(modoLigado()).toBe(false);
+  });
+
+  it("Esc desliga o modo", () => {
+    render(<Whiteboard />);
+    fireEvent.keyDown(document, { key: "p" });
+
+    fireEvent.keyDown(document, { key: "Escape" });
+
+    expect(modoLigado()).toBe(false);
+  });
+
+  it("Esc com o modo desligado não o liga", () => {
+    render(<Whiteboard />);
+
+    fireEvent.keyDown(document, { key: "Escape" });
+
+    expect(modoLigado()).toBe(false);
+  });
+
+  it("o botão da moldura liga e desliga, como a tecla", async () => {
+    const user = userEvent.setup();
+    render(<Whiteboard />);
+
+    await user.click(botaoLapis());
+    expect(modoLigado()).toBe(true);
+    expect(screen.getByTestId("viewport-surface").dataset.pencil).toBe("true");
+
+    await user.click(botaoLapis());
+    expect(modoLigado()).toBe(false);
+  });
+
+  it("P não dispara com o cursor dentro do texto de uma nota", () => {
+    render(<Whiteboard />);
+    duploCliqueNoFundo(300, 300);
+
+    fireEvent.keyDown(screen.getByTestId("post-it-editor"), { key: "p" });
+
+    expect(modoLigado()).toBe(false);
+  });
+
+  it("P com modificador segurado é do navegador, não do quadro", () => {
+    render(<Whiteboard />);
+
+    fireEvent.keyDown(document, { key: "p", ctrlKey: true });
+    fireEvent.keyDown(document, { key: "p", metaKey: true });
+
+    expect(modoLigado()).toBe(false);
+  });
+
+  it("arrastar com o modo ligado desenha, e o traço entra no board ao soltar", () => {
+    render(<Whiteboard />);
+    fireEvent.keyDown(document, { key: "p" });
+
+    rabisca([100, 100], [300, 200]);
+
+    expect(tracos()).toHaveLength(1);
+    // O traço guarda por onde passou: começa e termina onde o ponteiro começou e terminou.
+    expect(tracos()[0]).toMatch(/^100,100 /);
+    expect(tracos()[0]).toMatch(/ 300,200$/);
+  });
+
+  it("o traço acompanha o ponteiro enquanto o gesto acontece", () => {
+    render(<Whiteboard />);
+    fireEvent.keyDown(document, { key: "p" });
+    const surface = screen.getByTestId("viewport-surface");
+
+    fireEvent.pointerDown(surface, { pointerId: 1, button: 0, clientX: 50, clientY: 50 });
+    fireEvent.pointerMove(surface, { pointerId: 1, clientX: 120, clientY: 90 });
+
+    // Desenhando ainda: o traço aparece na tela sem existir no board.
+    expect(screen.getByTestId("stroke-preview")).toBeTruthy();
+    expect(tracos()).toEqual([]);
+
+    fireEvent.pointerUp(surface, { pointerId: 1, clientX: 120, clientY: 90 });
+
+    // Solto: some a prévia, entra o traço.
+    expect(screen.queryByTestId("stroke-preview")).toBeNull();
+    expect(tracos()).toHaveLength(1);
+  });
+
+  it("o modo continua ligado entre traços", () => {
+    render(<Whiteboard />);
+    fireEvent.keyDown(document, { key: "p" });
+
+    rabisca([100, 100], [200, 100]);
+    rabisca([100, 200], [200, 200]);
+
+    expect(modoLigado()).toBe(true);
+    expect(tracos()).toHaveLength(2);
+  });
+
+  it("um clique parado não vira traço", () => {
+    render(<Whiteboard />);
+    fireEvent.keyDown(document, { key: "p" });
+    const surface = screen.getByTestId("viewport-surface");
+
+    fireEvent.pointerDown(surface, { pointerId: 1, button: 0, clientX: 100, clientY: 100 });
+    fireEvent.pointerUp(surface, { pointerId: 1, clientX: 100, clientY: 100 });
+
+    expect(tracos()).toEqual([]);
+  });
+
+  it("com o modo ligado, arrastar no fundo não seleciona", () => {
+    render(<Whiteboard />);
+    duploCliqueNoFundo(300, 300);
+    fireEvent.keyDown(screen.getByTestId("post-it-editor"), { key: "Escape" });
+    fireEvent.keyDown(document, { key: "p" });
+
+    rabisca([150, 150], [450, 450]);
+
+    expect(screen.queryByTestId("selection-box")).toBeNull();
+    expect(tracos()).toHaveLength(1);
+  });
+
+  it("com o modo desligado, arrastar volta a selecionar e não desenha", () => {
+    render(<Whiteboard />);
+    fireEvent.keyDown(document, { key: "p" });
+    fireEvent.keyDown(document, { key: "p" });
+
+    rabisca([150, 150], [450, 450]);
+
+    expect(tracos()).toEqual([]);
+  });
+
+  it("segurar espaço continua navegando, mesmo com o lápis ligado", () => {
+    render(<Whiteboard />);
+    fireEvent.keyDown(document, { key: "p" });
+
+    navegaOQuadro(70, -35);
+
+    // Navegou: a camada andou. E não sobrou traço nenhum do gesto.
+    expect(screen.getByTestId("viewport-layer").style.transform).toContain(
+      "translate(70px, -35px)",
+    );
+    expect(tracos()).toEqual([]);
+  });
+
+  it("o traço é gravado em coordenadas de canvas, e não de tela", () => {
+    render(<Whiteboard />);
+    navegaOQuadro(100, 50);
+    fireEvent.keyDown(document, { key: "p" });
+
+    rabisca([300, 250], [400, 250]);
+
+    // O quadro está deslocado em (100, 50): o ponto de tela (300, 250) é o ponto de canvas
+    // (200, 200). Sem a conversão, o traço nasceria colado à tela e andaria com o pan.
+    expect(tracos()[0]).toMatch(/^200,200 /);
+    expect(tracos()[0]).toMatch(/ 300,200$/);
+  });
+
+  it("o traço desenhado sobre uma nota é traço, e não arraste da nota", () => {
+    render(<Whiteboard />);
+    duploCliqueNoFundo(300, 300);
+    fireEvent.keyDown(screen.getByTestId("post-it-editor"), { key: "Escape" });
+    const antes = postIt(0).style.left;
+    fireEvent.keyDown(document, { key: "p" });
+
+    const nota = postIt(0);
+    fireEvent.pointerDown(nota, { pointerId: 1, button: 0, clientX: 300, clientY: 300 });
+    fireEvent.pointerMove(screen.getByTestId("viewport-surface"), {
+      pointerId: 1,
+      clientX: 340,
+      clientY: 320,
+    });
+    fireEvent.pointerUp(screen.getByTestId("viewport-surface"), {
+      pointerId: 1,
+      clientX: 340,
+      clientY: 320,
+    });
+
+    expect(tracos()).toHaveLength(1);
+    expect(postIt(0).style.left).toBe(antes);
+  });
+
+  it("o cursor do quadro vira lápis com o modo ligado", () => {
+    render(<Whiteboard />);
+    const surface = screen.getByTestId("viewport-surface");
+    expect(surface.className).toContain("cursor-crosshair");
+
+    fireEvent.keyDown(document, { key: "p" });
+
+    // O modo muda o que arrastar faz, e o cursor é o que anuncia isso antes do gesto.
+    expect(surface.className).toContain("cursor-pencil");
+    expect(surface.className).not.toContain("cursor-crosshair");
+  });
+
+  /**
+   * Shift+P continua ligando, como Shift+N continua criando post-it: quem segurou Shift sem
+   * querer não deveria ficar sem o atalho, e Shift+P não é atalho de navegador nenhum.
+   */
+  it("Shift+P também alterna o modo", () => {
+    render(<Whiteboard />);
+
+    fireEvent.keyDown(document, { key: "P", shiftKey: true });
+
+    expect(modoLigado()).toBe(true);
+  });
+
+  it("a rodinha apertada continua navegando com o lápis ligado", () => {
+    render(<Whiteboard />);
+    fireEvent.keyDown(document, { key: "p" });
+    const surface = screen.getByTestId("viewport-surface");
+
+    fireEvent.pointerDown(surface, { pointerId: 3, button: 1, clientX: 0, clientY: 0 });
+    fireEvent.pointerMove(surface, { pointerId: 3, clientX: 60, clientY: 25 });
+    fireEvent.pointerUp(surface, { pointerId: 3, clientX: 60, clientY: 25 });
+
+    expect(screen.getByTestId("viewport-layer").style.transform).toContain("translate(60px, 25px)");
+    expect(tracos()).toEqual([]);
+  });
+
+  it("o zoom vale para o traço, como para qualquer conteúdo do canvas", async () => {
+    const user = userEvent.setup();
+    stubMatchMedia(false);
+    render(<Whiteboard />);
+    await user.click(screen.getByLabelText(UI.en.zoom.in));
+    fireEvent.keyDown(document, { key: "p" });
+
+    rabisca([200, 200], [300, 200]);
+
+    // O traço é gravado em canvas: com o quadro afastado, o mesmo gesto de tela cobre uma
+    // distância diferente de canvas. Desenhar em pixels de tela prenderia o traço ao zoom
+    // do instante em que foi feito.
+    const escala = Number(
+      screen.getByTestId("viewport-layer").style.transform.match(/scale\(([^)]+)\)/)?.[1],
+    );
+    expect(escala).toBeGreaterThan(1);
+    const [primeiro, ultimo] = (tracos()[0] ?? "").split(" ");
+    const larguraEmCanvas = Number(ultimo?.split(",")[0]) - Number(primeiro?.split(",")[0]);
+    expect(larguraEmCanvas).toBeCloseTo(100 / escala, 0);
+  });
+
+  it("grava o traço simplificado, e não um ponto por evento de ponteiro", () => {
+    render(<Whiteboard />);
+    fireEvent.keyDown(document, { key: "p" });
+
+    // Uma reta reportada em 20 passos: os 18 do meio não descrevem nada que os extremos já
+    // não digam, e é isso que a simplificação (#67) tira antes de gravar.
+    rabisca([0, 0], [200, 200], 20);
+
+    expect(tracos()[0]).toBe("0,0 200,200");
+  });
+});

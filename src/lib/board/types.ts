@@ -47,6 +47,15 @@ export type StrokeColorName = (typeof STROKE_COLORS)[number];
 /** Índice em {@link STROKE_COLORS}. É isto que vai serializado no traço. */
 export type StrokeColor = TupleIndex<typeof STROKE_COLORS>;
 
+/**
+ * Cor com que o lápis nasce: o preto.
+ *
+ * Rabisco é anotação sobre o quadro, e não mais um objeto colorido disputando atenção com
+ * as notas. Ele é o último índice de propósito — acrescentado **depois** das seis cores de
+ * nota, para que os índices delas continuem valendo em todo link já compartilhado.
+ */
+export const STROKE_COLOR_BLACK = 6 satisfies StrokeColor;
+
 /** Union dos índices válidos de uma tupla: `["a", "b"]` -> `0 | 1`. */
 type TupleIndex<T extends readonly unknown[]> =
   Extract<keyof T, `${number}`> extends `${infer Index extends number}` ? Index : never;

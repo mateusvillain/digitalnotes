@@ -2,6 +2,7 @@
 
 import { useCallback, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { topLeftCenteredAt, type Point, type Rect, type Size } from "@/lib/canvas/coords";
+import { simplify } from "@/lib/canvas/simplify";
 import {
   EMPTY_SELECTION,
   notesInRect,
@@ -14,7 +15,15 @@ import {
 import { clampNoteSize } from "./schema";
 import { createBoardStore } from "./store";
 import { useLocalPersistence } from "./useLocalPersistence";
-import { NOTE_SIZE, createEmptyBoard, type Board, type Note, type NoteColor } from "./types";
+import {
+  NOTE_SIZE,
+  STROKE_COLOR_BLACK,
+  createEmptyBoard,
+  type Board,
+  type Note,
+  type NoteColor,
+  type Stroke,
+} from "./types";
 
 /** Um post-it em redimensionamento e o tamanho que ele tem agora, durante o gesto. */
 export interface Resizing {
@@ -25,6 +34,16 @@ export interface Resizing {
 export interface BoardApi {
   /** Notes do board, na ordem em que a store as guarda. */
   notes: readonly Note[];
+  /** Rabiscos do board, na ordem em que a store os guarda (#68). */
+  strokes: readonly Stroke[];
+  /**
+   * Grava um traço recém-desenhado, em coordenadas de canvas.
+   *
+   * A simplificação (#67) acontece aqui, e não em quem desenhou: é a fronteira entre o
+   * gesto e o board, e todo traço que entra passa por ela. Quem desenha entrega os pontos
+   * crus que o ponteiro reportou e não precisa saber que existe compressão.
+   */
+  addStroke: (points: readonly Point[]) => void;
   /**
    * Descarta o board atual e começa um quadro vazio (#58).
    *
@@ -364,6 +383,17 @@ export function useBoard({ initialBoard, autosave = true }: UseBoardOptions = {}
     publishSelection(EMPTY_SELECTION);
   }, [publishSelection, store]);
 
+  const addStroke = useCallback(
+    (points: readonly Point[]) => {
+      const simplified = simplify(points);
+      store.addStroke({
+        color: STROKE_COLOR_BLACK,
+        points: simplified.flatMap((point) => [point.x, point.y]),
+      });
+    },
+    [store],
+  );
+
   const resetBoard = useCallback(() => {
     store.replaceBoard(createEmptyBoard());
     setEditingId(null);
@@ -380,6 +410,8 @@ export function useBoard({ initialBoard, autosave = true }: UseBoardOptions = {}
 
   return {
     notes: board.notes,
+    strokes: board.strokes,
+    addStroke,
     getBoard: store.getBoard,
     resetBoard,
     editingId,

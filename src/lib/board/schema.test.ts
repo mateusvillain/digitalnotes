@@ -267,6 +267,16 @@ describe("parseBoard", () => {
       expect(result.ok && result.board.strokes).toEqual([]);
     });
 
+    it("arredonda as coordenadas para inteiro na gravação", () => {
+      const result = parseBoard({
+        version: SCHEMA_VERSION,
+        notes: [],
+        strokes: [stroke({ points: [0.4, 10.5, -3.6, 7.49] })],
+      });
+
+      expect(result.ok && result.board.strokes[0]?.points).toEqual([0, 11, -4, 7]);
+    });
+
     it("normaliza z para inteiro", () => {
       const result = parseBoard({
         version: SCHEMA_VERSION,
