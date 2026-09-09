@@ -1828,6 +1828,162 @@ describe("Whiteboard — colocar nota (#73)", () => {
   });
 });
 
+describe("Whiteboard — ferramenta de seleção (#83)", () => {
+  function botao(nome: string): HTMLElement {
+    return screen.getByLabelText(nome);
+  }
+
+  function ativo(nome: string): boolean {
+    return botao(nome).getAttribute("aria-pressed") === "true";
+  }
+
+  const CURSOR = UI.en.cursor.action;
+  const NOTA = UI.en.note.action;
+  const LAPIS = UI.en.pencil.action;
+
+  /**
+   * A ferramenta de partida do quadro.
+   *
+   * O estado sempre existiu — era ele que fazia arrastar o fundo desenhar o retângulo de
+   * seleção —, mas nascia sem representação: os três botões apareciam apagados enquanto uma
+   * das três estava, de fato, valendo.
+   */
+  it("o quadro começa com o cursor ativo, sem ninguém ter clicado", () => {
+    render(<Whiteboard />);
+
+    expect(ativo(CURSOR)).toBe(true);
+    expect(ativo(NOTA)).toBe(false);
+    expect(ativo(LAPIS)).toBe(false);
+  });
+
+  it("V escolhe o cursor", () => {
+    render(<Whiteboard />);
+    fireEvent.keyDown(document, { key: "p" });
+    expect(ativo(CURSOR)).toBe(false);
+
+    fireEvent.keyDown(document, { key: "v" });
+
+    expect(ativo(CURSOR)).toBe(true);
+    expect(ativo(LAPIS)).toBe(false);
+  });
+
+  /**
+   * `V` escolhe, e não alterna. A ferramenta de partida não tem para onde ser desligada —
+   * alternar aqui exigiria de volta o estado "nenhuma ferramenta", que é justamente o que
+   * esta issue veio tirar.
+   */
+  it("V de novo não desliga o cursor", () => {
+    render(<Whiteboard />);
+
+    fireEvent.keyDown(document, { key: "v" });
+    fireEvent.keyDown(document, { key: "v" });
+
+    expect(ativo(CURSOR)).toBe(true);
+  });
+
+  it("o botão escolhe o cursor, como a tecla", async () => {
+    const user = userEvent.setup();
+    render(<Whiteboard />);
+    fireEvent.keyDown(document, { key: "p" });
+
+    await user.click(botao(CURSOR));
+
+    expect(ativo(CURSOR)).toBe(true);
+    expect(screen.getByTestId("viewport-surface").dataset.pencil).toBe("false");
+  });
+
+  it("clicar no botão já ativo não muda nada", async () => {
+    const user = userEvent.setup();
+    render(<Whiteboard />);
+
+    await user.click(botao(CURSOR));
+
+    expect(ativo(CURSOR)).toBe(true);
+  });
+
+  /** Uma ferramenta de cada vez: escolher o cursor larga as outras duas. */
+  it("o cursor exclui o lápis e a colocação de nota", () => {
+    render(<Whiteboard />);
+
+    fireEvent.keyDown(document, { key: "n" });
+    fireEvent.keyDown(document, { key: "v" });
+    expect(ativo(CURSOR)).toBe(true);
+    expect(ativo(NOTA)).toBe(false);
+    expect(screen.getByTestId("viewport-surface").dataset.placing).toBe("false");
+
+    fireEvent.keyDown(document, { key: "p" });
+    fireEvent.keyDown(document, { key: "v" });
+    expect(ativo(CURSOR)).toBe(true);
+    expect(ativo(LAPIS)).toBe(false);
+  });
+
+  /**
+   * Desligar uma ferramenta deixou de ser uma ação sem destino: `P` no lápis ligado, `Esc` e
+   * `V` chegam todos ao mesmo lugar, que agora tem nome.
+   */
+  it("largar o lápis leva ao cursor, por qualquer um dos três caminhos", () => {
+    render(<Whiteboard />);
+
+    fireEvent.keyDown(document, { key: "p" });
+    fireEvent.keyDown(document, { key: "p" });
+    expect(ativo(CURSOR)).toBe(true);
+
+    fireEvent.keyDown(document, { key: "p" });
+    fireEvent.keyDown(document, { key: "Escape" });
+    expect(ativo(CURSOR)).toBe(true);
+
+    fireEvent.keyDown(document, { key: "p" });
+    fireEvent.keyDown(document, { key: "v" });
+    expect(ativo(CURSOR)).toBe(true);
+  });
+
+  it("colocar uma nota devolve o cursor", () => {
+    render(<Whiteboard />);
+    fireEvent.keyDown(document, { key: "n" });
+
+    const surface = screen.getByTestId("viewport-surface");
+    fireEvent.pointerDown(surface, { pointerId: 1, button: 0, clientX: 200, clientY: 200 });
+    fireEvent.pointerUp(surface, { pointerId: 1, clientX: 200, clientY: 200 });
+
+    expect(ativo(CURSOR)).toBe(true);
+  });
+
+  it("V não dispara com o cursor dentro do texto de uma nota", () => {
+    render(<Whiteboard />);
+    fireEvent.keyDown(document, { key: "p" });
+    duploCliqueNoFundo(300, 300);
+
+    fireEvent.keyDown(screen.getByTestId("post-it-editor"), { key: "v" });
+
+    // A tecla pertence a quem está escrevendo: `v` no meio de uma frase é a letra.
+    expect(ativo(CURSOR)).toBe(false);
+  });
+
+  it("V com modificador segurado é do navegador, não do quadro", () => {
+    render(<Whiteboard />);
+    fireEvent.keyDown(document, { key: "p" });
+
+    fireEvent.keyDown(document, { key: "v", ctrlKey: true });
+    fireEvent.keyDown(document, { key: "v", metaKey: true });
+
+    // `Ctrl+V` é colar, e roubá-la seria pior do que não ter atalho.
+    expect(ativo(CURSOR)).toBe(false);
+  });
+
+  /**
+   * A apresentação não ganhou linha para o `V` (#83): ela ensina o que não se descobre
+   * olhando, e `V` leva à ferramenta em que o quadro já começa. O teto de quatro que a #72
+   * registrou continua valendo.
+   */
+  it("a apresentação continua com quatro linhas", () => {
+    stubMatchMedia(false);
+    render(<Whiteboard />);
+
+    expect(screen.getAllByRole("listitem")).toHaveLength(4);
+    expect(screen.queryByText(UI.en.cursor.action)).toBeNull();
+  });
+});
+
 describe("Whiteboard — modo lápis", () => {
   /** O botão do lápis na moldura, que é a indicação visível de que o modo está ligado. */
   function botaoLapis(): HTMLElement {

@@ -19,11 +19,18 @@ interface KeyboardShortcutsOptions {
   /** Ligar e desligar o modo lápis (#68). A mesma tecla faz as duas coisas. */
   onTogglePencil: () => void;
   /**
-   * `Esc`: sair do modo em curso.
+   * `V`: escolher a ferramenta de seleção (#83).
    *
-   * Genérico de propósito. `Esc` significa "desfaz o que está ligado", e quem sabe o que
-   * está ligado é o quadro — o lápis e a colocação de nota, hoje —, e o que vier depois
-   * entra no mesmo lugar em vez de pendurar um segundo ouvinte de teclado na mesma tecla.
+   * Escolher, e não alternar. O cursor é a ferramenta de partida do quadro, e ela não tem
+   * para onde ser desligada — `V` sobre o cursor já ativo não faz nada.
+   */
+  onSelectCursor: () => void;
+  /**
+   * `Esc`: largar a ferramenta em curso.
+   *
+   * Genérico de propósito. `Esc` significa "sai disso", e quem sabe do que se está saindo é
+   * o quadro — o lápis e a colocação de nota, hoje —, e o que vier depois entra no mesmo
+   * lugar em vez de pendurar um segundo ouvinte de teclado na mesma tecla.
    */
   onCancel: () => void;
 }
@@ -58,6 +65,7 @@ export function useKeyboardShortcuts({
   onPlaceNote,
   onSave,
   onTogglePencil,
+  onSelectCursor,
   onCancel,
 }: KeyboardShortcutsOptions): void {
   /**
@@ -66,10 +74,17 @@ export function useKeyboardShortcuts({
    * Sem isto, um `onDelete` recriado a cada render faria o efeito remover e registrar o
    * ouvinte no documento a cada quadro do arraste.
    */
-  const handlers = useRef({ onDelete, onPlaceNote, onSave, onTogglePencil, onCancel });
+  const handlers = useRef({
+    onDelete,
+    onPlaceNote,
+    onSave,
+    onTogglePencil,
+    onSelectCursor,
+    onCancel,
+  });
   useEffect(() => {
-    handlers.current = { onDelete, onPlaceNote, onSave, onTogglePencil, onCancel };
-  }, [onDelete, onPlaceNote, onSave, onTogglePencil, onCancel]);
+    handlers.current = { onDelete, onPlaceNote, onSave, onTogglePencil, onSelectCursor, onCancel };
+  }, [onDelete, onPlaceNote, onSave, onTogglePencil, onSelectCursor, onCancel]);
 
   useEffect(() => {
     function handleKeyDown(event: KeyboardEvent): void {
@@ -114,6 +129,12 @@ export function useKeyboardShortcuts({
       if (event.key.toLowerCase() === "p") {
         event.preventDefault();
         handlers.current.onTogglePencil();
+        return;
+      }
+
+      if (event.key.toLowerCase() === "v") {
+        event.preventDefault();
+        handlers.current.onSelectCursor();
         return;
       }
 
