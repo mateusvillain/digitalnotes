@@ -3,6 +3,7 @@
 import { strokeColor } from "@/lib/theme/note-colors";
 import { STROKE_COLOR_BLACK, type Stroke } from "@/lib/board/types";
 import type { Point } from "@/lib/canvas/coords";
+import type { ReactNode } from "react";
 
 /**
  * Espessura do traço, em unidades de canvas.
@@ -21,8 +22,8 @@ interface StrokesProps {
 /**
  * Converte a lista achatada do contrato (`[x0,y0,x1,y1,…]`) no atributo `points` do SVG.
  *
- * Exportada porque o traço em curso, ainda fora do board, precisa desenhar do mesmo jeito
- * que o já gravado — e é aqui que mora o formato.
+ * Exportada para os próprios testes: uma coordenada solta no fim — que o contrato não
+ * produz, mas um board de fora pode trazer — não pode virar um ponto pela metade.
  */
 export function polylinePoints(points: readonly number[]): string {
   const pares: string[] = [];
@@ -35,21 +36,68 @@ export function polylinePoints(points: readonly number[]): string {
 }
 
 /**
+ * A folha onde a tinta é pintada.
+ *
+ * Sem tamanho útil (`overflow-visible` com 1×1): o canvas não tem borda, e dimensionar a
+ * caixa exigiria recalculá-la a cada traço novo. O conteúdo é desenhado em coordenadas de
+ * canvas, e a camada transformada do viewport cuida de zoom e pan.
+ *
+ * `pointer-events-none` porque tinta não é alvo: selecionar traço é assunto da issue #70, e
+ * até lá um clique sobre o rabisco tem de chegar ao quadro embaixo dele.
+ */
+function InkLayer({ testId, children }: { testId: string; children: ReactNode }) {
+  return (
+    <svg
+      className="pointer-events-none absolute left-0 top-0 overflow-visible"
+      width={1}
+      height={1}
+      aria-hidden="true"
+      data-testid={testId}
+    >
+      {children}
+    </svg>
+  );
+}
+
+/**
+ * Uma linha de tinta.
+ *
+ * O traço em curso e o já gravado passam pelos dois componentes acima e por este: é o que
+ * garante, por construção e não por promessa, que o rabisco fique exatamente igual ao ser
+ * solto — mesma espessura, mesma ponta, mesma junção.
+ */
+function InkLine({
+  points,
+  color,
+  testId,
+}: {
+  points: readonly number[];
+  color: string;
+  testId?: string;
+}) {
+  return (
+    <polyline
+      points={polylinePoints(points)}
+      fill="none"
+      stroke={color}
+      strokeWidth={STROKE_WIDTH}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      data-testid={testId}
+    />
+  );
+}
+
+/**
  * A camada de tinta do quadro (#68).
  *
  * Um `<svg>` só para todos os traços, e não um por traço: são dezenas de linhas sobre o
  * mesmo sistema de coordenadas, e o navegador pinta uma árvore só.
  *
- * O `<svg>` não tem tamanho útil (`overflow-visible` com 1×1): o canvas não tem borda, e
- * dimensionar a caixa exigiria recalculá-la a cada traço novo. O conteúdo é desenhado em
- * coordenadas de canvas e a camada transformada do viewport cuida de zoom e pan.
- *
  * Fica **debaixo** dos post-its — eles carregam `z-index` próprio, e a tinta não. É a ordem
  * que mantém o texto de uma nota legível, e vale igual para o traço em curso, que desenha
- * nesta mesma altura: o rabisco não salta de camada ao ser solto.
- *
- * `pointer-events-none` porque tinta não é alvo: selecionar traço é assunto da issue #70, e
- * até lá um clique sobre o rabisco tem de chegar ao quadro embaixo dele.
+ * nesta mesma altura: o rabisco não salta de camada ao ser solto. O `z` do traço ordena os
+ * traços entre si, que é a pilha à qual ele pertence.
  */
 export function Strokes({ strokes }: StrokesProps) {
   // Ordenado por `z` na hora de desenhar, e não guardado ordenado: a ordem da lista é do
@@ -57,26 +105,16 @@ export function Strokes({ strokes }: StrokesProps) {
   const porZ = [...strokes].sort((a, b) => a.z - b.z);
 
   return (
-    <svg
-      className="pointer-events-none absolute left-0 top-0 overflow-visible"
-      width={1}
-      height={1}
-      aria-hidden="true"
-      data-testid="strokes"
-    >
+    <InkLayer testId="strokes">
       {porZ.map((stroke) => (
-        <polyline
+        <InkLine
           key={stroke.id}
-          points={polylinePoints(stroke.points)}
-          fill="none"
-          stroke={strokeColor(stroke.color)}
-          strokeWidth={STROKE_WIDTH}
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          data-testid="stroke"
+          points={stroke.points}
+          color={strokeColor(stroke.color)}
+          testId="stroke"
         />
       ))}
-    </svg>
+    </InkLayer>
   );
 }
 
@@ -92,9 +130,9 @@ interface StrokePreviewProps {
  * a cada ponto faria o autosave gravar dezenas de versões de um traço que ainda não
  * terminou.
  *
- * Desenha com a mesma espessura, o mesmo formato e a mesma altura de camada do traço
- * gravado — é o que faz o rabisco continuar exatamente onde estava quando o ponteiro é
- * solto, em vez de piscar de lugar ao virar conteúdo.
+ * Desenha pelos mesmos dois componentes do traço gravado, e na mesma altura de camada — é o
+ * que faz o rabisco continuar exatamente onde estava quando o ponteiro é solto, em vez de
+ * piscar de lugar ao virar conteúdo.
  *
  * Nasce preto porque é a cor com que o lápis nasce ({@link STROKE_COLOR_BLACK}); a mesma
  * constante que a gravação usa, para o que se vê desenhando não poder divergir do que fica.
@@ -103,21 +141,11 @@ export function StrokePreview({ points }: StrokePreviewProps) {
   if (points === null || points.length < 2) return null;
 
   return (
-    <svg
-      className="pointer-events-none absolute left-0 top-0 overflow-visible"
-      width={1}
-      height={1}
-      aria-hidden="true"
-      data-testid="stroke-preview"
-    >
-      <polyline
-        points={polylinePoints(points.flatMap((point) => [point.x, point.y]))}
-        fill="none"
-        stroke={strokeColor(STROKE_COLOR_BLACK)}
-        strokeWidth={STROKE_WIDTH}
-        strokeLinecap="round"
-        strokeLinejoin="round"
+    <InkLayer testId="stroke-preview">
+      <InkLine
+        points={points.flatMap((point) => [point.x, point.y])}
+        color={strokeColor(STROKE_COLOR_BLACK)}
       />
-    </svg>
+    </InkLayer>
   );
 }

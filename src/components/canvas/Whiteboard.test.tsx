@@ -1777,6 +1777,64 @@ describe("Whiteboard — modo lápis", () => {
     expect(postIt(0).style.left).toBe(antes);
   });
 
+  it("o cursor do quadro vira lápis com o modo ligado", () => {
+    render(<Whiteboard />);
+    const surface = screen.getByTestId("viewport-surface");
+    expect(surface.className).toContain("cursor-crosshair");
+
+    fireEvent.keyDown(document, { key: "p" });
+
+    // O modo muda o que arrastar faz, e o cursor é o que anuncia isso antes do gesto.
+    expect(surface.className).toContain("cursor-pencil");
+    expect(surface.className).not.toContain("cursor-crosshair");
+  });
+
+  /**
+   * Shift+P continua ligando, como Shift+N continua criando post-it: quem segurou Shift sem
+   * querer não deveria ficar sem o atalho, e Shift+P não é atalho de navegador nenhum.
+   */
+  it("Shift+P também alterna o modo", () => {
+    render(<Whiteboard />);
+
+    fireEvent.keyDown(document, { key: "P", shiftKey: true });
+
+    expect(modoLigado()).toBe(true);
+  });
+
+  it("a rodinha apertada continua navegando com o lápis ligado", () => {
+    render(<Whiteboard />);
+    fireEvent.keyDown(document, { key: "p" });
+    const surface = screen.getByTestId("viewport-surface");
+
+    fireEvent.pointerDown(surface, { pointerId: 3, button: 1, clientX: 0, clientY: 0 });
+    fireEvent.pointerMove(surface, { pointerId: 3, clientX: 60, clientY: 25 });
+    fireEvent.pointerUp(surface, { pointerId: 3, clientX: 60, clientY: 25 });
+
+    expect(screen.getByTestId("viewport-layer").style.transform).toContain("translate(60px, 25px)");
+    expect(tracos()).toEqual([]);
+  });
+
+  it("o zoom vale para o traço, como para qualquer conteúdo do canvas", async () => {
+    const user = userEvent.setup();
+    stubMatchMedia(false);
+    render(<Whiteboard />);
+    await user.click(screen.getByLabelText(UI.en.zoom.in));
+    fireEvent.keyDown(document, { key: "p" });
+
+    rabisca([200, 200], [300, 200]);
+
+    // O traço é gravado em canvas: com o quadro afastado, o mesmo gesto de tela cobre uma
+    // distância diferente de canvas. Desenhar em pixels de tela prenderia o traço ao zoom
+    // do instante em que foi feito.
+    const escala = Number(
+      screen.getByTestId("viewport-layer").style.transform.match(/scale\(([^)]+)\)/)?.[1],
+    );
+    expect(escala).toBeGreaterThan(1);
+    const [primeiro, ultimo] = (tracos()[0] ?? "").split(" ");
+    const larguraEmCanvas = Number(ultimo?.split(",")[0]) - Number(primeiro?.split(",")[0]);
+    expect(larguraEmCanvas).toBeCloseTo(100 / escala, 0);
+  });
+
   it("grava o traço simplificado, e não um ponto por evento de ponteiro", () => {
     render(<Whiteboard />);
     fireEvent.keyDown(document, { key: "p" });

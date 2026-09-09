@@ -1,6 +1,8 @@
 import { act, renderHook } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 import { defined } from "@/test-utils/defined";
+import { desvioMaximo, pontosDe } from "@/test-utils/geometry";
+import { SIMPLIFY_TOLERANCE } from "@/lib/canvas/simplify";
 import { NOTE_COLORS, NOTE_SIZE, STROKE_COLOR_BLACK } from "./types";
 import { useBoard } from "./useBoard";
 
@@ -916,6 +918,26 @@ describe("useBoard — traço à mão livre", () => {
     expect(defined(segundo, "o segundo traço").z).toBeGreaterThan(
       defined(primeiro, "o primeiro traço").z,
     );
+  });
+
+  /**
+   * O critério da #67 fala do desvio do traço **original**, e o que se compara aqui é o que
+   * o board guarda de verdade — depois da simplificação e do arredondamento das coordenadas.
+   * Medir só a saída da função pura verificaria a garantia num valor que não é o gravado.
+   */
+  it("o traço gravado não se afasta do desenhado além do orçamento de desvio", () => {
+    const { result } = renderHook(() => useBoard());
+    const rabisco = Array.from({ length: 600 }, (_, index) => {
+      const t = (index / 599) * Math.PI * 4;
+      return { x: index * 0.8, y: 120 + Math.sin(t) * 60 + Math.sin(t * 3) * 8 };
+    });
+
+    act(() => result.current.addStroke(rabisco));
+
+    const gravado = pontosDe(defined(result.current.strokes[0], "o traço gravado").points);
+    // Tolerância mais o arredondamento: meia unidade por eixo, `SQRT1_2` na diagonal.
+    expect(desvioMaximo(rabisco, gravado)).toBeLessThanOrEqual(SIMPLIFY_TOLERANCE + Math.SQRT1_2);
+    expect(gravado.length).toBeLessThan(rabisco.length / 10);
   });
 
   it("não grava um traço sem os dois pontos que o contrato exige", () => {

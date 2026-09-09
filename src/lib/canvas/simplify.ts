@@ -27,6 +27,11 @@ import { distance, type Point } from "./coords";
  *
  * Abaixo de 1 a redução cai rápido sem que o desenho fique visivelmente melhor: os pontos
  * que sobram passam a ser o tremor da mão, que não é informação.
+ *
+ * O desvio do que o board **guarda** é um pouco maior que este número: a gravação arredonda
+ * as coordenadas para inteiro (ver `parseBoard`), o que acrescenta até meia unidade por eixo
+ * — `Math.SQRT1_2` na diagonal, no pior caso. O orçamento inteiro, então, é de pouco menos
+ * de 1,71 unidade; continua abaixo de dois pixels de tela a 100%.
  */
 export const SIMPLIFY_TOLERANCE = 1;
 

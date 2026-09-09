@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { SIMPLIFY_TOLERANCE, simplify } from "./simplify";
 import { type Point } from "./coords";
+import { desvioMaximo } from "@/test-utils/geometry";
 
 /** Um rabisco plausível: uma onda amostrada densamente, como o ponteiro reporta. */
 function rabisco(pontos: number): Point[] {
@@ -8,43 +9,6 @@ function rabisco(pontos: number): Point[] {
     const t = (index / (pontos - 1)) * Math.PI * 4;
     return { x: index * 0.8, y: 120 + Math.sin(t) * 60 + Math.sin(t * 3) * 8 };
   });
-}
-
-/**
- * Maior distância de um ponto do traço original à linha que sobrou.
- *
- * É a pergunta que a tolerância responde: não "quantos pontos sumiram", e sim "o quanto o
- * desenho mudou". Mede ponto a ponto contra o segmento mais próximo do resultado.
- */
-function desvioMaximo(original: readonly Point[], simplificado: readonly Point[]): number {
-  let pior = 0;
-
-  for (const point of original) {
-    let maisPerto = Number.POSITIVE_INFINITY;
-
-    for (let index = 0; index + 1 < simplificado.length; index += 1) {
-      const a = simplificado[index];
-      const b = simplificado[index + 1];
-      if (a === undefined || b === undefined) continue;
-
-      maisPerto = Math.min(maisPerto, distanciaAoSegmento(point, a, b));
-    }
-
-    pior = Math.max(pior, maisPerto);
-  }
-
-  return pior;
-}
-
-/** Distância ao segmento (e não à reta infinita): fora dele, vale a distância à ponta. */
-function distanciaAoSegmento(point: Point, a: Point, b: Point): number {
-  const dx = b.x - a.x;
-  const dy = b.y - a.y;
-  const comprimento = dx * dx + dy * dy;
-  if (comprimento === 0) return Math.hypot(point.x - a.x, point.y - a.y);
-
-  const t = Math.min(Math.max(((point.x - a.x) * dx + (point.y - a.y) * dy) / comprimento, 0), 1);
-  return Math.hypot(point.x - (a.x + t * dx), point.y - (a.y + t * dy));
 }
 
 describe("simplify", () => {

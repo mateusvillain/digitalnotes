@@ -11,7 +11,13 @@ interface PencilButtonProps {
   onToggle: () => void;
 }
 
-/** Ícone de lápis: o corpo e a ponta, no mesmo traço do resto da interface. */
+/**
+ * Ícone de lápis: o corpo e a ponta, no mesmo traço do resto da interface.
+ *
+ * O mesmo desenho é o cursor do modo, em `.cursor-pencil` (src/app/globals.css). As duas
+ * cópias precisam andar juntas; não dá para ter uma só, porque um `url()` de CSS não
+ * alcança um componente React.
+ */
 function PencilIcon() {
   return (
     <svg

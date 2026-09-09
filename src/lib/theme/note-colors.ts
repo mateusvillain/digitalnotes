@@ -8,7 +8,7 @@
 
 import {
   NOTE_COLORS,
-  STROKE_COLORS,
+  STROKE_COLOR_BLACK,
   type NoteColor,
   type NoteColorName,
   type StrokeColor,
@@ -38,11 +38,16 @@ export function noteBackgroundColor(color: NoteColor): string {
 /**
  * Cor da tinta de um traço, a partir do índice guardado no board (#68).
  *
- * As seis primeiras são as mesmas do post-it: o quadro tem uma paleta só, e o rabisco não
- * inaugura um segundo sistema de cor. O preto reusa `--color-ink`, que é o token de "cor de
- * escrever" desta interface — o mesmo tom do texto de uma nota, agora sobre o quadro.
+ * As seis primeiras são as mesmas do post-it, e saem por {@link noteBackgroundColor}: o
+ * quadro tem uma paleta só, e derivar o token de novo aqui seria a segunda lista que este
+ * módulo existe para não ter. O preto é o único índice que não vem dali — ele foi
+ * acrescentado depois da paleta de nota, e reusa `--color-ink`, o token de "cor de escrever"
+ * desta interface: o mesmo tom do texto de uma nota, agora sobre o quadro.
  */
 export function strokeColor(color: StrokeColor): string {
-  const name = STROKE_COLORS[color];
-  return name === "black" ? "var(--color-ink)" : `var(--color-note-${name})`;
+  // Comparação com o índice, e não com o nome: é o índice que o board guarda, e é ele que
+  // o resto do sistema trata como a identidade da cor.
+  if (color === STROKE_COLOR_BLACK) return "var(--color-ink)";
+
+  return noteBackgroundColor(color);
 }
