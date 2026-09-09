@@ -234,7 +234,8 @@ export function Whiteboard({ initialBoard, autosave }: WhiteboardProps) {
             selection={board.selection}
             onEditStart={board.startEditing}
             onEditCommit={board.commitText}
-            onSelect={board.selectNote}
+            onSelect={(id, additive) => board.selectElement("note", id, additive)}
+            onSelectStroke={(id, additive) => board.selectElement("stroke", id, additive)}
             dragOffset={board.dragOffset}
             onDragStart={board.startDrag}
             onDragMove={dragBy}
@@ -262,10 +263,16 @@ export function Whiteboard({ initialBoard, autosave }: WhiteboardProps) {
           Some durante o gesto: a caixa da seleção é calculada com as posições já gravadas,
           então uma barra visível durante um arraste ficaria parada enquanto os post-its
           andam por baixo dela.
+
+          E some também quando só há traços marcados (#70). A única ação que ela carrega
+          hoje é o seletor de cor, que pinta post-it; sobre uma seleção de rabiscos ela seria
+          uma barra de seis cores que não fazem nada. Numa seleção mista ela volta, ancorada
+          na caixa de **tudo** que está marcado — a barra pertence à seleção inteira, mesmo
+          que a ação dentro dela só alcance parte.
         */}
-        {inGesture ? null : (
+        {inGesture || board.selected.length === 0 ? null : (
           <div className="pointer-events-none absolute inset-0">
-            <SelectionToolbar rects={board.selected} viewport={controls.viewport}>
+            <SelectionToolbar rects={board.selectedRects} viewport={controls.viewport}>
               <ColorPicker value={board.selectionColor} onChange={board.colorSelection} />
             </SelectionToolbar>
           </div>

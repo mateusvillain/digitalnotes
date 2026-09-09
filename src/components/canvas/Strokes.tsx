@@ -15,8 +15,36 @@ import type { ReactNode } from "react";
  */
 export const STROKE_WIDTH = 2;
 
+/**
+ * Largura do alvo de clique do traço, em unidades de canvas.
+ *
+ * Seis vezes a tinta. Uma linha de 2 unidades exigiria acerto exato do ponteiro, e errar um
+ * rabisco por um pixel é o tipo de coisa que faz a pessoa concluir que traço não é
+ * selecionável (#70). O alvo acompanha a forma do traço, e não a caixa dele: um risco na
+ * diagonal tem caixa enorme e tinta nenhuma nos cantos, e um alvo retangular roubaria
+ * cliques destinados ao quadro embaixo.
+ *
+ * Em unidades de canvas, como a tinta, então ele encolhe junto no zoom de afastar. É a
+ * troca por manter o alvo colado ao desenho: um alvo de tamanho fixo em tela precisaria da
+ * escala aqui dentro, e a camada de tinta voltaria a redesenhar a cada quadro do zoom.
+ */
+export const STROKE_HIT_WIDTH = 12;
+
+/**
+ * Folga do contorno de seleção, em unidades de canvas de cada lado.
+ *
+ * É a tradução do `outline-2 outline-offset-2` que o post-it usa: a nota ganha um contorno
+ * afastado da borda, e o traço ganha um halo afastado da tinta. Mesma leitura — "isto está
+ * marcado" —, na única forma que uma linha aceita.
+ */
+const SELECTION_HALO = 3;
+
 interface StrokesProps {
   strokes: readonly Stroke[];
+  /** Ids marcados. Um traço marcado ganha halo e é o que o `Delete` apaga (#70). */
+  selection?: ReadonlySet<string>;
+  /** Clique num traço. `additive` vem do shift, que acrescenta em vez de trocar. */
+  onSelect?: (id: string, additive: boolean) => void;
 }
 
 /**
@@ -42,8 +70,9 @@ export function polylinePoints(points: readonly number[]): string {
  * caixa exigiria recalculá-la a cada traço novo. O conteúdo é desenhado em coordenadas de
  * canvas, e a camada transformada do viewport cuida de zoom e pan.
  *
- * `pointer-events-none` porque tinta não é alvo: selecionar traço é assunto da issue #70, e
- * até lá um clique sobre o rabisco tem de chegar ao quadro embaixo dele.
+ * `pointer-events-none` na folha, e não em cada linha: a tinta em si não é alvo — um clique
+ * no vão entre dois rabiscos tem de chegar ao quadro embaixo. Quem reabre o ponteiro é o
+ * alvo de clique de cada traço, que sobrepõe o valor herdado (#70).
  */
 function InkLayer({ testId, children }: { testId: string; children: ReactNode }) {
   return (
@@ -69,10 +98,13 @@ function InkLayer({ testId, children }: { testId: string; children: ReactNode })
 function InkLine({
   points,
   color,
+  width = STROKE_WIDTH,
   testId,
 }: {
   points: readonly number[];
   color: string;
+  /** Espessura em unidades de canvas. O halo e o alvo de clique são a mesma linha, mais grossa. */
+  width?: number;
   testId?: string;
 }) {
   return (
@@ -80,11 +112,62 @@ function InkLine({
       points={polylinePoints(points)}
       fill="none"
       stroke={color}
-      strokeWidth={STROKE_WIDTH}
+      strokeWidth={width}
       strokeLinecap="round"
       strokeLinejoin="round"
       data-testid={testId}
     />
+  );
+}
+
+/**
+ * Um traço gravado: o halo de seleção, a tinta e o alvo de clique.
+ *
+ * Três linhas sobre os mesmos pontos, nesta ordem. O halo primeiro, para ficar embaixo da
+ * tinta em vez de cobri-la; o alvo por último e invisível, porque é ele que recebe o
+ * ponteiro e a ordem de irmãos é o que decide quem o browser acerta.
+ */
+function StrokeShape({
+  stroke,
+  selected,
+  onSelect,
+}: {
+  stroke: Stroke;
+  selected: boolean;
+  onSelect?: (id: string, additive: boolean) => void;
+}) {
+  return (
+    <g data-testid="stroke-group" data-stroke-id={stroke.id} data-selected={selected}>
+      {selected ? (
+        <InkLine
+          points={stroke.points}
+          color="var(--color-selection)"
+          width={STROKE_WIDTH + SELECTION_HALO * 2}
+          testId="stroke-selected"
+        />
+      ) : null}
+      <InkLine points={stroke.points} color={strokeColor(stroke.color)} testId="stroke" />
+      <polyline
+        points={polylinePoints(stroke.points)}
+        fill="none"
+        stroke="transparent"
+        strokeWidth={STROKE_HIT_WIDTH}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        // `stroke` e não `all`: só a faixa em volta da linha recebe o ponteiro. Com `all`, o
+        // miolo de um rabisco fechado — um círculo, uma nuvem — viraria alvo também, e um
+        // clique no vazio lá dentro selecionaria um traço que a pessoa não apontou.
+        pointerEvents="stroke"
+        className="cursor-pointer"
+        onPointerDown={(event) => {
+          // O gesto para aqui: sem isto o mesmo `pointerdown` chegaria à superfície e
+          // começaria um retângulo de seleção por cima do traço recém-marcado.
+          event.stopPropagation();
+          onSelect?.(stroke.id, event.shiftKey);
+        }}
+        data-testid="stroke-hit"
+      />
+    </g>
   );
 }
 
@@ -99,7 +182,7 @@ function InkLine({
  * nesta mesma altura: o rabisco não salta de camada ao ser solto. O `z` do traço ordena os
  * traços entre si, que é a pilha à qual ele pertence.
  */
-export function Strokes({ strokes }: StrokesProps) {
+export function Strokes({ strokes, selection, onSelect }: StrokesProps) {
   // Ordenado por `z` na hora de desenhar, e não guardado ordenado: a ordem da lista é do
   // board, e é o `z` que diz quem fica por cima.
   const porZ = [...strokes].sort((a, b) => a.z - b.z);
@@ -107,11 +190,11 @@ export function Strokes({ strokes }: StrokesProps) {
   return (
     <InkLayer testId="strokes">
       {porZ.map((stroke) => (
-        <InkLine
+        <StrokeShape
           key={stroke.id}
-          points={stroke.points}
-          color={strokeColor(stroke.color)}
-          testId="stroke"
+          stroke={stroke}
+          selected={selection?.has(stroke.id) ?? false}
+          onSelect={onSelect}
         />
       ))}
     </InkLayer>

@@ -2112,6 +2112,304 @@ describe("Whiteboard — modo lápis", () => {
   });
 });
 
+describe("Whiteboard — selecionar e apagar rabiscos (#70)", () => {
+  /**
+   * Rabisca de um ponto ao outro com o lápis ligado, e desliga o modo depois.
+   *
+   * Desligar faz parte: com o lápis ligado a superfície reivindica todo `pointerdown` para
+   * desenhar, e nenhum clique chegaria ao traço. Quem quer selecionar já saiu do modo.
+   */
+  function desenha(de: [number, number], ate: [number, number]): void {
+    const surface = screen.getByTestId("viewport-surface");
+
+    fireEvent.keyDown(document, { key: "p" });
+    fireEvent.pointerDown(surface, { pointerId: 1, button: 0, clientX: de[0], clientY: de[1] });
+    for (let passo = 1; passo <= 4; passo += 1) {
+      fireEvent.pointerMove(surface, {
+        pointerId: 1,
+        clientX: de[0] + ((ate[0] - de[0]) * passo) / 4,
+        clientY: de[1] + ((ate[1] - de[1]) * passo) / 4,
+      });
+    }
+    fireEvent.pointerUp(surface, { pointerId: 1, clientX: ate[0], clientY: ate[1] });
+    fireEvent.keyDown(document, { key: "Escape" });
+  }
+
+  function tracos(): HTMLElement[] {
+    return screen.queryAllByTestId("stroke-group");
+  }
+
+  /** O n-ésimo traço desenhado, falhando o teste se ele não existir. */
+  function traco(indice: number): HTMLElement {
+    return defined(tracos()[indice], `o traço de índice ${indice}`);
+  }
+
+  /**
+   * Uma das três linhas de um traço desenhado: o halo, a tinta ou o alvo de clique.
+   *
+   * Falha o teste em vez de devolver `null` pela mesma razão do `defined`: uma asserção
+   * sobre `null?.x` compara `undefined` com `undefined` e passa, escondendo a falha.
+   */
+  function parteDoTraco(indice: number, testId: string): Element {
+    const parte = traco(indice).querySelector(`[data-testid="${testId}"]`);
+    if (parte === null) throw new Error(`Esperava ${testId} no traço ${indice}, e não havia.`);
+    return parte;
+  }
+
+  /** Ids dos traços marcados, na ordem em que o board os guarda. */
+  function tracosMarcados(): (string | undefined)[] {
+    return tracos()
+      .filter((element) => element.dataset.selected === "true")
+      .map((element) => element.dataset.strokeId);
+  }
+
+  /** Clica no alvo do n-ésimo traço, que é a faixa larga em volta da tinta. */
+  function clicaNoTraco(indice: number, { shift = false } = {}): void {
+    fireEvent.pointerDown(parteDoTraco(indice, "stroke-hit"), {
+      pointerId: 5,
+      button: 0,
+      shiftKey: shift,
+    });
+  }
+
+  /** Arrasta um retângulo de seleção no fundo do quadro. */
+  function retangulo(de: [number, number], ate: [number, number]): void {
+    const surface = screen.getByTestId("viewport-surface");
+
+    fireEvent.pointerDown(surface, { pointerId: 7, button: 0, clientX: de[0], clientY: de[1] });
+    fireEvent.pointerMove(surface, { pointerId: 7, clientX: ate[0], clientY: ate[1] });
+    fireEvent.pointerUp(surface, { pointerId: 7, clientX: ate[0], clientY: ate[1] });
+  }
+
+  function notasMarcadas(): (string | undefined)[] {
+    return postIts()
+      .filter((element) => element.dataset.selected === "true")
+      .map((element) => element.dataset.noteId);
+  }
+
+  it("clicar num traço o seleciona", () => {
+    render(<Whiteboard />);
+    desenha([100, 100], [300, 200]);
+
+    expect(tracosMarcados()).toEqual([]);
+
+    clicaNoTraco(0);
+
+    expect(tracosMarcados()).toHaveLength(1);
+  });
+
+  it("clicar noutro traço larga o primeiro", () => {
+    render(<Whiteboard />);
+    desenha([100, 100], [200, 150]);
+    desenha([400, 400], [500, 450]);
+
+    clicaNoTraco(0);
+    const primeiro = tracosMarcados();
+    clicaNoTraco(1);
+
+    expect(tracosMarcados()).toHaveLength(1);
+    expect(tracosMarcados()).not.toEqual(primeiro);
+  });
+
+  it("shift-clique acrescenta e tira, como na nota", () => {
+    render(<Whiteboard />);
+    desenha([100, 100], [200, 150]);
+    desenha([400, 400], [500, 450]);
+
+    clicaNoTraco(0);
+    clicaNoTraco(1, { shift: true });
+    expect(tracosMarcados()).toHaveLength(2);
+
+    clicaNoTraco(1, { shift: true });
+    expect(tracosMarcados()).toHaveLength(1);
+  });
+
+  /**
+   * O alvo é largo de propósito: uma linha de 2 unidades exigiria acerto exato do ponteiro.
+   * O que este caso guarda é a folga em si — sem ela, o alvo teria a espessura da tinta e
+   * errar o rabisco por um pixel viraria a experiência normal.
+   */
+  it("o alvo de clique é mais largo que a tinta", () => {
+    render(<Whiteboard />);
+    desenha([100, 100], [300, 200]);
+
+    const tinta = parteDoTraco(0, "stroke");
+    const alvo = parteDoTraco(0, "stroke-hit");
+
+    expect(Number(alvo.getAttribute("stroke-width"))).toBeGreaterThan(
+      Number(tinta.getAttribute("stroke-width")),
+    );
+    // Invisível, mas alcançável: é a faixa que recebe o ponteiro, não uma linha a mais na tela.
+    expect(alvo.getAttribute("stroke")).toBe("transparent");
+    expect(alvo.getAttribute("pointer-events")).toBe("stroke");
+  });
+
+  /**
+   * O traço marcado precisa dizer que está marcado, como a nota diz com o contorno. A nota
+   * usa `outline`, que uma linha não tem; a tradução é um halo mais grosso por baixo da
+   * tinta, na mesma cor da seleção.
+   */
+  it("o traço marcado ganha indicação visual", () => {
+    render(<Whiteboard />);
+    desenha([100, 100], [300, 200]);
+
+    expect(traco(0).querySelector('[data-testid="stroke-selected"]')).toBeNull();
+
+    clicaNoTraco(0);
+
+    const halo = parteDoTraco(0, "stroke-selected");
+    expect(halo.getAttribute("stroke")).toBe("var(--color-selection)");
+    // Por baixo da tinta, e não por cima: um halo que cobrisse o traço esconderia a cor dele.
+    expect(halo.compareDocumentPosition(parteDoTraco(0, "stroke"))).toBe(
+      Node.DOCUMENT_POSITION_FOLLOWING,
+    );
+  });
+
+  it("o retângulo de seleção pega traços e notas juntos", () => {
+    render(<Whiteboard />);
+    duploCliqueNoFundo(200, 200);
+    fireEvent.keyDown(screen.getByTestId("post-it-editor"), { key: "Escape" });
+    desenha([160, 160], [260, 260]);
+
+    retangulo([50, 50], [400, 400]);
+
+    expect(notasMarcadas()).toHaveLength(1);
+    expect(tracosMarcados()).toHaveLength(1);
+  });
+
+  it("o retângulo não pega o traço que ele não toca", () => {
+    render(<Whiteboard />);
+    desenha([600, 600], [700, 700]);
+
+    retangulo([0, 0], [100, 100]);
+
+    expect(tracosMarcados()).toEqual([]);
+  });
+
+  it("Delete apaga os traços marcados", () => {
+    render(<Whiteboard />);
+    desenha([100, 100], [200, 150]);
+    desenha([400, 400], [500, 450]);
+    clicaNoTraco(0);
+
+    fireEvent.keyDown(document, { key: "Delete" });
+
+    expect(tracos()).toHaveLength(1);
+  });
+
+  it("Backspace apaga igual, como já apagava nota", () => {
+    render(<Whiteboard />);
+    desenha([100, 100], [200, 150]);
+    clicaNoTraco(0);
+
+    fireEvent.keyDown(document, { key: "Backspace" });
+
+    expect(tracos()).toEqual([]);
+  });
+
+  /** O critério da seleção mista: um `Delete` só leva as duas espécies embora. */
+  it("Delete apaga notas e traços da mesma seleção", () => {
+    render(<Whiteboard />);
+    duploCliqueNoFundo(200, 200);
+    fireEvent.keyDown(screen.getByTestId("post-it-editor"), { key: "Escape" });
+    desenha([160, 160], [260, 260]);
+    retangulo([50, 50], [400, 400]);
+
+    fireEvent.keyDown(document, { key: "Delete" });
+
+    expect(postIts()).toEqual([]);
+    expect(tracos()).toEqual([]);
+  });
+
+  it("apagar esvazia a seleção: o Delete seguinte não tem o que fazer", () => {
+    render(<Whiteboard />);
+    desenha([100, 100], [200, 150]);
+    desenha([400, 400], [500, 450]);
+    clicaNoTraco(0);
+    fireEvent.keyDown(document, { key: "Delete" });
+
+    fireEvent.keyDown(document, { key: "Delete" });
+
+    // O segundo traço continua: a seleção morreu junto com o que ela apontava.
+    expect(tracos()).toHaveLength(1);
+  });
+
+  it("clicar num traço larga as notas que estavam marcadas", () => {
+    render(<Whiteboard />);
+    duploCliqueNoFundo(600, 600);
+    fireEvent.keyDown(screen.getByTestId("post-it-editor"), { key: "Escape" });
+    desenha([100, 100], [200, 150]);
+    retangulo([50, 50], [700, 700]);
+    expect(notasMarcadas()).toHaveLength(1);
+
+    clicaNoTraco(0);
+
+    // "Só este" vale entre espécies: senão a nota ficaria marcada invisivelmente atrás do
+    // rabisco recém-clicado, e o `Delete` seguinte a levaria junto.
+    expect(notasMarcadas()).toEqual([]);
+    expect(tracosMarcados()).toHaveLength(1);
+  });
+
+  it("clicar num traço não deixa o retângulo de seleção nascer por baixo", () => {
+    render(<Whiteboard />);
+    desenha([100, 100], [300, 200]);
+
+    clicaNoTraco(0);
+
+    expect(screen.queryByTestId("selection-box")).toBeNull();
+  });
+
+  /**
+   * A barra de ações só carrega o seletor de cor, que pinta post-it. Sobre uma seleção de
+   * rabiscos ela seria seis cores que não fazem nada.
+   */
+  it("a barra de ações não aparece sobre uma seleção só de traços", () => {
+    render(<Whiteboard />);
+    desenha([100, 100], [300, 200]);
+
+    clicaNoTraco(0);
+
+    expect(screen.queryByTestId("selection-toolbar")).toBeNull();
+  });
+
+  it("a barra volta numa seleção mista, e colorir alcança só a nota", () => {
+    render(<Whiteboard />);
+    duploCliqueNoFundo(200, 200);
+    fireEvent.keyDown(screen.getByTestId("post-it-editor"), { key: "Escape" });
+    desenha([160, 160], [260, 260]);
+    retangulo([50, 50], [400, 400]);
+
+    const barra = screen.getByTestId("selection-toolbar");
+    expect(barra).toBeTruthy();
+
+    fireEvent.click(screen.getByLabelText(UI.en.note.colors.green));
+
+    // A nota mudou de cor e o traço continua onde estava, inteiro: colorir não é ação de
+    // rabisco, e uma seleção mista não pode quebrar por causa disso.
+    expect(postIt(0).style.backgroundColor).toBe("var(--color-note-green)");
+    expect(tracos()).toHaveLength(1);
+  });
+
+  /**
+   * Com o lápis ligado o quadro inteiro é superfície de desenho, e a superfície reivindica
+   * o gesto na descida. Sem isso, começar um traço em cima de um rabisco existente
+   * selecionaria o rabisco em vez de desenhar.
+   */
+  it("com o lápis ligado, riscar por cima de um traço desenha em vez de selecionar", () => {
+    render(<Whiteboard />);
+    desenha([100, 100], [300, 300]);
+
+    fireEvent.keyDown(document, { key: "p" });
+    const surface = screen.getByTestId("viewport-surface");
+    fireEvent.pointerDown(surface, { pointerId: 3, button: 0, clientX: 200, clientY: 200 });
+    fireEvent.pointerMove(surface, { pointerId: 3, clientX: 240, clientY: 210 });
+    fireEvent.pointerUp(surface, { pointerId: 3, clientX: 240, clientY: 210 });
+
+    expect(tracos()).toHaveLength(2);
+    expect(tracosMarcados()).toEqual([]);
+  });
+});
+
 describe("Whiteboard — modo lápis no toque", () => {
   afterEach(() => {
     vi.unstubAllGlobals();

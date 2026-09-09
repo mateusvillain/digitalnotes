@@ -5,13 +5,19 @@ import { topLeftCenteredAt, type Point, type Rect, type Size } from "@/lib/canva
 import { simplify } from "@/lib/canvas/simplify";
 import {
   EMPTY_SELECTION,
-  notesInRect,
+  elementsInRect,
+  isEmpty,
+  isSelected,
   selectOnly,
   selectedNotes,
+  selectedStrokes,
   sharedColor,
   toggle,
+  union,
+  type ElementKind,
   type Selection,
 } from "./selection";
+import { strokeBounds } from "./stroke-geometry";
 import { clampNoteSize } from "./schema";
 import { createBoardStore } from "./store";
 import { useLocalPersistence } from "./useLocalPersistence";
@@ -66,8 +72,14 @@ export interface BoardApi {
   /** Cria um post-it centrado no ponto do canvas e já o abre para escrever. */
   createNoteAt: (point: Point) => void;
   startEditing: (id: string) => void;
-  /** Marca um post-it. Com `additive`, acrescenta ou tira em vez de trocar a seleção. */
-  selectNote: (id: string, additive?: boolean) => void;
+  /**
+   * Marca um elemento do quadro. Com `additive`, acrescenta ou tira em vez de trocar.
+   *
+   * Uma função para as duas espécies, e não uma por espécie: clicar num post-it e clicar
+   * num rabisco são o mesmo gesto sobre a mesma seleção, e separá-los duplicaria a regra do
+   * shift no dia em que ela mudasse.
+   */
+  selectElement: (kind: ElementKind, id: string, additive?: boolean) => void;
   /**
    * Deslocamento em curso da seleção, em coordenadas de canvas, ou `null` fora de um
    * arraste. É otimista: mora fora da store até o gesto terminar.
@@ -96,16 +108,23 @@ export interface BoardApi {
    * que faz um retângulo desenhado no vazio limpar a seleção.
    */
   beginRectSelection: (additive: boolean) => void;
-  /** Marca os post-its que o retângulo toca, somados à base guardada por `beginRectSelection`. */
+  /** Marca o que o retângulo toca — notas e traços —, somado à base de `beginRectSelection`. */
   selectInRect: (rect: Rect) => void;
   clearSelection: () => void;
-  /** As notes marcadas. É por elas que passam as ações em lote — colorir, e apagar (#19). */
+  /** As notes marcadas. É por elas que passa o que só vale para post-it: colorir (#17). */
   selected: readonly Note[];
+  /**
+   * As caixas de tudo que está marcado, notas e traços, em coordenadas de canvas.
+   *
+   * É por aqui que a barra de ações se ancora. Separada de `selected` porque a pergunta é
+   * outra: "onde a seleção está" inclui os rabiscos, enquanto "o que colorir" não.
+   */
+  selectedRects: readonly Rect[];
   /** Cor comum à seleção, ou `null` se ela estiver vazia ou tiver mais de uma cor. */
   selectionColor: NoteColor | null;
   /** Pinta toda a seleção de uma cor, numa publicação só. */
   colorSelection: (color: NoteColor) => void;
-  /** Apaga os post-its marcados e esvazia a seleção. Sem nada marcado, não faz nada. */
+  /** Apaga o que está marcado — notas e traços — e esvazia a seleção. Sem nada, não faz nada. */
   deleteSelection: () => void;
   /** Grava o texto e fecha a edição. */
   commitText: (id: string, text: string) => void;
@@ -209,7 +228,7 @@ export function useBoard({ initialBoard, autosave = true }: UseBoardOptions = {}
 
       setEditingId(note.id);
       // Criar é selecionar: o post-it recém-nascido é sobre o que as próximas ações agem.
-      publishSelection(selectOnly(note.id));
+      publishSelection(selectOnly("note", note.id));
     },
     [publishSelection, store],
   );
@@ -217,24 +236,28 @@ export function useBoard({ initialBoard, autosave = true }: UseBoardOptions = {}
   // `setEditingId` já é estável: embrulhar em useCallback seria só um intermediário.
   const startEditing = setEditingId;
 
-  const selectNote = useCallback(
-    (id: string, additive = false) => {
+  const selectElement = useCallback(
+    (kind: ElementKind, id: string, additive = false) => {
       let promoted = true;
 
       if (additive) {
         publishSelection((current) => {
           // Shift-clique tira tanto quanto põe, e tirar não é motivo para promover.
-          promoted = !current.has(id);
-          return toggle(current, id);
+          promoted = !isSelected(current, kind, id);
+          return toggle(current, kind, id);
         });
       } else {
-        publishSelection(selectOnly(id));
+        publishSelection(selectOnly(kind, id));
       }
 
       // Selecionar traz para a frente, e isso **é** do board: a ordem de empilhamento vai
       // serializada. Vale para o clique e para o shift-clique, porque nos dois o usuário
       // apontou para aquele post-it, naquela ordem.
-      if (promoted) store.bringToFront(id);
+      //
+      // Só para post-it. O traço não é promovido porque o quadro não tem para onde promovê-lo
+      // sem custo: a tinta vive numa camada só, embaixo de todas as notas, e reordenar
+      // rabiscos entre si não muda nada que se veja — eles não se cobrem, se somam.
+      if (kind === "note" && promoted) store.bringToFront(id);
     },
     [publishSelection, store],
   );
@@ -249,8 +272,9 @@ export function useBoard({ initialBoard, autosave = true }: UseBoardOptions = {}
     (rect: Rect) => {
       // Soma à base guardada no começo do gesto. Recalcular a partir dela a cada movimento
       // é o que faz encolher o retângulo desmarcar de volta quem ele deixou de tocar.
-      const tocados = notesInRect(store.getBoard().notes, rect);
-      publishSelection(new Set([...selectionBeforeRect.current, ...tocados]));
+      const board = store.getBoard();
+      const tocados = elementsInRect(board.notes, board.strokes, rect);
+      publishSelection(union(selectionBeforeRect.current, tocados));
     },
     [publishSelection, store],
   );
@@ -281,7 +305,7 @@ export function useBoard({ initialBoard, autosave = true }: UseBoardOptions = {}
     store.updateNotes(
       store
         .getBoard()
-        .notes.filter((note) => selectionRef.current.has(note.id))
+        .notes.filter((note) => selectionRef.current.notes.has(note.id))
         .map((note) => ({
           id: note.id,
           patch: {
@@ -349,13 +373,29 @@ export function useBoard({ initialBoard, autosave = true }: UseBoardOptions = {}
    */
   const selected = useMemo(() => selectedNotes(board.notes, selection), [board.notes, selection]);
 
+  /**
+   * As caixas de tudo que está marcado, para a barra de ações se ancorar.
+   *
+   * A note já é um retângulo; o traço precisa ser medido. Um traço sem forma — sem pontos —
+   * não entra: ele não tem onde ancorar nada, e um retângulo inventado na origem puxaria a
+   * barra para o canto do canvas.
+   */
+  const selectedRects = useMemo((): Rect[] => {
+    const strokes = selectedStrokes(board.strokes, selection)
+      .map(strokeBounds)
+      .filter((rect): rect is Rect => rect !== null);
+
+    return [...selected, ...strokes];
+  }, [board.strokes, selected, selection]);
+
   const selectionColor = useMemo(() => sharedColor(selected), [selected]);
 
   const colorSelection = useCallback(
     (color: NoteColor) => {
       // Uma publicação só para a seleção inteira, como no arraste: quem escuta é a
       // persistência, que reescreve a URL a cada aviso.
-      store.updateNotes([...selectionRef.current].map((id) => ({ id, patch: { color } })));
+      // Só as notes: o seletor pinta post-it, e um traço junto na seleção não é alvo dele.
+      store.updateNotes([...selectionRef.current.notes].map((id) => ({ id, patch: { color } })));
     },
     [store],
   );
@@ -370,14 +410,14 @@ export function useBoard({ initialBoard, autosave = true }: UseBoardOptions = {}
      * imutável, então o conjunto antigo continua intacto depois de a ref ser reapontada.
      */
     const deleted = selectionRef.current;
-    if (deleted.size === 0) return;
+    if (isEmpty(deleted)) return;
 
-    // Numa remoção só, como o resto das ações em lote: quem escuta é a persistência, e dez
-    // post-its apagados não são dez reescritas da URL.
-    store.removeNotes([...deleted]);
+    // Numa remoção só, como o resto das ações em lote: quem escuta é a persistência, e uma
+    // seleção com notas e traços não são duas reescritas da URL.
+    store.removeElements([...deleted.notes], [...deleted.strokes]);
     // Quem estava em edição pode ter sido apagado. Não acontece pelo atalho, que se cala
     // durante a digitação, mas quem chamar isto por outro caminho não tem como saber disso.
-    setEditingId((current) => (current !== null && deleted.has(current) ? null : current));
+    setEditingId((current) => (current !== null && deleted.notes.has(current) ? null : current));
     // A seleção some junto: ids de post-its que não existem mais continuariam marcados e
     // fariam a próxima ação em lote agir sobre nada.
     publishSelection(EMPTY_SELECTION);
@@ -429,11 +469,12 @@ export function useBoard({ initialBoard, autosave = true }: UseBoardOptions = {}
     resizeBy,
     endResize,
     cancelResize,
-    selectNote,
+    selectElement,
     beginRectSelection,
     selectInRect,
     clearSelection,
     selected,
+    selectedRects,
     selectionColor,
     colorSelection,
     deleteSelection,
