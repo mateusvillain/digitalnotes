@@ -721,7 +721,21 @@ export function Viewport({
   return (
     <div
       ref={surfaceRef}
-      className={`whiteboard-surface absolute inset-0 touch-none overflow-hidden ${cursorClass}`}
+      /*
+        `select-none` na superfície inteira: nenhum gesto sobre o quadro cria seleção de
+        texto.
+
+        Sem isto, arrastar o retângulo de seleção deixa uma seleção de texto do navegador
+        atravessando o quadro, e ela é **pintada** por cima de tudo que estiver dentro do
+        intervalo — inclusive de caixas vazias, como a moldura de um traço marcado. O
+        resultado é um fundo azul translúcido que nenhuma classe deste projeto pediu.
+
+        Aqui, e não em cada peça: o post-it já se defendia sozinho, e defender uma por uma
+        deixa a próxima a nascer com o mesmo defeito. O editor do post-it não é afetado — um
+        campo de texto continua selecionável com o `user-select` herdado, e é assim que ele
+        já funcionava dentro do post-it, que carrega esta mesma classe desde sempre.
+      */
+      className={`whiteboard-surface absolute inset-0 touch-none overflow-hidden select-none ${cursorClass}`}
       style={
         {
           // A malha acompanha o zoom e o pan, senão o fundo fica parado e o quadro parece

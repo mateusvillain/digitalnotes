@@ -38,6 +38,15 @@ export interface NoteUpdate {
   patch: NotePatch;
 }
 
+/** Campos que uma alteração de traço pode tocar. O id é a identidade, e não muda. */
+export type StrokePatch = Partial<Omit<Stroke, "id">>;
+
+/** Uma alteração de traço dentro de um lote. */
+export interface StrokeUpdate {
+  id: string;
+  patch: StrokePatch;
+}
+
 /** Dados mínimos para criar um post-it; o resto vem dos padrões do contrato. */
 export interface NewNote {
   x: number;
@@ -79,6 +88,20 @@ export interface BoardStore {
   bringToFront: (id: string) => void;
   /** Cria um traço na frente dos demais. Devolve `null` se os dados forem impossíveis. */
   addStroke: (stroke: NewStroke) => Stroke | null;
+  /**
+   * Altera vários traços numa publicação só (#70).
+   *
+   * Mesmo espírito de `updateNotes`: arrastar uma seleção de rabiscos precisa dar uma
+   * notificação, não uma por traço.
+   */
+  updateStrokes: (updates: readonly StrokeUpdate[]) => void;
+  /**
+   * Altera notes e traços numa publicação só (#70).
+   *
+   * Existe porque uma seleção pode misturar os dois, e arrastá-la chamando `updateNotes`
+   * seguido de `updateStrokes` avisaria duas vezes por um gesto só.
+   */
+  updateElements: (notes: readonly NoteUpdate[], strokes: readonly StrokeUpdate[]) => void;
   removeStroke: (id: string) => void;
   removeStrokes: (ids: readonly string[]) => void;
   /**
@@ -118,6 +141,22 @@ function sameNote(a: Note, b: Note): boolean {
     a.color === b.color &&
     a.text === b.text &&
     a.z === b.z
+  );
+}
+
+/**
+ * Dois traços com o mesmo conteúdo.
+ *
+ * Compara os pontos um a um, e não por identidade do array: quem escreve um traço monta uma
+ * lista nova a cada alteração, e comparar referências diria "mudou" a todo arraste que
+ * voltou ao ponto de partida.
+ */
+function sameStroke(a: Stroke, b: Stroke): boolean {
+  return (
+    a.color === b.color &&
+    a.z === b.z &&
+    a.points.length === b.points.length &&
+    a.points.every((value, index) => value === b.points[index])
   );
 }
 
@@ -260,6 +299,46 @@ export function createBoardStore(initial: Board = createEmptyBoard()): BoardStor
     if (strokes.length !== board.strokes.length) commit({ strokes });
   }
 
+  function applyStrokeUpdates(updates: readonly StrokeUpdate[]): Stroke[] | null {
+    const byId = new Map(updates.map((update) => [update.id, update.patch]));
+    let changed = false;
+
+    const strokes = board.strokes.map((stroke) => {
+      const patch = byId.get(stroke.id);
+      if (patch === undefined) return stroke;
+
+      // Normalizar pelo contrato, como na note: uma coordenada impossível — um NaN escapado
+      // de uma divisão por zero num redimensionamento — não entra no board e não derruba o
+      // handler de evento. O traço fica como estava.
+      const candidate = normalizeStroke({ ...stroke, ...patch, id: stroke.id });
+      if (candidate === null || sameStroke(stroke, candidate)) return stroke;
+
+      changed = true;
+      return candidate;
+    });
+
+    return changed ? strokes : null;
+  }
+
+  function updateStrokes(updates: readonly StrokeUpdate[]): void {
+    const strokes = applyStrokeUpdates(updates);
+    if (strokes !== null) commit({ strokes });
+  }
+
+  function updateElements(
+    noteUpdates: readonly NoteUpdate[],
+    strokeUpdates: readonly StrokeUpdate[],
+  ): void {
+    const notes = applyUpdates(noteUpdates);
+    const strokes = applyStrokeUpdates(strokeUpdates);
+
+    // Nada mudou de verdade, nada publicado: um arraste que voltou ao ponto de partida não
+    // deveria fazer a persistência reescrever a URL com o mesmo board.
+    if (notes === null && strokes === null) return;
+
+    commit({ notes: notes ?? board.notes, strokes: strokes ?? board.strokes });
+  }
+
   function removeStroke(id: string): void {
     removeStrokes([id]);
   }
@@ -317,6 +396,8 @@ export function createBoardStore(initial: Board = createEmptyBoard()): BoardStor
     removeNotes,
     bringToFront,
     addStroke,
+    updateStrokes,
+    updateElements,
     removeStroke,
     removeStrokes,
     removeElements,

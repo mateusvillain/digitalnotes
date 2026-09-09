@@ -2165,11 +2165,12 @@ describe("Whiteboard — selecionar e apagar rabiscos (#70)", () => {
 
   /** Clica no alvo do n-ésimo traço, que é a faixa larga em volta da tinta. */
   function clicaNoTraco(indice: number, { shift = false } = {}): void {
-    fireEvent.pointerDown(parteDoTraco(indice, "stroke-hit"), {
-      pointerId: 5,
-      button: 0,
-      shiftKey: shift,
-    });
+    const alvo = parteDoTraco(indice, "stroke-hit");
+
+    // Descer **e** subir: um traço já selecionado adia o colapso da seleção para o soltar,
+    // como o post-it faz, e um helper que só apertasse nunca veria essa metade do gesto.
+    fireEvent.pointerDown(alvo, { pointerId: 5, button: 0, shiftKey: shift });
+    fireEvent.pointerUp(alvo, { pointerId: 5, shiftKey: shift });
   }
 
   /** Arrasta um retângulo de seleção no fundo do quadro. */
@@ -2245,23 +2246,45 @@ describe("Whiteboard — selecionar e apagar rabiscos (#70)", () => {
   });
 
   /**
-   * O traço marcado precisa dizer que está marcado, como a nota diz com o contorno. A nota
-   * usa `outline`, que uma linha não tem; a tradução é um halo mais grosso por baixo da
-   * tinta, na mesma cor da seleção.
+   * A moldura fica em volta da **área** do desenho, e não colada na tinta.
+   *
+   * Um contorno que acompanhasse a linha diria "esta linha está marcada" — verdade, mas
+   * inútil: o que se faz com um traço selecionado é movê-lo e redimensioná-lo, e as duas
+   * coisas acontecem sobre a caixa dele. A caixa é a alça de mão do objeto.
    */
-  it("o traço marcado ganha indicação visual", () => {
+  it("o traço marcado ganha uma moldura em volta da área do desenho", () => {
     render(<Whiteboard />);
     desenha([100, 100], [300, 200]);
 
-    expect(traco(0).querySelector('[data-testid="stroke-selected"]')).toBeNull();
+    expect(screen.queryByTestId("stroke-frame")).toBeNull();
 
     clicaNoTraco(0);
 
-    const halo = parteDoTraco(0, "stroke-selected");
-    expect(halo.getAttribute("stroke")).toBe("var(--color-selection)");
-    // Por baixo da tinta, e não por cima: um halo que cobrisse o traço esconderia a cor dele.
-    expect(halo.compareDocumentPosition(parteDoTraco(0, "stroke"))).toBe(
-      Node.DOCUMENT_POSITION_FOLLOWING,
+    const moldura = screen.getByTestId("stroke-frame");
+    // A caixa cobre o traço inteiro, e não a espessura da linha.
+    expect(Number.parseFloat(moldura.style.left)).toBeCloseTo(100, 0);
+    expect(Number.parseFloat(moldura.style.top)).toBeCloseTo(100, 0);
+    expect(Number.parseFloat(moldura.style.width)).toBeCloseTo(200, 0);
+    expect(Number.parseFloat(moldura.style.height)).toBeCloseTo(100, 0);
+    // O mesmo contorno do post-it: as duas espécies dizem "marcado" da mesma forma.
+    expect(moldura.className).toContain("outline-selection");
+  });
+
+  /**
+   * A caixa de um rabisco grande cobre muito quadro vazio. Se ela capturasse o ponteiro,
+   * esse vazio ficaria inclicável — inclusive para o clique no fundo que desfaz a seleção.
+   */
+  it("a moldura não captura o ponteiro; só a alça captura", () => {
+    render(<Whiteboard />);
+    desenha([100, 100], [300, 200]);
+    clicaNoTraco(0);
+
+    const moldura = screen.getByTestId("stroke-frame");
+    const envoltorioDaAlca = screen.getByTestId("resize-handle").parentElement;
+
+    expect(moldura.className).toContain("pointer-events-none");
+    expect(defined(envoltorioDaAlca ?? undefined, "o envoltório da alça").className).toContain(
+      "pointer-events-auto",
     );
   });
 
@@ -2348,6 +2371,188 @@ describe("Whiteboard — selecionar e apagar rabiscos (#70)", () => {
     // rabisco recém-clicado, e o `Delete` seguinte a levaria junto.
     expect(notasMarcadas()).toEqual([]);
     expect(tracosMarcados()).toHaveLength(1);
+  });
+
+  /** Arrasta o traço pela própria tinta, que é onde a mão vai. */
+  function arrastaTraco(indice: number, dx: number, dy: number): void {
+    const alvo = parteDoTraco(indice, "stroke-hit");
+
+    fireEvent.pointerDown(alvo, { pointerId: 8, button: 0, clientX: 0, clientY: 0 });
+    fireEvent.pointerMove(alvo, { pointerId: 8, clientX: dx, clientY: dy });
+    fireEvent.pointerUp(alvo, { pointerId: 8, clientX: dx, clientY: dy });
+  }
+
+  /** Caixa da moldura do traço marcado, em unidades de canvas. */
+  function moldura(): { x: number; y: number; w: number; h: number } {
+    const caixa = screen.getByTestId("stroke-frame");
+    return {
+      x: Number.parseFloat(caixa.style.left),
+      y: Number.parseFloat(caixa.style.top),
+      w: Number.parseFloat(caixa.style.width),
+      h: Number.parseFloat(caixa.style.height),
+    };
+  }
+
+  it("arrastar o traço o move, como no post-it", () => {
+    render(<Whiteboard />);
+    desenha([100, 100], [300, 200]);
+    clicaNoTraco(0);
+    const antes = moldura();
+
+    arrastaTraco(0, 60, 40);
+
+    expect(moldura().x).toBeCloseTo(antes.x + 60, 0);
+    expect(moldura().y).toBeCloseTo(antes.y + 40, 0);
+    // O tamanho não muda: mover é mover.
+    expect(moldura().w).toBeCloseTo(antes.w, 0);
+    expect(moldura().h).toBeCloseTo(antes.h, 0);
+  });
+
+  it("um arraste que não passou da folga é clique, e não move nada", () => {
+    render(<Whiteboard />);
+    desenha([100, 100], [300, 200]);
+    clicaNoTraco(0);
+    const antes = moldura();
+
+    // Dois pixels: a mão que treme ao clicar não pode gravar posição nova na store.
+    arrastaTraco(0, 2, 1);
+
+    expect(moldura().x).toBeCloseTo(antes.x, 0);
+  });
+
+  it("arrastar leva a seleção inteira junto, notas e traços", () => {
+    render(<Whiteboard />);
+    duploCliqueNoFundo(500, 500);
+    fireEvent.keyDown(screen.getByTestId("post-it-editor"), { key: "Escape" });
+    desenha([100, 100], [200, 200]);
+    retangulo([50, 50], [700, 700]);
+    const notaAntes = Number.parseFloat(postIt(0).style.left);
+    const tracoAntes = moldura().x;
+
+    arrastaTraco(0, 70, 0);
+
+    expect(Number.parseFloat(postIt(0).style.left)).toBeCloseTo(notaAntes + 70, 0);
+    expect(moldura().x).toBeCloseTo(tracoAntes + 70, 0);
+  });
+
+  it("a alça redimensiona o traço, ancorando no canto de cima à esquerda", () => {
+    render(<Whiteboard />);
+    desenha([100, 100], [300, 200]);
+    clicaNoTraco(0);
+    const antes = moldura();
+
+    const alca = screen.getByTestId("resize-handle");
+    fireEvent.pointerDown(alca, { pointerId: 9, button: 0, clientX: 0, clientY: 0 });
+    fireEvent.pointerMove(alca, { pointerId: 9, clientX: 100, clientY: 50 });
+    fireEvent.pointerUp(alca, { pointerId: 9, clientX: 100, clientY: 50 });
+
+    expect(moldura().w).toBeCloseTo(antes.w + 100, 0);
+    expect(moldura().h).toBeCloseTo(antes.h + 50, 0);
+    // O canto de partida fica parado: é a mesma âncora do post-it, e é o que a alça no
+    // canto oposto significa.
+    expect(moldura().x).toBeCloseTo(antes.x, 0);
+    expect(moldura().y).toBeCloseTo(antes.y, 0);
+  });
+
+  it("a alça não encolhe o traço até sumir", () => {
+    render(<Whiteboard />);
+    desenha([100, 100], [300, 200]);
+    clicaNoTraco(0);
+
+    const alca = screen.getByTestId("resize-handle");
+    fireEvent.pointerDown(alca, { pointerId: 9, button: 0, clientX: 0, clientY: 0 });
+    fireEvent.pointerMove(alca, { pointerId: 9, clientX: -9000, clientY: -9000 });
+    fireEvent.pointerUp(alca, { pointerId: 9, clientX: -9000, clientY: -9000 });
+
+    // Achatar até zero não tem volta: sem dimensão não sobra o que multiplicar para crescer
+    // de novo.
+    expect(moldura().w).toBeGreaterThan(0);
+    expect(moldura().h).toBeGreaterThan(0);
+  });
+
+  it("o traço movido continua sendo o mesmo traço, e não um novo", () => {
+    render(<Whiteboard />);
+    desenha([100, 100], [300, 200]);
+    clicaNoTraco(0);
+
+    arrastaTraco(0, 60, 40);
+
+    expect(tracos()).toHaveLength(1);
+    expect(tracosMarcados()).toHaveLength(1);
+  });
+
+  /**
+   * A apresentação existe para o quadro **vazio**, e quem rabiscou está tão longe do quadro
+   * vazio quanto quem criou uma nota. Deixar o texto no meio da tela é justamente onde ele
+   * mais atrapalha: por cima do próprio desenho.
+   */
+  it("desenhar dispensa a apresentação, como criar uma nota já dispensava", () => {
+    stubMatchMedia(false);
+    render(<Whiteboard />);
+    expect(screen.getByTestId("onboarding")).toBeTruthy();
+
+    desenha([100, 100], [300, 200]);
+
+    expect(screen.queryByTestId("onboarding")).toBeNull();
+  });
+
+  it("ligar o lápis já dispensa a apresentação, antes do primeiro traço", () => {
+    stubMatchMedia(false);
+    render(<Whiteboard />);
+
+    fireEvent.keyDown(document, { key: "p" });
+
+    // Quem achou o `P` aprendeu o que a peça tinha para ensinar — e é onde o rabisco vai passar.
+    expect(screen.queryByTestId("onboarding")).toBeNull();
+  });
+
+  /**
+   * Apagar o último traço não traz as instruções de volta, pelo mesmo motivo que apagar a
+   * última nota nunca trouxe: a peça reapareceria no meio de uma limpeza de quadro.
+   */
+  it("apagar o último traço não traz a apresentação de volta", () => {
+    stubMatchMedia(false);
+    render(<Whiteboard />);
+    desenha([100, 100], [300, 200]);
+
+    clicaNoTraco(0);
+    fireEvent.keyDown(document, { key: "Delete" });
+
+    expect(tracos()).toEqual([]);
+    expect(screen.queryByTestId("onboarding")).toBeNull();
+  });
+
+  /**
+   * Um quadro só de rabiscos também é trabalho. Antes da #70 a pergunta era só sobre
+   * post-its, e um quadro cheio de traços era substituído sem aviso nenhum.
+   */
+  it("um quadro só com traços avisa antes de ser substituído", async () => {
+    const user = userEvent.setup();
+    stubMatchMedia(false);
+    render(<Whiteboard />);
+    desenha([100, 100], [300, 200]);
+
+    await user.click(screen.getByLabelText(UI.en.newBoard.action));
+
+    expect(screen.getByText(UI.en.newBoard.warning)).toBeTruthy();
+    expect(tracos()).toHaveLength(1);
+  });
+
+  /**
+   * A moldura é só contorno: nada de fundo.
+   *
+   * O azul translúcido que aparecia dentro dela não vinha de classe nenhuma deste projeto —
+   * era o realce de seleção de texto do navegador, criado por arrastar sobre o quadro e
+   * pintado por cima de toda caixa dentro do intervalo, inclusive de uma caixa vazia. Quem
+   * o impede é o `select-none` da superfície, e é ele que este caso guarda.
+   */
+  it("a moldura é só contorno, e o quadro não deixa nascer seleção de texto", () => {
+    render(<Whiteboard />);
+    desenha([100, 100], [300, 200]);
+    clicaNoTraco(0);
+
+    expect(screen.getByTestId("stroke-frame").className).not.toMatch(/\bbg-/);
+    expect(screen.getByTestId("viewport-surface").className).toContain("select-none");
   });
 
   it("clicar num traço não deixa o retângulo de seleção nascer por baixo", () => {

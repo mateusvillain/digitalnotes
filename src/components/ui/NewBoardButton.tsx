@@ -7,8 +7,14 @@ import type { ShareApi } from "@/lib/board/useShareBoard";
 import { useUi } from "@/lib/i18n/LocaleProvider";
 
 interface NewBoardButtonProps {
-  /** Há post-its no quadro atual — ou seja, há trabalho que a substituição levaria junto. */
-  hasNotes: boolean;
+  /**
+   * Há alguma coisa no quadro atual — nota ou rabisco —, ou seja, há trabalho que a
+   * substituição levaria junto.
+   *
+   * Os traços contam desde a #70. Antes disso a pergunta era só sobre post-its, e um quadro
+   * cheio de rabiscos e sem nenhuma nota era substituído sem aviso nenhum.
+   */
+  hasContent: boolean;
   /** Descarta o board atual e começa um quadro vazio. */
   onNewBoard: () => void;
   /** A mesma ação de compartilhar do resto da interface (#46), e não um segundo caminho. */
@@ -45,7 +51,7 @@ function NewBoardIcon() {
  * Quem pediu para salvar e não conseguiu continua com o quadro: limpar depois de uma falha
  * deixaria a pessoa sem o board **e** sem o link, que é pior do que não ter oferecido nada.
  */
-export function NewBoardButton({ hasNotes, onNewBoard, share }: NewBoardButtonProps) {
+export function NewBoardButton({ hasContent, onNewBoard, share }: NewBoardButtonProps) {
   const ui = useUi();
   const [asking, setAsking] = useState(false);
   /** Esperando o link que o usuário pediu antes de limpar. */
@@ -63,12 +69,12 @@ export function NewBoardButton({ hasNotes, onNewBoard, share }: NewBoardButtonPr
 
   const start = useCallback(() => {
     // Quadro vazio não tem o que perder: segue sem trava.
-    if (!hasNotes) {
+    if (!hasContent) {
       onNewBoard();
       return;
     }
     setAsking(true);
-  }, [hasNotes, onNewBoard]);
+  }, [hasContent, onNewBoard]);
 
   const shareThenReset = useCallback(async () => {
     setAwaitingLink(true);

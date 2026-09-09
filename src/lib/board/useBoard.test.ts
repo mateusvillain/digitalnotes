@@ -334,7 +334,7 @@ describe("useBoard — arraste", () => {
     const antes = posicaoDe(hook, primeiro.id);
 
     act(() => hook.result.current.selectElement("note", primeiro.id));
-    act(() => hook.result.current.startDrag(primeiro.id));
+    act(() => hook.result.current.startDrag("note", primeiro.id));
     act(() => hook.result.current.dragBy({ x: 120, y: 80 }));
 
     // A posição final é gravada só ao soltar: quem escuta a store é a persistência, que
@@ -348,7 +348,7 @@ describe("useBoard — arraste", () => {
     const antes = posicaoDe(hook, primeiro.id);
 
     act(() => hook.result.current.selectElement("note", primeiro.id));
-    act(() => hook.result.current.startDrag(primeiro.id));
+    act(() => hook.result.current.startDrag("note", primeiro.id));
     act(() => hook.result.current.dragBy({ x: 120, y: 80 }));
     act(() => hook.result.current.endDrag());
 
@@ -361,7 +361,7 @@ describe("useBoard — arraste", () => {
     const antes = posicaoDe(hook, primeiro.id);
 
     act(() => hook.result.current.selectElement("note", primeiro.id));
-    act(() => hook.result.current.startDrag(primeiro.id));
+    act(() => hook.result.current.startDrag("note", primeiro.id));
     act(() => hook.result.current.dragBy({ x: 10.4, y: -3.7 }));
     act(() => hook.result.current.endDrag());
 
@@ -376,7 +376,7 @@ describe("useBoard — arraste", () => {
 
     act(() => hook.result.current.selectElement("note", primeiro.id));
     act(() => hook.result.current.selectElement("note", segundo.id, true));
-    act(() => hook.result.current.startDrag(primeiro.id));
+    act(() => hook.result.current.startDrag("note", primeiro.id));
     act(() => hook.result.current.dragBy({ x: 50, y: 50 }));
     act(() => hook.result.current.endDrag());
 
@@ -394,7 +394,7 @@ describe("useBoard — arraste", () => {
     // Quem decide o que está selecionado é o gesto no post-it; o arraste só move o que
     // encontra marcado. Duas fontes para a mesma regra dariam duas respostas.
     act(() => hook.result.current.selectElement("note", primeiro.id));
-    act(() => hook.result.current.startDrag(primeiro.id));
+    act(() => hook.result.current.startDrag("note", primeiro.id));
     act(() => hook.result.current.dragBy({ x: 50, y: 0 }));
     act(() => hook.result.current.endDrag());
 
@@ -406,7 +406,7 @@ describe("useBoard — arraste", () => {
     act(() => hook.result.current.selectElement("note", primeiro.id));
     act(() => hook.result.current.selectElement("note", segundo.id, true));
 
-    act(() => hook.result.current.startDrag(segundo.id));
+    act(() => hook.result.current.startDrag("note", segundo.id));
 
     expect([...hook.result.current.selection.notes]).toHaveLength(2);
   });
@@ -416,7 +416,7 @@ describe("useBoard — arraste", () => {
     act(() => hook.result.current.selectElement("note", primeiro.id));
     act(() => hook.result.current.selectElement("note", segundo.id, true));
 
-    act(() => hook.result.current.startDrag(primeiro.id));
+    act(() => hook.result.current.startDrag("note", primeiro.id));
 
     // Numa seleção que já existia, nenhum clique promoveu ninguém: sem isto, arrastar um
     // post-it de dentro do grupo o deixaria atrás dos outros.
@@ -436,7 +436,7 @@ describe("useBoard — arraste", () => {
     const antes = posicaoDe(hook, primeiro.id);
 
     act(() => hook.result.current.selectElement("note", primeiro.id));
-    act(() => hook.result.current.startDrag(primeiro.id));
+    act(() => hook.result.current.startDrag("note", primeiro.id));
     act(() => hook.result.current.dragBy({ x: 200, y: 200 }));
     act(() => hook.result.current.cancelDrag());
 
@@ -457,7 +457,7 @@ describe("useBoard — estabilidade dos callbacks", () => {
       selectElement: result.current.selectElement,
     };
 
-    act(() => result.current.startDrag(defined(result.current.notes[0], "o post-it").id));
+    act(() => result.current.startDrag("note", defined(result.current.notes[0], "o post-it").id));
     act(() => result.current.dragBy({ x: 10, y: 10 }));
     act(() => result.current.dragBy({ x: 20, y: 20 }));
 
@@ -476,7 +476,7 @@ describe("useBoard — estabilidade dos callbacks", () => {
     act(() => result.current.createNoteAt({ x: 500, y: 500 }));
     const note = defined(result.current.notes[0], "o post-it");
     act(() => result.current.selectElement("note", note.id));
-    act(() => result.current.startDrag(note.id));
+    act(() => result.current.startDrag("note", note.id));
 
     // Soltar o ponteiro reporta o último deslocamento e o fim do gesto no mesmo evento,
     // sem render entre os dois. Uma ref atualizada só no render seguinte gravaria a
@@ -494,7 +494,7 @@ describe("useBoard — estabilidade dos callbacks", () => {
     act(() => result.current.createNoteAt({ x: 300, y: 300 }));
     const note = defined(result.current.notes[0], "o post-it");
 
-    act(() => result.current.startDrag(note.id));
+    act(() => result.current.startDrag("note", note.id));
     act(() => result.current.dragBy({ x: 10, y: 10 }));
     act(() => result.current.dragBy({ x: 90, y: 40 }));
     act(() => result.current.endDrag());
@@ -524,11 +524,15 @@ describe("useBoard — redimensionamento", () => {
   it("não toca na store enquanto a alça é arrastada", () => {
     const { hook, note } = comUmPostIt();
 
-    act(() => hook.result.current.startResize(note.id));
+    act(() => hook.result.current.startResize("note", note.id));
     act(() => hook.result.current.resizeBy({ x: 60, y: 40 }));
 
     expect(hook.result.current.resizing).toEqual({
+      kind: "note",
       id: note.id,
+      // A caixa de partida fica guardada no gesto: é dela que sai o tamanho novo, e é ela
+      // que o traço precisa para saber de que escala partiu.
+      from: { x: note.x, y: note.y, w: note.w, h: note.h },
       size: { w: note.w + 60, h: note.h + 40 },
     });
     expect(noteAtual(hook).w).toBe(note.w);
@@ -538,7 +542,7 @@ describe("useBoard — redimensionamento", () => {
   it("grava o tamanho final ao soltar", () => {
     const { hook, note } = comUmPostIt();
 
-    act(() => hook.result.current.startResize(note.id));
+    act(() => hook.result.current.startResize("note", note.id));
     act(() => hook.result.current.resizeBy({ x: 60, y: 40 }));
     act(() => hook.result.current.endResize());
 
@@ -550,7 +554,7 @@ describe("useBoard — redimensionamento", () => {
   it("grava inteiros, mesmo com o gesto chegando fracionado pelo zoom", () => {
     const { hook, note } = comUmPostIt();
 
-    act(() => hook.result.current.startResize(note.id));
+    act(() => hook.result.current.startResize("note", note.id));
     act(() => hook.result.current.resizeBy({ x: 10.6, y: -4.2 }));
     act(() => hook.result.current.endResize());
 
@@ -561,7 +565,7 @@ describe("useBoard — redimensionamento", () => {
   it("respeita o tamanho mínimo já enquanto se arrasta", () => {
     const { hook, note } = comUmPostIt();
 
-    act(() => hook.result.current.startResize(note.id));
+    act(() => hook.result.current.startResize("note", note.id));
     act(() => hook.result.current.resizeBy({ x: -5000, y: -5000 }));
 
     // O limite aparece na hora, e não só ao gravar: deixar encolher além do mínimo e
@@ -575,7 +579,7 @@ describe("useBoard — redimensionamento", () => {
   it("respeita o tamanho máximo", () => {
     const { hook, note } = comUmPostIt();
 
-    act(() => hook.result.current.startResize(note.id));
+    act(() => hook.result.current.startResize("note", note.id));
     act(() => hook.result.current.resizeBy({ x: 999_999, y: 999_999 }));
 
     expect(hook.result.current.resizing?.size).toEqual({
@@ -587,7 +591,7 @@ describe("useBoard — redimensionamento", () => {
   it("não move a âncora do post-it", () => {
     const { hook, note } = comUmPostIt();
 
-    act(() => hook.result.current.startResize(note.id));
+    act(() => hook.result.current.startResize("note", note.id));
     act(() => hook.result.current.resizeBy({ x: 120, y: 90 }));
     act(() => hook.result.current.endResize());
 
@@ -600,7 +604,7 @@ describe("useBoard — redimensionamento", () => {
   it("mede sempre a partir do tamanho de quando o gesto começou", () => {
     const { hook, note } = comUmPostIt();
 
-    act(() => hook.result.current.startResize(note.id));
+    act(() => hook.result.current.startResize("note", note.id));
     act(() => hook.result.current.resizeBy({ x: 100, y: 0 }));
     act(() => hook.result.current.resizeBy({ x: 40, y: 0 }));
     act(() => hook.result.current.endResize());
@@ -613,7 +617,7 @@ describe("useBoard — redimensionamento", () => {
   it("cancelar devolve o tamanho de antes", () => {
     const { hook, note } = comUmPostIt();
 
-    act(() => hook.result.current.startResize(note.id));
+    act(() => hook.result.current.startResize("note", note.id));
     act(() => hook.result.current.resizeBy({ x: 300, y: 300 }));
     act(() => hook.result.current.cancelResize());
 
@@ -624,7 +628,7 @@ describe("useBoard — redimensionamento", () => {
   it("ignora o pedido para um post-it que não existe", () => {
     const { hook } = comUmPostIt();
 
-    act(() => hook.result.current.startResize("naoexiste"));
+    act(() => hook.result.current.startResize("note", "naoexiste"));
 
     expect(hook.result.current.resizing).toBeNull();
   });
@@ -637,7 +641,7 @@ describe("useBoard — o fim do gesto no mesmo evento do último movimento", () 
     const note = defined(result.current.notes[0], "o post-it");
 
     act(() => {
-      result.current.startResize(note.id);
+      result.current.startResize("note", note.id);
       result.current.resizeBy({ x: 70, y: 30 });
       result.current.endResize();
     });
