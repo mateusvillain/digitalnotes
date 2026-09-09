@@ -860,6 +860,13 @@ describe("Whiteboard — mover a seleção com as setas", () => {
     return !fireEvent.keyDown(document, { key, ...init });
   }
 
+  /** Aperta e solta, que é o gesto de quem dá um toque na seta. */
+  function toque(key: string, init: KeyboardEventInit = {}): boolean {
+    const engolida = seta(key, init);
+    fireEvent.keyUp(document, { key });
+    return engolida;
+  }
+
   function posicao(indice: number): { x: number; y: number } {
     const element = postIt(indice);
     return {
@@ -880,8 +887,8 @@ describe("Whiteboard — mover a seleção com as setas", () => {
     criaPostIt(400, 400);
     const antes = posicao(0);
 
-    seta("ArrowRight");
-    seta("ArrowDown");
+    toque("ArrowRight");
+    toque("ArrowDown");
 
     expect(posicao(0)).toEqual({ x: antes.x + 1, y: antes.y + 1 });
   });
@@ -891,7 +898,7 @@ describe("Whiteboard — mover a seleção com as setas", () => {
     criaPostIt(400, 400);
     const antes = posicao(0);
 
-    seta("ArrowLeft", { shiftKey: true });
+    toque("ArrowLeft", { shiftKey: true });
 
     expect(posicao(0)).toEqual({ x: antes.x - 10, y: antes.y });
   });
@@ -908,6 +915,21 @@ describe("Whiteboard — mover a seleção com as setas", () => {
     expect(posicao(0)).toEqual({ x: antes.x, y: antes.y - 10 });
   });
 
+  it("duas setas seguradas movem na diagonal", () => {
+    render(<Whiteboard />);
+    criaPostIt(400, 400);
+    const antes = posicao(0);
+
+    // `↑` continua apertada quando `→` chega: o sistema repete só a última tecla, e é a
+    // soma das seguradas que mantém o movimento na diagonal.
+    seta("ArrowUp");
+    seta("ArrowRight");
+    seta("ArrowRight", { repeat: true });
+
+    // Um passo para cima, e depois dois na diagonal.
+    expect(posicao(0)).toEqual({ x: antes.x + 2, y: antes.y - 3 });
+  });
+
   it("sem seleção a seta não mexe no quadro nem é engolida", () => {
     render(<Whiteboard />);
     criaPostIt(400, 400);
@@ -915,7 +937,7 @@ describe("Whiteboard — mover a seleção com as setas", () => {
     const antes = posicao(0);
 
     // Devolvida ao navegador: sem nada marcado, a seta ainda é a tecla que rola a página.
-    expect(seta("ArrowRight")).toBe(false);
+    expect(toque("ArrowRight")).toBe(false);
     expect(posicao(0)).toEqual(antes);
   });
 

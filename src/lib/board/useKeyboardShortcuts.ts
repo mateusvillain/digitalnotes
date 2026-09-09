@@ -93,6 +93,27 @@ const ARROW_DIRECTIONS: Readonly<Record<string, Point>> = {
   ArrowRight: { x: 1, y: 0 },
 };
 
+/**
+ * O deslocamento das setas seguradas agora, em passos.
+ *
+ * A soma, e não a última tecla: `↑` e `→` juntas dão `{ x: 1, y: -1 }`, que é a diagonal.
+ * Duas setas opostas se cancelam e dão zero, que é o que a física da coisa manda.
+ */
+function arrowDelta(held: ReadonlySet<string>): Point {
+  let x = 0;
+  let y = 0;
+
+  for (const key of held) {
+    const direction = ARROW_DIRECTIONS[key];
+    if (direction === undefined) continue;
+
+    x += direction.x;
+    y += direction.y;
+  }
+
+  return { x, y };
+}
+
 /** A tecla veio sozinha, sem nenhum modificador segurado junto. */
 function isBareKey(event: KeyboardEvent): boolean {
   return !event.ctrlKey && !event.metaKey && !event.altKey;
@@ -167,6 +188,20 @@ export function useKeyboardShortcuts({
   ]);
 
   useEffect(() => {
+    /**
+     * As setas seguradas neste instante, para o movimento na diagonal (#74).
+     *
+     * Existe porque o sistema **não** repete duas teclas: com `↑` e `→` seguradas juntas,
+     * quem volta a disparar é só a última apertada, e mover pela tecla do evento faria a
+     * diagonal virar uma linha reta assim que a repetição começasse. Somando o que está
+     * segurado, todo evento de seta — o primeiro e cada repetição — move pela diagonal
+     * inteira.
+     *
+     * Local ao efeito, e não em ref: nasce e morre com o ouvinte, e uma sessão nova não
+     * herda tecla segurada de outra montagem.
+     */
+    const held = new Set<string>();
+
     function handleKeyDown(event: KeyboardEvent): void {
       /**
        * Salvar é o único atalho que também vale com o cursor dentro de um post-it.
@@ -274,8 +309,13 @@ export function useKeyboardShortcuts({
        * sequestro: com a seleção vazia a seta continua rolando a página, que é o que ela
        * faz em qualquer lugar onde não há nada marcado.
        */
-      const direction = ARROW_DIRECTIONS[event.key];
-      if (direction !== undefined) {
+      if (ARROW_DIRECTIONS[event.key] !== undefined) {
+        held.add(event.key);
+
+        // A soma do que está segurado, e não a direção desta tecla: é isso que faz `↑` com
+        // `→` andar na diagonal, e continuar na diagonal enquanto as duas estiverem
+        // apertadas.
+        const direction = arrowDelta(held);
         const step = event.shiftKey ? NUDGE_STEP_WITH_SHIFT : NUDGE_STEP;
         const moved = handlers.current.onNudge({
           x: direction.x * step,
@@ -292,7 +332,35 @@ export function useKeyboardShortcuts({
       if (event.key === "Escape") handlers.current.onCancel();
     }
 
+    /**
+     * Solta a seta. Sem guarda nenhuma, ao contrário do `keydown`.
+     *
+     * Quem soltou a tecla soltou, e o que decide se ela chega a mover é o `keydown`. Repetir
+     * as guardas aqui é que seria o erro: bastaria clicar dentro de um post-it com a seta
+     * apertada para o `keyup` ser recusado e a tecla ficar segurada para sempre.
+     */
+    function handleKeyUp(event: KeyboardEvent): void {
+      held.delete(event.key);
+    }
+
+    /**
+     * A janela perdeu o foco: nada mais está segurado.
+     *
+     * O `keyup` de uma tecla solta fora da janela nunca chega, e sem isto ela ficaria
+     * segurada para sempre — a próxima seta sairia na diagonal, sozinha, por causa de um
+     * `Alt+Tab` de minutos atrás.
+     */
+    function handleBlur(): void {
+      held.clear();
+    }
+
     document.addEventListener("keydown", handleKeyDown, true);
-    return () => document.removeEventListener("keydown", handleKeyDown, true);
+    document.addEventListener("keyup", handleKeyUp, true);
+    window.addEventListener("blur", handleBlur);
+    return () => {
+      document.removeEventListener("keydown", handleKeyDown, true);
+      document.removeEventListener("keyup", handleKeyUp, true);
+      window.removeEventListener("blur", handleBlur);
+    };
   }, []);
 }

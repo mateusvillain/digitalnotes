@@ -43,6 +43,11 @@ function opcoes(overrides: Partial<Parameters<typeof useKeyboardShortcuts>[0]>) 
   };
 }
 
+/** Solta uma tecla no documento — o par do `tecla` acima, para as setas seguradas. */
+function solta(key: string): void {
+  document.dispatchEvent(new KeyboardEvent("keyup", { key, bubbles: true }));
+}
+
 /** Cria um elemento anexado ao documento, para o evento ter caminho de propagação. */
 function elemento(tag: string, editable = false): HTMLElement {
   const node = document.createElement(tag);
@@ -459,10 +464,12 @@ describe("useKeyboardShortcuts — salvar com Ctrl/⌘+S", () => {
     };
     renderHook(() => useKeyboardShortcuts(opcoes({ onNudge })));
 
-    tecla("ArrowUp");
-    tecla("ArrowDown");
-    tecla("ArrowLeft");
-    tecla("ArrowRight");
+    // Uma de cada vez, apertada e solta: o que acontece com duas seguradas juntas é
+    // assunto dos casos da diagonal, mais abaixo.
+    for (const seta of ["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"]) {
+      tecla(seta);
+      solta(seta);
+    }
 
     // Em unidades de canvas, e não de tela: o passo é o mesmo em qualquer zoom.
     expect(deslocamentos).toEqual([
@@ -518,5 +525,80 @@ describe("useKeyboardShortcuts — salvar com Ctrl/⌘+S", () => {
     tecla("ArrowRight", document.body, { altKey: true });
 
     expect(onNudge).not.toHaveBeenCalled();
+  });
+
+  it("duas setas seguradas movem na diagonal", () => {
+    const onNudge = vi.fn(() => true);
+    renderHook(() => useKeyboardShortcuts(opcoes({ onNudge })));
+
+    tecla("ArrowUp");
+    tecla("ArrowRight");
+
+    expect(onNudge).toHaveBeenLastCalledWith({ x: 1, y: -1 });
+  });
+
+  /**
+   * O caso que motiva somar as seguradas: o sistema repete só a última tecla apertada, e
+   * mover pela direção do evento faria a diagonal virar uma reta assim que a repetição
+   * começasse.
+   */
+  it("a repetição do teclado continua na diagonal", () => {
+    const onNudge = vi.fn(() => true);
+    renderHook(() => useKeyboardShortcuts(opcoes({ onNudge })));
+
+    tecla("ArrowUp");
+    tecla("ArrowRight");
+    tecla("ArrowRight", document.body, { repeat: true });
+    tecla("ArrowRight", document.body, { repeat: true });
+
+    expect(onNudge).toHaveBeenLastCalledWith({ x: 1, y: -1 });
+    expect(onNudge).toHaveBeenCalledTimes(4);
+  });
+
+  it("soltar uma das setas volta a mover em linha reta", () => {
+    const onNudge = vi.fn(() => true);
+    renderHook(() => useKeyboardShortcuts(opcoes({ onNudge })));
+
+    tecla("ArrowUp");
+    tecla("ArrowRight");
+    solta("ArrowUp");
+    tecla("ArrowRight", document.body, { repeat: true });
+
+    expect(onNudge).toHaveBeenLastCalledWith({ x: 1, y: 0 });
+  });
+
+  it("com Shift a diagonal também anda em passo grande", () => {
+    const onNudge = vi.fn(() => true);
+    renderHook(() => useKeyboardShortcuts(opcoes({ onNudge })));
+
+    tecla("ArrowDown", document.body, { shiftKey: true });
+    tecla("ArrowLeft", document.body, { shiftKey: true });
+
+    expect(onNudge).toHaveBeenLastCalledWith({ x: -10, y: 10 });
+  });
+
+  it("setas opostas se cancelam", () => {
+    const onNudge = vi.fn(() => true);
+    renderHook(() => useKeyboardShortcuts(opcoes({ onNudge })));
+
+    tecla("ArrowLeft");
+    tecla("ArrowRight");
+
+    // Zero é resposta, e não ausência de resposta: a tecla continua sendo do quadro, e o
+    // board sabe que um deslocamento nulo não mexe em nada.
+    expect(onNudge).toHaveBeenLastCalledWith({ x: 0, y: 0 });
+  });
+
+  it("perder o foco solta as setas seguradas", () => {
+    const onNudge = vi.fn(() => true);
+    renderHook(() => useKeyboardShortcuts(opcoes({ onNudge })));
+
+    tecla("ArrowUp");
+    // O `keyup` de uma tecla solta fora da janela nunca chega: sem isto, um Alt+Tab
+    // deixaria a seta segurada para sempre e a próxima sairia na diagonal sozinha.
+    window.dispatchEvent(new Event("blur"));
+    tecla("ArrowRight");
+
+    expect(onNudge).toHaveBeenLastCalledWith({ x: 1, y: 0 });
   });
 });
