@@ -1,31 +1,38 @@
 import { describe, expect, it } from "vitest";
-import { parseBoard } from "./schema";
+import { normalizeStroke, parseBoard } from "./schema";
 import {
   CANVAS_MAX_ABS_COORDINATE,
   NOTE_MAX_TEXT_LENGTH,
   NOTE_SIZE,
   SCHEMA_VERSION,
+  STROKE_MAX_COUNT,
+  STROKE_MAX_POINTS,
 } from "./types";
 
 function note(overrides: Record<string, unknown> = {}) {
   return { id: "a", x: 10, y: 20, w: 200, h: 200, color: 0, text: "oi", z: 1, ...overrides };
 }
 
+function stroke(overrides: Record<string, unknown> = {}) {
+  return { id: "s1", color: 0, points: [0, 0, 10, 10], z: 1, ...overrides };
+}
+
 describe("parseBoard", () => {
   it("aceita um board válido", () => {
-    const result = parseBoard({ version: SCHEMA_VERSION, notes: [note()] });
+    const result = parseBoard({ version: SCHEMA_VERSION, notes: [note()], strokes: [stroke()] });
 
     expect(result).toEqual({
       ok: true,
-      board: { version: SCHEMA_VERSION, notes: [note()] },
+      board: { version: SCHEMA_VERSION, notes: [note()], strokes: [stroke()] },
       warnings: [],
     });
   });
 
   it("aceita um board vazio", () => {
-    const result = parseBoard({ version: SCHEMA_VERSION, notes: [] });
+    const result = parseBoard({ version: SCHEMA_VERSION, notes: [], strokes: [] });
 
     expect(result.ok && result.board.notes).toEqual([]);
+    expect(result.ok && result.board.strokes).toEqual([]);
   });
 
   it.each([
@@ -137,6 +144,14 @@ describe("parseBoard", () => {
     expect(result.ok && result.board.version).toBe(SCHEMA_VERSION);
   });
 
+  it("abre normalmente um board da v1, sem strokes, com a lista de traços vazia", () => {
+    const result = parseBoard({ version: 1, notes: [note()] });
+
+    expect(result.ok).toBe(true);
+    expect(result.ok && result.board.strokes).toEqual([]);
+    expect(result.ok && result.board.notes.map((n) => n.id)).toEqual(["a"]);
+  });
+
   it("não lança para valores não finitos", () => {
     const result = parseBoard({
       version: SCHEMA_VERSION,
@@ -145,5 +160,138 @@ describe("parseBoard", () => {
 
     expect(result.ok && result.board.notes.map((n) => n.id)).toEqual(["b"]);
     expect(result.ok && result.board.notes[0]?.w).toBe(NOTE_SIZE.defaultWidth);
+  });
+
+  describe("strokes", () => {
+    it("descarta traços inválidos e reporta o motivo, sem descartar o board", () => {
+      const result = parseBoard({
+        version: SCHEMA_VERSION,
+        notes: [],
+        strokes: [
+          stroke(),
+          null,
+          stroke({ id: "" }),
+          stroke({ id: "s2", color: 9 }),
+          stroke({ id: "s3", points: [1, 2] }),
+          stroke({ id: "s4", points: "não é lista" }),
+        ],
+      });
+
+      expect(result.ok && result.board.strokes.map((s) => s.id)).toEqual(["s1"]);
+      expect(result.ok && result.warnings).toHaveLength(5);
+    });
+
+    it("renomeia id de traço duplicado em vez de descartar", () => {
+      const result = parseBoard({
+        version: SCHEMA_VERSION,
+        notes: [],
+        strokes: [stroke(), stroke()],
+      });
+
+      expect(result.ok && result.board.strokes.map((s) => s.id)).toEqual(["s1", "s1-2"]);
+      expect(result.ok && result.warnings).toHaveLength(1);
+    });
+
+    it("id de traço duplicado não colide com id de note", () => {
+      // Traço e note vivem em listas separadas: ids iguais nas duas não são colisão, cada
+      // objeto é dono do próprio espaço de identificadores.
+      const result = parseBoard({
+        version: SCHEMA_VERSION,
+        notes: [note({ id: "s1" })],
+        strokes: [stroke({ id: "s1" })],
+      });
+
+      expect(result.ok && result.board.notes.map((n) => n.id)).toEqual(["s1"]);
+      expect(result.ok && result.board.strokes.map((s) => s.id)).toEqual(["s1"]);
+      expect(result.ok && result.warnings).toEqual([]);
+    });
+
+    it("descarta pontos ímpares e não finitos sem quebrar o pareamento do resto", () => {
+      const result = parseBoard({
+        version: SCHEMA_VERSION,
+        notes: [],
+        strokes: [stroke({ points: [0, 0, Number.NaN, 5, 10, 10, 20] })],
+      });
+
+      // O par (NaN, 5) é descartado inteiro; o par final (20) sobra sem par e também cai.
+      expect(result.ok && result.board.strokes[0]?.points).toEqual([0, 0, 10, 10]);
+    });
+
+    it("limita coordenadas de traço ao teto aceito", () => {
+      const result = parseBoard({
+        version: SCHEMA_VERSION,
+        notes: [],
+        strokes: [
+          stroke({
+            points: [-CANVAS_MAX_ABS_COORDINATE * 10, CANVAS_MAX_ABS_COORDINATE * 10, 0, 0],
+          }),
+        ],
+      });
+
+      expect(result.ok && result.board.strokes[0]?.points.slice(0, 2)).toEqual([
+        -CANVAS_MAX_ABS_COORDINATE,
+        CANVAS_MAX_ABS_COORDINATE,
+      ]);
+    });
+
+    it("limita a quantidade de pontos por traço", () => {
+      const manyPoints = Array.from({ length: (STROKE_MAX_POINTS + 50) * 2 }, (_, i) => i);
+      const result = parseBoard({
+        version: SCHEMA_VERSION,
+        notes: [],
+        strokes: [stroke({ points: manyPoints })],
+      });
+
+      expect(result.ok && result.board.strokes[0]?.points).toHaveLength(STROKE_MAX_POINTS * 2);
+    });
+
+    it("limita a quantidade de traços por board", () => {
+      const manyStrokes = Array.from({ length: STROKE_MAX_COUNT + 10 }, (_, i) =>
+        stroke({ id: `s${i}` }),
+      );
+      const result = parseBoard({ version: SCHEMA_VERSION, notes: [], strokes: manyStrokes });
+
+      expect(result.ok && result.board.strokes).toHaveLength(STROKE_MAX_COUNT);
+    });
+
+    it("trata strokes ausente como lista vazia, sem aviso", () => {
+      const result = parseBoard({ version: SCHEMA_VERSION, notes: [] });
+
+      expect(result.ok && result.board.strokes).toEqual([]);
+      expect(result.ok && result.warnings).toEqual([]);
+    });
+
+    it("trata strokes malformado (não é lista) como lista vazia, sem reprovar o board", () => {
+      const result = parseBoard({ version: SCHEMA_VERSION, notes: [], strokes: "não é lista" });
+
+      expect(result.ok && result.board.strokes).toEqual([]);
+    });
+
+    it("normaliza z para inteiro", () => {
+      const result = parseBoard({
+        version: SCHEMA_VERSION,
+        notes: [],
+        strokes: [stroke({ z: 3.7 })],
+      });
+
+      expect(result.ok && result.board.strokes[0]?.z).toBe(3);
+    });
+  });
+});
+
+describe("normalizeStroke", () => {
+  it("devolve null para entrada que não é objeto", () => {
+    expect(normalizeStroke(null)).toBeNull();
+    expect(normalizeStroke("traço")).toBeNull();
+  });
+
+  it("devolve null sem id, sem cor válida ou sem pontos suficientes", () => {
+    expect(normalizeStroke(stroke({ id: "" }))).toBeNull();
+    expect(normalizeStroke(stroke({ color: -1 }))).toBeNull();
+    expect(normalizeStroke(stroke({ points: [1, 2] }))).toBeNull();
+  });
+
+  it("normaliza um traço válido", () => {
+    expect(normalizeStroke(stroke())).toEqual(stroke());
   });
 });

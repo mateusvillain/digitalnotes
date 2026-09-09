@@ -20,7 +20,11 @@ export const SAVE_DEBOUNCE_MS = 500;
  * resultado por `parseBoard` resolve a colisão de ids que a junção pode criar.
  */
 function mergeBoards(restored: Board, current: Board): Board {
-  const merged = { ...restored, notes: [...restored.notes, ...current.notes] };
+  const merged = {
+    ...restored,
+    notes: [...restored.notes, ...current.notes],
+    strokes: [...restored.strokes, ...current.strokes],
+  };
   const result = parseBoard(merged);
   return result.ok ? result.board : restored;
 }

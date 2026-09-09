@@ -6,6 +6,7 @@ import { useShareBoard } from "./useShareBoard";
 const board: Board = {
   version: SCHEMA_VERSION,
   notes: [{ id: "a1b2c3", x: 10, y: 20, w: 200, h: 200, color: 0, text: "para enviar", z: 1 }],
+  strokes: [],
 };
 
 function respondWith(body: unknown, status = 201) {

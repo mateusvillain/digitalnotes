@@ -15,7 +15,7 @@ describe("createBoardStore", () => {
   });
 
   it("aceita um board inicial", () => {
-    const board: Board = { version: SCHEMA_VERSION, notes: [] };
+    const board: Board = { version: SCHEMA_VERSION, notes: [], strokes: [] };
 
     expect(createBoardStore(board).getBoard()).toBe(board);
   });
@@ -69,6 +69,54 @@ describe("addNote", () => {
     const segundo = add(store, { x: 0, y: 0 });
 
     expect(segundo.z).toBeGreaterThan(primeiro.z);
+  });
+});
+
+describe("addStroke", () => {
+  it("cria um traço com o contrato normalizado", () => {
+    const store = createBoardStore();
+
+    const stroke = store.addStroke({ color: 0, points: [0, 0, 10, 10] });
+
+    expect(stroke).toMatchObject({ color: 0, points: [0, 0, 10, 10] });
+  });
+
+  it("devolve null, sem lançar, para pontos insuficientes", () => {
+    const store = createBoardStore();
+
+    expect(store.addStroke({ color: 0, points: [0, 0] })).toBeNull();
+    expect(store.getBoard().strokes).toEqual([]);
+  });
+
+  it("gera ids curtos e distintos, num espaço separado do de notes", () => {
+    const store = createBoardStore();
+
+    const ids = Array.from(
+      { length: 200 },
+      () => store.addStroke({ color: 0, points: [0, 0, 1, 1] })?.id,
+    );
+
+    expect(new Set(ids).size).toBe(200);
+    expect(ids.every((id) => id?.length === 6)).toBe(true);
+  });
+
+  it("cada traço novo nasce na frente do anterior", () => {
+    const store = createBoardStore();
+
+    const primeiro = store.addStroke({ color: 0, points: [0, 0, 1, 1] });
+    const segundo = store.addStroke({ color: 0, points: [0, 0, 1, 1] });
+
+    expect(segundo?.z).toBeGreaterThan(primeiro?.z ?? 0);
+  });
+
+  it("não interfere na pilha de z das notes", () => {
+    const store = createBoardStore();
+    const note = add(store, { x: 0, y: 0 });
+
+    const stroke = store.addStroke({ color: 0, points: [0, 0, 1, 1] });
+
+    expect(stroke?.z).toBe(1);
+    expect(note.z).toBe(1);
   });
 });
 
@@ -150,6 +198,52 @@ describe("remoção", () => {
   });
 });
 
+describe("remoção de traços", () => {
+  it("remove um traço", () => {
+    const store = createBoardStore();
+    const stroke = store.addStroke({ color: 0, points: [0, 0, 1, 1] });
+    store.addStroke({ color: 0, points: [0, 0, 1, 1] });
+
+    store.removeStroke(stroke?.id ?? "");
+
+    expect(store.getBoard().strokes.map((s) => s.id)).not.toContain(stroke?.id);
+  });
+
+  it("remove vários de uma vez, ignorando id que não existe", () => {
+    const store = createBoardStore();
+    const a = store.addStroke({ color: 0, points: [0, 0, 1, 1] });
+    const b = store.addStroke({ color: 0, points: [0, 0, 1, 1] });
+    const c = store.addStroke({ color: 0, points: [0, 0, 1, 1] });
+
+    store.removeStrokes([a?.id ?? "", c?.id ?? "", "fantasma"]);
+
+    expect(store.getBoard().strokes.map((s) => s.id)).toEqual([b?.id]);
+  });
+
+  it("não publica nada quando não havia o que remover", () => {
+    const store = createBoardStore();
+    store.addStroke({ color: 0, points: [0, 0, 1, 1] });
+    const antes = store.getBoard();
+    const listener = vi.fn();
+    store.subscribe(listener);
+
+    store.removeStrokes(["fantasma"]);
+
+    expect(store.getBoard()).toBe(antes);
+    expect(listener).not.toHaveBeenCalled();
+  });
+
+  it("remover um traço não toca nas notes, e vice-versa", () => {
+    const store = createBoardStore();
+    const note = add(store, { x: 0, y: 0 });
+    const stroke = store.addStroke({ color: 0, points: [0, 0, 1, 1] });
+
+    store.removeStroke(stroke?.id ?? "");
+
+    expect(store.getBoard().notes.map((n) => n.id)).toEqual([note.id]);
+  });
+});
+
 describe("bringToFront", () => {
   it("põe a note escolhida na frente das demais", () => {
     const store = createBoardStore();
@@ -176,6 +270,7 @@ describe("bringToFront", () => {
         { id: "aaaaaa", x: 0, y: 0, w: 100, h: 100, color: 0, text: "de baixo", z: 5 },
         { id: "bbbbbb", x: 0, y: 0, w: 100, h: 100, color: 0, text: "de cima", z: 5 },
       ],
+      strokes: [],
     });
 
     store.bringToFront("aaaaaa");
@@ -259,6 +354,19 @@ describe("imutabilidade do board", () => {
       note.x = 999;
     }).toThrow();
   });
+
+  it("impede alterar um traço ou os pontos dele depois de gravado", () => {
+    const store = createBoardStore();
+    const stroke = store.addStroke({ color: 0, points: [0, 0, 1, 1] });
+    if (stroke === null) throw new Error("addStroke recusou uma entrada que deveria ser válida");
+
+    expect(() => {
+      stroke.color = 1;
+    }).toThrow();
+    expect(() => {
+      stroke.points.push(2);
+    }).toThrow();
+  });
 });
 
 describe("replaceBoard", () => {
@@ -269,6 +377,7 @@ describe("replaceBoard", () => {
     store.replaceBoard({
       version: SCHEMA_VERSION,
       notes: [{ id: "abc123", x: 5, y: 5, w: 100, h: 100, color: 2, text: "vindo da URL", z: 1 }],
+      strokes: [],
     });
 
     expect(store.getBoard().notes.map((n) => n.id)).toEqual(["abc123"]);
@@ -279,12 +388,25 @@ describe("replaceBoard", () => {
     const nota = { id: "abc123", x: 0, y: 0, w: 100, h: 100, color: 0 as const, text: "", z: 1 };
     const notes = [nota];
 
-    store.replaceBoard({ version: SCHEMA_VERSION, notes });
+    store.replaceBoard({ version: SCHEMA_VERSION, notes, strokes: [] });
     notes.pop();
     nota.x = 999;
 
     expect(store.getBoard().notes).toHaveLength(1);
     expect(store.getBoard().notes[0]?.x).toBe(0);
+  });
+
+  it("não compartilha os traços nem os pontos com quem chamou", () => {
+    const store = createBoardStore();
+    const traço = { id: "abc123", color: 0 as const, points: [0, 0, 1, 1], z: 1 };
+    const strokes = [traço];
+
+    store.replaceBoard({ version: SCHEMA_VERSION, notes: [], strokes });
+    strokes.pop();
+    traço.points.push(99);
+
+    expect(store.getBoard().strokes).toHaveLength(1);
+    expect(store.getBoard().strokes[0]?.points).toEqual([0, 0, 1, 1]);
   });
 });
 

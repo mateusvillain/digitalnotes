@@ -8,8 +8,15 @@
  * As decisões de compactação estão documentadas em `docs/board-format.md`.
  */
 
-/** Versão atual do schema. Incrementar só em mudança incompatível. */
-export const SCHEMA_VERSION = 1;
+/**
+ * Versão atual do schema. Incrementar só em mudança incompatível — e "incompatível" cobre
+ * também o campo cujo silêncio muda o que a tela mostra: um board com traços, aberto por um
+ * app que não sabe ler `strokes`, não erraria o dado — erraria o desenho, mostrando o board
+ * sem o rabisco que tem. Board sem `strokes` continua sendo lido normalmente (ver
+ * `parseBoard`); a versão sobe para que um board **futuro** demais seja recusado, e não
+ * mostrado errado em silêncio.
+ */
+export const SCHEMA_VERSION = 2;
 
 /**
  * Cores de post-it, na ordem em que aparecem no seletor. O board guarda o índice desta
@@ -27,6 +34,18 @@ export type NoteColorName = (typeof NOTE_COLORS)[number];
  * o type guard aceitando índices que o tipo recusa (ou o contrário).
  */
 export type NoteColor = TupleIndex<typeof NOTE_COLORS>;
+
+/**
+ * Cores do traço: as seis da nota, na mesma ordem, mais o preto — que é o padrão do lápis
+ * (issue #64). Preto entra como uma cor a mais na mesma paleta, e não como um caso especial,
+ * para que o índice serializado continue sendo a única fonte de verdade sobre a cor.
+ */
+export const STROKE_COLORS = [...NOTE_COLORS, "black"] as const;
+
+export type StrokeColorName = (typeof STROKE_COLORS)[number];
+
+/** Índice em {@link STROKE_COLORS}. É isto que vai serializado no traço. */
+export type StrokeColor = TupleIndex<typeof STROKE_COLORS>;
 
 /** Union dos índices válidos de uma tupla: `["a", "b"]` -> `0 | 1`. */
 type TupleIndex<T extends readonly unknown[]> =
@@ -53,6 +72,25 @@ export const NOTE_MAX_TEXT_LENGTH = 2000;
  */
 export const CANVAS_MAX_ABS_COORDINATE = 100_000;
 
+/**
+ * Maior quantidade de pontos aceita num traço só.
+ *
+ * O traço inteiro é achatado dentro do board, que viaja na URL: sem um teto, um rabisco
+ * longo — ou um evento de ponteiro reportando pontos demais — poderia sozinho estourar o
+ * link. `points` é uma lista achatada (`[x0,y0,x1,y1,…]`), então o par de coordenadas é o
+ * que se limita; este valor é a contagem de pares, não de números.
+ */
+export const STROKE_MAX_POINTS = 2000;
+
+/**
+ * Maior quantidade de traços aceita num board.
+ *
+ * Mesmo espírito do limite de pontos: um teto defensivo, não uma meta de uso. A issue #67
+ * (simplificação) é quem reduz o custo de cada traço; este número impede que a quantidade
+ * de traços, e não o tamanho de cada um, seja o jeito de estourar o link.
+ */
+export const STROKE_MAX_COUNT = 500;
+
 export interface Note {
   /** Identificador único dentro do board. */
   id: string;
@@ -70,6 +108,27 @@ export interface Note {
   z: number;
 }
 
+/**
+ * Um rabisco à mão livre (epic #64).
+ *
+ * `points` é achatado (`[x0,y0,x1,y1,…]`), e não uma lista de `{x,y}`: pela mesma razão da
+ * cor por índice, é escolha de bytes — o board inteiro viaja na URL, e um array plano de
+ * números custa cerca de metade do equivalente em objetos.
+ */
+export interface Stroke {
+  /** Identificador único dentro do board. */
+  id: string;
+  /** Índice em {@link STROKE_COLORS}. */
+  color: StrokeColor;
+  /**
+   * Coordenadas de canvas, achatadas: `points[0], points[1]` é o primeiro ponto, e assim
+   * por diante. Comprimento par, com ao menos dois pontos (quatro números).
+   */
+  points: number[];
+  /** Ordem de empilhamento: maior fica por cima. */
+  z: number;
+}
+
 export interface Board {
   /**
    * Versão do schema deste board. Um board que passou por `parseBoard` sempre carrega
@@ -77,16 +136,27 @@ export interface Board {
    */
   version: number;
   notes: Note[];
+  strokes: Stroke[];
 }
 
 /** Board vazio, usado quando não há nada na URL nem no armazenamento local. */
 export function createEmptyBoard(): Board {
-  return { version: SCHEMA_VERSION, notes: [] };
+  return { version: SCHEMA_VERSION, notes: [], strokes: [] };
 }
 
 /** Guarda de tipo para o índice de cor vindo de dado não confiável. */
 export function isNoteColor(value: unknown): value is NoteColor {
   return (
     typeof value === "number" && Number.isInteger(value) && value >= 0 && value < NOTE_COLORS.length
+  );
+}
+
+/** Guarda de tipo para o índice de cor de traço vindo de dado não confiável. */
+export function isStrokeColor(value: unknown): value is StrokeColor {
+  return (
+    typeof value === "number" &&
+    Number.isInteger(value) &&
+    value >= 0 &&
+    value < STROKE_COLORS.length
   );
 }
