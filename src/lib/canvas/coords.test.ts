@@ -10,6 +10,7 @@ import {
   MIN_SCALE,
   panBy,
   rectsIntersect,
+  segmentIntersectsRect,
   scaleAsPercent,
   screenToCanvas,
   topLeftCenteredAt,
@@ -148,6 +149,60 @@ describe("rectsIntersect", () => {
 
   it("ignora retângulos separados", () => {
     expect(rectsIntersect(base, { x: 500, y: 500, w: 10, h: 10 })).toBe(false);
+  });
+});
+
+describe("segmentIntersectsRect", () => {
+  const caixa = { x: 100, y: 100, w: 100, h: 100 };
+
+  it("pega o segmento inteiro dentro do retângulo", () => {
+    expect(segmentIntersectsRect({ x: 120, y: 120 }, { x: 150, y: 150 }, caixa)).toBe(true);
+  });
+
+  it("pega o segmento com uma ponta dentro e outra fora", () => {
+    expect(segmentIntersectsRect({ x: 150, y: 150 }, { x: 900, y: 900 }, caixa)).toBe(true);
+  });
+
+  it("pega o segmento que atravessa sem ponta nenhuma dentro", () => {
+    expect(segmentIntersectsRect({ x: 0, y: 150 }, { x: 900, y: 150 }, caixa)).toBe(true);
+  });
+
+  /**
+   * O caso que derruba um teste de cruzamento estrito: a 45° sobre um retângulo quadrado, a
+   * linha entra e sai exatamente pelos cantos. Ela corta o retângulo ao meio, e responder
+   * "não tocou" aqui deixaria de fora justamente a travessia mais franca que existe.
+   */
+  it("pega a diagonal que entra e sai pelos cantos", () => {
+    expect(segmentIntersectsRect({ x: 0, y: 0 }, { x: 400, y: 400 }, caixa)).toBe(true);
+  });
+
+  it("ignora o segmento que passa longe", () => {
+    expect(segmentIntersectsRect({ x: 0, y: 0 }, { x: 50, y: 50 }, caixa)).toBe(false);
+  });
+
+  it("ignora o segmento paralelo que corre por fora", () => {
+    expect(segmentIntersectsRect({ x: 0, y: 500 }, { x: 900, y: 500 }, caixa)).toBe(false);
+  });
+
+  it("pega o segmento paralelo que corre por dentro", () => {
+    expect(segmentIntersectsRect({ x: 0, y: 150 }, { x: 900, y: 150 }, caixa)).toBe(true);
+  });
+
+  /**
+   * Um segmento sem comprimento é um ponto, e a pergunta vira "este ponto está dentro?".
+   * Cai no ramo paralelo nas quatro bordas de uma vez, que é o que o algoritmo faz com ele.
+   */
+  it("um ponto dentro do retângulo conta, e um fora não", () => {
+    expect(segmentIntersectsRect({ x: 150, y: 150 }, { x: 150, y: 150 }, caixa)).toBe(true);
+    expect(segmentIntersectsRect({ x: 10, y: 10 }, { x: 10, y: 10 }, caixa)).toBe(false);
+  });
+
+  it("retângulo sem área não é tocado por nada", () => {
+    // Mesma regra de `rectsIntersect`, e pelo mesmo motivo: é o que um clique sem arrasto
+    // produz, e ele não pode marcar tudo que passa pelo ponto clicado.
+    expect(
+      segmentIntersectsRect({ x: 0, y: 0 }, { x: 400, y: 400 }, { x: 150, y: 150, w: 0, h: 0 }),
+    ).toBe(false);
   });
 });
 

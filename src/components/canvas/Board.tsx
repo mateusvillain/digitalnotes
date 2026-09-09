@@ -17,7 +17,10 @@ interface BoardProps {
   selection?: Selection;
   onEditStart?: (id: string) => void;
   onEditCommit?: (id: string, text: string) => void;
+  /** Clique num post-it. `additive` vem do shift, que acrescenta em vez de trocar. */
   onSelect?: (id: string, additive: boolean) => void;
+  /** Clique num traço (#70). Espécie separada porque os ids só são únicos dentro da própria lista. */
+  onSelectStroke?: (id: string, additive: boolean) => void;
   /** Deslocamento em curso, aplicado a todo post-it selecionado. */
   dragOffset?: Point | null;
   onDragStart?: (id: string) => void;
@@ -38,7 +41,7 @@ interface BoardProps {
  * Vive dentro da camada transformada do viewport, então desenha em coordenadas de canvas e
  * não sabe nada sobre zoom nem pan.
  *
- * Não busca nada: recebe as notes e devolve eventos. É o que permite testar seleção (#18) e
+ * Não busca nada: recebe as notes e os traços e devolve eventos. É o que permite testar seleção (#18) e
  * arraste (#15) sem montar o quadro inteiro, e o que mantém a decisão de *quando* escrever
  * na store num lugar só, no `useBoard`.
  */
@@ -50,6 +53,7 @@ export function Board({
   onEditStart,
   onEditCommit,
   onSelect,
+  onSelectStroke,
   dragOffset = null,
   onDragStart,
   onDragMove,
@@ -63,10 +67,10 @@ export function Board({
 }: BoardProps) {
   return (
     <>
-      <Strokes strokes={strokes} />
+      <Strokes strokes={strokes} selection={selection?.strokes} onSelect={onSelectStroke} />
 
       {notes.map((note) => {
-        const selected = selection?.has(note.id) ?? false;
+        const selected = selection?.notes.has(note.id) ?? false;
 
         return (
           <PostIt

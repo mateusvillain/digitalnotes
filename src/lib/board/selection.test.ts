@@ -2,17 +2,33 @@ import { describe, expect, it } from "vitest";
 import type { Rect } from "@/lib/canvas/coords";
 import {
   EMPTY_SELECTION,
+  elementsInRect,
   intersects,
-  notesInRect,
+  isSelected,
   selectOnly,
   selectedNotes,
+  selectedStrokes,
+  selectionSize,
   sharedColor,
   toggle,
+  union,
 } from "./selection";
-import type { Note } from "./types";
+import type { Note, Stroke } from "./types";
 
 function note(overrides: Partial<Note> = {}): Note {
   return { id: "abc123", x: 0, y: 0, w: 100, h: 100, color: 0, text: "", z: 1, ...overrides };
+}
+
+function stroke(overrides: Partial<Stroke> = {}): Stroke {
+  return { id: "trc123", color: 6, points: [0, 0, 100, 100], z: 1, ...overrides };
+}
+
+/** Os ids marcados de cada espécie, para o teste ler a seleção sem depender de conjuntos. */
+function marcados(selection: { notes: ReadonlySet<string>; strokes: ReadonlySet<string> }): {
+  notes: string[];
+  strokes: string[];
+} {
+  return { notes: [...selection.notes], strokes: [...selection.strokes] };
 }
 
 function rect(x: number, y: number, w: number, h: number): Rect {
@@ -21,26 +37,78 @@ function rect(x: number, y: number, w: number, h: number): Rect {
 
 describe("selectOnly", () => {
   it("deixa só o post-it pedido", () => {
-    expect([...selectOnly("aaa111")]).toEqual(["aaa111"]);
+    expect(marcados(selectOnly("note", "aaa111"))).toEqual({ notes: ["aaa111"], strokes: [] });
+  });
+
+  it("deixa só o traço pedido", () => {
+    expect(marcados(selectOnly("stroke", "trc111"))).toEqual({ notes: [], strokes: ["trc111"] });
+  });
+
+  /**
+   * "Só" quer dizer só: clicar num traço larga as notas que estavam marcadas, como clicar
+   * numa nota sempre largou as outras. Uma seleção que só limpasse a própria espécie
+   * deixaria post-its marcados invisivelmente atrás do rabisco recém-clicado.
+   */
+  it("limpa também a outra espécie", () => {
+    const misto = union(selectOnly("note", "aaa111"), selectOnly("stroke", "trc111"));
+
+    expect(marcados(selectOnly("stroke", "trc222"))).toEqual({ notes: [], strokes: ["trc222"] });
+    expect(selectionSize(misto)).toBe(2);
   });
 });
 
 describe("toggle", () => {
   it("acrescenta quem está de fora", () => {
-    expect([...toggle(selectOnly("aaa111"), "bbb222")]).toEqual(["aaa111", "bbb222"]);
+    const depois = toggle(selectOnly("note", "aaa111"), "note", "bbb222");
+
+    expect(marcados(depois)).toEqual({ notes: ["aaa111", "bbb222"], strokes: [] });
   });
 
   it("tira quem já está dentro", () => {
-    expect([...toggle(selectOnly("aaa111"), "aaa111")]).toEqual([]);
+    expect(marcados(toggle(selectOnly("note", "aaa111"), "note", "aaa111"))).toEqual({
+      notes: [],
+      strokes: [],
+    });
+  });
+
+  /**
+   * A razão de a seleção ter dois conjuntos, num teste: os ids são únicos dentro de cada
+   * lista do board, não entre elas. Um conjunto só marcaria os dois de uma vez.
+   */
+  it("um traço com o mesmo id de uma nota é outro elemento", () => {
+    const comNota = selectOnly("note", "igual");
+    const comOsDois = toggle(comNota, "stroke", "igual");
+
+    expect(marcados(comOsDois)).toEqual({ notes: ["igual"], strokes: ["igual"] });
+    expect(isSelected(comOsDois, "note", "igual")).toBe(true);
+    expect(isSelected(comOsDois, "stroke", "igual")).toBe(true);
+
+    // E tirar um não tira o outro.
+    expect(isSelected(toggle(comOsDois, "stroke", "igual"), "note", "igual")).toBe(true);
   });
 
   it("não altera a seleção recebida", () => {
-    const antes = selectOnly("aaa111");
+    const antes = selectOnly("note", "aaa111");
 
-    toggle(antes, "bbb222");
+    toggle(antes, "note", "bbb222");
 
     // A seleção é valor, não caixa: quem a segura não pode vê-la mudar por baixo.
-    expect([...antes]).toEqual(["aaa111"]);
+    expect(marcados(antes)).toEqual({ notes: ["aaa111"], strokes: [] });
+  });
+});
+
+describe("union", () => {
+  it("junta as duas espécies das duas seleções", () => {
+    const a = union(selectOnly("note", "n1"), selectOnly("stroke", "t1"));
+    const b = union(selectOnly("note", "n2"), selectOnly("stroke", "t2"));
+
+    expect(marcados(union(a, b))).toEqual({ notes: ["n1", "n2"], strokes: ["t1", "t2"] });
+  });
+
+  it("não repete quem já estava nas duas", () => {
+    const a = selectOnly("note", "n1");
+
+    expect(selectionSize(union(a, a))).toBe(1);
   });
 });
 
@@ -75,7 +143,7 @@ describe("intersects", () => {
   });
 });
 
-describe("notesInRect", () => {
+describe("elementsInRect", () => {
   it("devolve só os ids tocados pelo retângulo", () => {
     const notes = [
       note({ id: "dentro", x: 0, y: 0 }),
@@ -83,36 +151,93 @@ describe("notesInRect", () => {
       note({ id: "fora", x: 900, y: 900 }),
     ];
 
-    expect([...notesInRect(notes, rect(0, 0, 100, 100))]).toEqual(["dentro", "borda"]);
+    expect(marcados(elementsInRect(notes, [], rect(0, 0, 100, 100)))).toEqual({
+      notes: ["dentro", "borda"],
+      strokes: [],
+    });
+  });
+
+  /**
+   * O critério da #70: um retângulo arrastado no fundo pega os dois tipos de uma vez. Quem
+   * desenha o retângulo não deveria precisar saber que o quadro guarda notas e rabiscos em
+   * listas separadas.
+   */
+  it("pega notas e traços no mesmo retângulo", () => {
+    const notes = [note({ id: "n", x: 0, y: 0 })];
+    const strokes = [stroke({ id: "t", points: [20, 20, 40, 40] })];
+
+    expect(marcados(elementsInRect(notes, strokes, rect(0, 0, 100, 100)))).toEqual({
+      notes: ["n"],
+      strokes: ["t"],
+    });
   });
 
   it("devolve seleção vazia quando o retângulo não toca nada", () => {
-    expect([...notesInRect([note()], rect(900, 900, 10, 10))]).toEqual([...EMPTY_SELECTION]);
+    const vazia = elementsInRect([note()], [stroke()], rect(900, 900, 10, 10));
+
+    expect(marcados(vazia)).toEqual(marcados(EMPTY_SELECTION));
   });
 });
 
 describe("selectedNotes", () => {
   const notes = [note({ id: "a" }), note({ id: "b" }), note({ id: "c" })];
 
-  it("devolve só as marcadas", () => {
-    const marcadas = selectedNotes(notes, new Set(["a", "c"]));
+  /** Uma seleção com estes ids de nota marcados, e traço nenhum. */
+  function comNotas(...ids: string[]) {
+    return { notes: new Set(ids), strokes: new Set<string>() };
+  }
 
-    expect(marcadas.map((each) => each.id)).toEqual(["a", "c"]);
+  it("devolve só as marcadas", () => {
+    expect(selectedNotes(notes, comNotas("a", "c")).map((each) => each.id)).toEqual(["a", "c"]);
   });
 
   it("mantém a ordem do board, e não a da seleção", () => {
     // A seleção é um conjunto: ela não tem ordem para oferecer. Quem tem é o board.
-    const marcadas = selectedNotes(notes, new Set(["c", "a"]));
-
-    expect(marcadas.map((each) => each.id)).toEqual(["a", "c"]);
+    expect(selectedNotes(notes, comNotas("c", "a")).map((each) => each.id)).toEqual(["a", "c"]);
   });
 
   it("ignora id marcado que não existe mais no board", () => {
-    expect(selectedNotes(notes, new Set(["a", "sumiu"])).map((each) => each.id)).toEqual(["a"]);
+    expect(selectedNotes(notes, comNotas("a", "sumiu")).map((each) => each.id)).toEqual(["a"]);
   });
 
   it("devolve vazio sem seleção", () => {
     expect(selectedNotes(notes, EMPTY_SELECTION)).toEqual([]);
+  });
+
+  /**
+   * O que faz uma seleção mista não quebrar as ações que só valem para post-it: o traço
+   * marcado simplesmente não aparece aqui, e o seletor de cor age sobre as notas.
+   */
+  it("não devolve nota por causa de um traço marcado com o mesmo id", () => {
+    const misto = { notes: new Set<string>(), strokes: new Set(["a"]) };
+
+    expect(selectedNotes(notes, misto)).toEqual([]);
+  });
+});
+
+describe("selectedStrokes", () => {
+  const strokes = [stroke({ id: "a" }), stroke({ id: "b" }), stroke({ id: "c" })];
+
+  it("devolve só os marcados, na ordem do board", () => {
+    const misto = { notes: new Set(["b"]), strokes: new Set(["c", "a"]) };
+
+    expect(selectedStrokes(strokes, misto).map((each) => each.id)).toEqual(["a", "c"]);
+  });
+
+  it("devolve vazio sem seleção", () => {
+    expect(selectedStrokes(strokes, EMPTY_SELECTION)).toEqual([]);
+  });
+});
+
+describe("selectionSize", () => {
+  it("conta as duas espécies juntas", () => {
+    const misto = { notes: new Set(["a", "b"]), strokes: new Set(["t"]) };
+
+    expect(selectionSize(misto)).toBe(3);
+  });
+
+  it("uma seleção vazia não tem tamanho", () => {
+    expect(selectionSize(EMPTY_SELECTION)).toBe(0);
   });
 });
 

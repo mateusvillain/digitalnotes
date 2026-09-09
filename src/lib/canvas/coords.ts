@@ -157,6 +157,61 @@ export function rectsIntersect(a: Rect, b: Rect): boolean {
 }
 
 /**
+ * Um segmento toca um retângulo.
+ *
+ * Existe para o retângulo de seleção pegar traços (#70). A caixa envolvente do rabisco não
+ * serviria: um risco na diagonal tem caixa enorme e tinta nenhuma nos cantos, e selecionar
+ * pela caixa marcaria traços que o retângulo nunca chegou perto de tocar.
+ *
+ * É o recorte de Liang-Barsky, e não quatro testes de cruzamento de segmentos. A tentativa
+ * pelos cruzamentos tem um furo que aparece em uso real: um risco a 45° sobre um retângulo
+ * quadrado entra e sai exatamente pelos cantos, e um teste de cruzamento estrito lê os dois
+ * como "só encostou" e responde que não houve travessia — justamente no caso em que a linha
+ * corta o retângulo ao meio. Aqui a pergunta é outra, e não tem esse ponto cego: existe um
+ * pedaço do segmento dentro das duas faixas do retângulo ao mesmo tempo?
+ *
+ * Retângulo sem área não toca nada, como em {@link rectsIntersect} e pelo mesmo motivo: é o
+ * que um clique sem arrasto produz, e ele não deveria marcar todo traço que passa pelo
+ * ponto clicado.
+ */
+export function segmentIntersectsRect(a: Point, b: Point, rect: Rect): boolean {
+  if (rect.w <= 0 || rect.h <= 0) return false;
+
+  const dx = b.x - a.x;
+  const dy = b.y - a.y;
+
+  // O trecho do segmento ainda em disputa, como fração do caminho de `a` até `b`. Cada
+  // borda examinada só pode encurtá-lo; se ele fechar, o segmento passa por fora.
+  let entrada = 0;
+  let saida = 1;
+
+  // Uma entrada por borda: quanto o segmento avança contra ela, e quanto `a` está para
+  // dentro dela. Esquerda e direita primeiro, depois topo e base.
+  const avanco = [-dx, dx, -dy, dy];
+  const folga = [a.x - rect.x, rect.x + rect.w - a.x, a.y - rect.y, rect.y + rect.h - a.y];
+
+  for (let borda = 0; borda < 4; borda += 1) {
+    if (avanco[borda] === 0) {
+      // Paralelo a esta borda: ou já está do lado de dentro dela, e ela não tem nada a
+      // dizer, ou está fora e nenhum avanço vai trazê-lo para dentro.
+      if (folga[borda]! < 0) return false;
+      continue;
+    }
+
+    const cruzamento = folga[borda]! / avanco[borda]!;
+    if (avanco[borda]! < 0) {
+      if (cruzamento > saida) return false;
+      if (cruzamento > entrada) entrada = cruzamento;
+    } else {
+      if (cruzamento < entrada) return false;
+      if (cruzamento < saida) saida = cruzamento;
+    }
+  }
+
+  return true;
+}
+
+/**
  * Distância entre dois pontos, em linha reta.
  *
  * Existe para separar clicar de arrastar: a conta precisa ser sobre o deslocamento desde a

@@ -72,7 +72,7 @@ describe("Board — seleção", () => {
     render(
       <Board
         notes={[note({ id: "aaa111" }), note({ id: "bbb222" }), note({ id: "ccc333" })]}
-        selection={new Set(["aaa111", "ccc333"])}
+        selection={{ notes: new Set(["aaa111", "ccc333"]), strokes: new Set() }}
       />,
     );
 

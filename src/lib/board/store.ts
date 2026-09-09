@@ -81,6 +81,14 @@ export interface BoardStore {
   addStroke: (stroke: NewStroke) => Stroke | null;
   removeStroke: (id: string) => void;
   removeStrokes: (ids: readonly string[]) => void;
+  /**
+   * Apaga notes e traços numa publicação só (#70).
+   *
+   * Existe porque uma seleção pode misturar os dois, e chamar `removeNotes` seguido de
+   * `removeStrokes` avisaria duas vezes por um gesto só — quem escuta é a persistência, que
+   * reescreve a URL a cada aviso.
+   */
+  removeElements: (noteIds: readonly string[], strokeIds: readonly string[]) => void;
   /** Substitui o board inteiro — usado pela restauração do autosave local (#22). */
   replaceBoard: (board: Board) => void;
 }
@@ -256,6 +264,19 @@ export function createBoardStore(initial: Board = createEmptyBoard()): BoardStor
     removeStrokes([id]);
   }
 
+  function removeElements(noteIds: readonly string[], strokeIds: readonly string[]): void {
+    const notesToRemove = new Set(noteIds);
+    const strokesToRemove = new Set(strokeIds);
+    const notes = board.notes.filter((note) => !notesToRemove.has(note.id));
+    const strokes = board.strokes.filter((stroke) => !strokesToRemove.has(stroke.id));
+
+    // Nada removido, nada publicado: um `Delete` com a seleção cheia de ids que já não
+    // existem não deveria fazer a persistência reescrever a URL com o mesmo board.
+    if (notes.length === board.notes.length && strokes.length === board.strokes.length) return;
+
+    commit({ notes, strokes });
+  }
+
   function getNote(id: string): Note | undefined {
     return board.notes.find((candidate) => candidate.id === id);
   }
@@ -298,6 +319,7 @@ export function createBoardStore(initial: Board = createEmptyBoard()): BoardStor
     addStroke,
     removeStroke,
     removeStrokes,
+    removeElements,
     replaceBoard,
   };
 }

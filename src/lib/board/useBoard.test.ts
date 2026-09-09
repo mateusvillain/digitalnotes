@@ -4,6 +4,7 @@ import { defined } from "@/test-utils/defined";
 import { desvioMaximo, pontosDe } from "@/test-utils/geometry";
 import { SIMPLIFY_TOLERANCE } from "@/lib/canvas/simplify";
 import { NOTE_COLORS, NOTE_SIZE, STROKE_COLOR_BLACK } from "./types";
+import { selectionSize } from "./selection";
 import { useBoard } from "./useBoard";
 
 describe("useBoard", () => {
@@ -127,7 +128,7 @@ describe("useBoard — seleção", () => {
   it("começa sem nada selecionado", () => {
     const { result } = renderHook(() => useBoard());
 
-    expect([...result.current.selection]).toEqual([]);
+    expect([...result.current.selection.notes]).toEqual([]);
   });
 
   it("já deixa selecionado o post-it recém-criado", () => {
@@ -135,7 +136,7 @@ describe("useBoard — seleção", () => {
 
     act(() => result.current.createNoteAt({ x: 0, y: 0 }));
 
-    expect([...result.current.selection]).toEqual([
+    expect([...result.current.selection.notes]).toEqual([
       defined(result.current.notes[0], "o post-it criado").id,
     ]);
   });
@@ -143,27 +144,29 @@ describe("useBoard — seleção", () => {
   it("selecionar um post-it desmarca os demais", () => {
     const { hook, primeiro } = comDoisPostIts();
 
-    act(() => hook.result.current.selectNote(primeiro.id));
+    act(() => hook.result.current.selectElement("note", primeiro.id));
 
-    expect([...hook.result.current.selection]).toEqual([primeiro.id]);
+    expect([...hook.result.current.selection.notes]).toEqual([primeiro.id]);
   });
 
   it("shift-clique acrescenta e tira da seleção", () => {
     const { hook, primeiro, segundo } = comDoisPostIts();
 
-    act(() => hook.result.current.selectNote(primeiro.id));
-    act(() => hook.result.current.selectNote(segundo.id, true));
-    expect([...hook.result.current.selection].sort()).toEqual([primeiro.id, segundo.id].sort());
+    act(() => hook.result.current.selectElement("note", primeiro.id));
+    act(() => hook.result.current.selectElement("note", segundo.id, true));
+    expect([...hook.result.current.selection.notes].sort()).toEqual(
+      [primeiro.id, segundo.id].sort(),
+    );
 
-    act(() => hook.result.current.selectNote(segundo.id, true));
-    expect([...hook.result.current.selection]).toEqual([primeiro.id]);
+    act(() => hook.result.current.selectElement("note", segundo.id, true));
+    expect([...hook.result.current.selection.notes]).toEqual([primeiro.id]);
   });
 
   it("traz para a frente o post-it selecionado, e grava isso na store", () => {
     const { hook, primeiro, segundo } = comDoisPostIts();
     const zDoSegundo = segundo.z;
 
-    act(() => hook.result.current.selectNote(primeiro.id));
+    act(() => hook.result.current.selectElement("note", primeiro.id));
 
     const promovido = defined(
       hook.result.current.notes.find((note) => note.id === primeiro.id),
@@ -175,8 +178,8 @@ describe("useBoard — seleção", () => {
   it("também traz para a frente o post-it acrescentado com shift", () => {
     const { hook, primeiro, segundo } = comDoisPostIts();
 
-    act(() => hook.result.current.selectNote(segundo.id));
-    act(() => hook.result.current.selectNote(primeiro.id, true));
+    act(() => hook.result.current.selectElement("note", segundo.id));
+    act(() => hook.result.current.selectElement("note", primeiro.id, true));
 
     // Shift-clique também é apontar para um post-it, e numa ordem que o usuário escolheu.
     const promovido = defined(
@@ -193,15 +196,15 @@ describe("useBoard — seleção", () => {
 
   it("não reordena o board ao tirar um post-it da seleção", () => {
     const { hook, primeiro, segundo } = comDoisPostIts();
-    act(() => hook.result.current.selectNote(primeiro.id));
-    act(() => hook.result.current.selectNote(segundo.id, true));
+    act(() => hook.result.current.selectElement("note", primeiro.id));
+    act(() => hook.result.current.selectElement("note", segundo.id, true));
     const zAntes = hook.result.current.notes.map((note) => note.z);
 
-    act(() => hook.result.current.selectNote(segundo.id, true));
+    act(() => hook.result.current.selectElement("note", segundo.id, true));
 
     // Desmarcar não é apontar: trazer para a frente o que se acabou de tirar da seleção
     // seria o gesto fazendo o contrário do que diz.
-    expect([...hook.result.current.selection]).toEqual([primeiro.id]);
+    expect([...hook.result.current.selection.notes]).toEqual([primeiro.id]);
     expect(hook.result.current.notes.map((note) => note.z)).toEqual(zAntes);
   });
 
@@ -213,44 +216,46 @@ describe("useBoard — seleção", () => {
 
     // Promover em lote reordenaria, um a um, post-its que o usuário não escolheu — numa
     // ordem que ele não pediu.
-    expect([...hook.result.current.selection]).toHaveLength(2);
+    expect([...hook.result.current.selection.notes]).toHaveLength(2);
     expect(hook.result.current.notes.map((note) => note.z)).toEqual(zAntes);
   });
 
   it("com additive, o retângulo soma ao que já estava marcado", () => {
     const { hook, primeiro, segundo } = comDoisPostIts();
-    act(() => hook.result.current.selectNote(segundo.id));
+    act(() => hook.result.current.selectElement("note", segundo.id));
 
     act(() => hook.result.current.beginRectSelection(true));
     act(() => hook.result.current.selectInRect({ x: -150, y: -150, w: 300, h: 300 }));
-    expect([...hook.result.current.selection].sort()).toEqual([primeiro.id, segundo.id].sort());
+    expect([...hook.result.current.selection.notes].sort()).toEqual(
+      [primeiro.id, segundo.id].sort(),
+    );
 
     // Encolher o retângulo até não tocar mais ninguém devolve a seleção ao que ela era.
     act(() => hook.result.current.selectInRect({ x: 5000, y: 5000, w: 10, h: 10 }));
-    expect([...hook.result.current.selection]).toEqual([segundo.id]);
+    expect([...hook.result.current.selection.notes]).toEqual([segundo.id]);
   });
 
   it("sem additive, o retângulo substitui a seleção", () => {
     const { hook, primeiro, segundo } = comDoisPostIts();
-    act(() => hook.result.current.selectNote(segundo.id));
+    act(() => hook.result.current.selectElement("note", segundo.id));
 
     act(() => hook.result.current.beginRectSelection(false));
     act(() => hook.result.current.selectInRect({ x: -150, y: -150, w: 100, h: 100 }));
 
     // Só o primeiro é tocado, e o segundo sai — arrastar é o gesto padrão de seleção desde
     // que o pan mudou para o espaço, e um gesto que só soma nunca desmarcaria nada.
-    expect([...hook.result.current.selection]).toEqual([primeiro.id]);
+    expect([...hook.result.current.selection.notes]).toEqual([primeiro.id]);
   });
 
   it("um retângulo que não toca ninguém esvazia a seleção", () => {
     const { hook, segundo } = comDoisPostIts();
-    act(() => hook.result.current.selectNote(segundo.id));
+    act(() => hook.result.current.selectElement("note", segundo.id));
 
     act(() => hook.result.current.beginRectSelection(false));
     act(() => hook.result.current.selectInRect({ x: 5000, y: 5000, w: 10, h: 10 }));
 
     // É isto que faz arrastar no vazio desmarcar tudo, sem um caminho próprio para isso.
-    expect([...hook.result.current.selection]).toEqual([]);
+    expect([...hook.result.current.selection.notes]).toEqual([]);
   });
 
   it("seleciona pelo retângulo quem ele toca, e só", () => {
@@ -261,8 +266,8 @@ describe("useBoard — seleção", () => {
     // O primeiro nasce centrado em (0,0), o segundo em (500,0).
     act(() => hook.result.current.selectInRect({ x: -150, y: -150, w: 300, h: 300 }));
 
-    expect([...hook.result.current.selection]).toEqual([primeiro.id]);
-    expect(hook.result.current.selection.has(segundo.id)).toBe(false);
+    expect([...hook.result.current.selection.notes]).toEqual([primeiro.id]);
+    expect(hook.result.current.selection.notes.has(segundo.id)).toBe(false);
   });
 
   it("retângulo que não toca nada não marca ninguém", () => {
@@ -272,22 +277,22 @@ describe("useBoard — seleção", () => {
 
     act(() => hook.result.current.selectInRect({ x: 5000, y: 5000, w: 10, h: 10 }));
 
-    expect([...hook.result.current.selection]).toEqual([]);
+    expect([...hook.result.current.selection.notes]).toEqual([]);
   });
 
   it("limpa a seleção quando pedido", () => {
     const { hook, primeiro } = comDoisPostIts();
-    act(() => hook.result.current.selectNote(primeiro.id));
+    act(() => hook.result.current.selectElement("note", primeiro.id));
 
     act(() => hook.result.current.clearSelection());
 
-    expect([...hook.result.current.selection]).toEqual([]);
+    expect([...hook.result.current.selection.notes]).toEqual([]);
   });
 
   it("mantém a seleção fora do que a store guarda", () => {
     const { hook, primeiro } = comDoisPostIts();
 
-    act(() => hook.result.current.selectNote(primeiro.id));
+    act(() => hook.result.current.selectElement("note", primeiro.id));
 
     // O que vai para a URL é o board. Um campo de seleção pendurado na note viajaria junto
     // — e a store congela justamente para impedir isso.
@@ -328,7 +333,7 @@ describe("useBoard — arraste", () => {
     const { hook, primeiro } = comDoisPostIts();
     const antes = posicaoDe(hook, primeiro.id);
 
-    act(() => hook.result.current.selectNote(primeiro.id));
+    act(() => hook.result.current.selectElement("note", primeiro.id));
     act(() => hook.result.current.startDrag(primeiro.id));
     act(() => hook.result.current.dragBy({ x: 120, y: 80 }));
 
@@ -342,7 +347,7 @@ describe("useBoard — arraste", () => {
     const { hook, primeiro } = comDoisPostIts();
     const antes = posicaoDe(hook, primeiro.id);
 
-    act(() => hook.result.current.selectNote(primeiro.id));
+    act(() => hook.result.current.selectElement("note", primeiro.id));
     act(() => hook.result.current.startDrag(primeiro.id));
     act(() => hook.result.current.dragBy({ x: 120, y: 80 }));
     act(() => hook.result.current.endDrag());
@@ -355,7 +360,7 @@ describe("useBoard — arraste", () => {
     const { hook, primeiro } = comDoisPostIts();
     const antes = posicaoDe(hook, primeiro.id);
 
-    act(() => hook.result.current.selectNote(primeiro.id));
+    act(() => hook.result.current.selectElement("note", primeiro.id));
     act(() => hook.result.current.startDrag(primeiro.id));
     act(() => hook.result.current.dragBy({ x: 10.4, y: -3.7 }));
     act(() => hook.result.current.endDrag());
@@ -369,8 +374,8 @@ describe("useBoard — arraste", () => {
     const antesPrimeiro = posicaoDe(hook, primeiro.id);
     const antesSegundo = posicaoDe(hook, segundo.id);
 
-    act(() => hook.result.current.selectNote(primeiro.id));
-    act(() => hook.result.current.selectNote(segundo.id, true));
+    act(() => hook.result.current.selectElement("note", primeiro.id));
+    act(() => hook.result.current.selectElement("note", segundo.id, true));
     act(() => hook.result.current.startDrag(primeiro.id));
     act(() => hook.result.current.dragBy({ x: 50, y: 50 }));
     act(() => hook.result.current.endDrag());
@@ -388,7 +393,7 @@ describe("useBoard — arraste", () => {
 
     // Quem decide o que está selecionado é o gesto no post-it; o arraste só move o que
     // encontra marcado. Duas fontes para a mesma regra dariam duas respostas.
-    act(() => hook.result.current.selectNote(primeiro.id));
+    act(() => hook.result.current.selectElement("note", primeiro.id));
     act(() => hook.result.current.startDrag(primeiro.id));
     act(() => hook.result.current.dragBy({ x: 50, y: 0 }));
     act(() => hook.result.current.endDrag());
@@ -398,18 +403,18 @@ describe("useBoard — arraste", () => {
 
   it("não mexe na seleção ao começar um arraste", () => {
     const { hook, primeiro, segundo } = comDoisPostIts();
-    act(() => hook.result.current.selectNote(primeiro.id));
-    act(() => hook.result.current.selectNote(segundo.id, true));
+    act(() => hook.result.current.selectElement("note", primeiro.id));
+    act(() => hook.result.current.selectElement("note", segundo.id, true));
 
     act(() => hook.result.current.startDrag(segundo.id));
 
-    expect([...hook.result.current.selection]).toHaveLength(2);
+    expect([...hook.result.current.selection.notes]).toHaveLength(2);
   });
 
   it("traz para a frente o post-it que foi pego", () => {
     const { hook, primeiro, segundo } = comDoisPostIts();
-    act(() => hook.result.current.selectNote(primeiro.id));
-    act(() => hook.result.current.selectNote(segundo.id, true));
+    act(() => hook.result.current.selectElement("note", primeiro.id));
+    act(() => hook.result.current.selectElement("note", segundo.id, true));
 
     act(() => hook.result.current.startDrag(primeiro.id));
 
@@ -430,7 +435,7 @@ describe("useBoard — arraste", () => {
     const { hook, primeiro } = comDoisPostIts();
     const antes = posicaoDe(hook, primeiro.id);
 
-    act(() => hook.result.current.selectNote(primeiro.id));
+    act(() => hook.result.current.selectElement("note", primeiro.id));
     act(() => hook.result.current.startDrag(primeiro.id));
     act(() => hook.result.current.dragBy({ x: 200, y: 200 }));
     act(() => hook.result.current.cancelDrag());
@@ -449,7 +454,7 @@ describe("useBoard — estabilidade dos callbacks", () => {
       dragBy: result.current.dragBy,
       endDrag: result.current.endDrag,
       cancelDrag: result.current.cancelDrag,
-      selectNote: result.current.selectNote,
+      selectElement: result.current.selectElement,
     };
 
     act(() => result.current.startDrag(defined(result.current.notes[0], "o post-it").id));
@@ -463,14 +468,14 @@ describe("useBoard — estabilidade dos callbacks", () => {
     expect(result.current.dragBy).toBe(antes.dragBy);
     expect(result.current.endDrag).toBe(antes.endDrag);
     expect(result.current.cancelDrag).toBe(antes.cancelDrag);
-    expect(result.current.selectNote).toBe(antes.selectNote);
+    expect(result.current.selectElement).toBe(antes.selectElement);
   });
 
   it("grava o último movimento quando ele chega junto com o fim do gesto", () => {
     const { result } = renderHook(() => useBoard());
     act(() => result.current.createNoteAt({ x: 500, y: 500 }));
     const note = defined(result.current.notes[0], "o post-it");
-    act(() => result.current.selectNote(note.id));
+    act(() => result.current.selectElement("note", note.id));
     act(() => result.current.startDrag(note.id));
 
     // Soltar o ponteiro reporta o último deslocamento e o fim do gesto no mesmo evento,
@@ -676,14 +681,14 @@ describe("useBoard — cor da seleção", () => {
   it("expõe a cor do post-it selecionado", () => {
     const { hook, primeiro } = comDoisPostIts();
 
-    act(() => hook.result.current.selectNote(primeiro.id));
+    act(() => hook.result.current.selectElement("note", primeiro.id));
 
     expect(hook.result.current.selectionColor).toBe(primeiro.color);
   });
 
   it("pinta o post-it selecionado e grava na store", () => {
     const { hook, primeiro } = comDoisPostIts();
-    act(() => hook.result.current.selectNote(primeiro.id));
+    act(() => hook.result.current.selectElement("note", primeiro.id));
 
     act(() => hook.result.current.colorSelection(4));
 
@@ -693,8 +698,8 @@ describe("useBoard — cor da seleção", () => {
 
   it("pinta a seleção inteira", () => {
     const { hook, primeiro, segundo } = comDoisPostIts();
-    act(() => hook.result.current.selectNote(primeiro.id));
-    act(() => hook.result.current.selectNote(segundo.id, true));
+    act(() => hook.result.current.selectElement("note", primeiro.id));
+    act(() => hook.result.current.selectElement("note", segundo.id, true));
 
     act(() => hook.result.current.colorSelection(2));
 
@@ -704,7 +709,7 @@ describe("useBoard — cor da seleção", () => {
 
   it("não pinta quem está fora da seleção", () => {
     const { hook, primeiro, segundo } = comDoisPostIts();
-    act(() => hook.result.current.selectNote(primeiro.id));
+    act(() => hook.result.current.selectElement("note", primeiro.id));
 
     act(() => hook.result.current.colorSelection(5));
 
@@ -713,10 +718,10 @@ describe("useBoard — cor da seleção", () => {
 
   it("sem cor comum quando a seleção tem cores diferentes", () => {
     const { hook, primeiro, segundo } = comDoisPostIts();
-    act(() => hook.result.current.selectNote(primeiro.id));
+    act(() => hook.result.current.selectElement("note", primeiro.id));
     act(() => hook.result.current.colorSelection(1));
 
-    act(() => hook.result.current.selectNote(segundo.id, true));
+    act(() => hook.result.current.selectElement("note", segundo.id, true));
 
     // O segundo continua na cor padrão: não há uma cor a marcar no seletor.
     expect(hook.result.current.selectionColor).toBeNull();
@@ -724,9 +729,9 @@ describe("useBoard — cor da seleção", () => {
 
   it("pintar em lote reconcilia a cor comum", () => {
     const { hook, primeiro, segundo } = comDoisPostIts();
-    act(() => hook.result.current.selectNote(primeiro.id));
+    act(() => hook.result.current.selectElement("note", primeiro.id));
     act(() => hook.result.current.colorSelection(1));
-    act(() => hook.result.current.selectNote(segundo.id, true));
+    act(() => hook.result.current.selectElement("note", segundo.id, true));
 
     act(() => hook.result.current.colorSelection(3));
 
@@ -745,7 +750,7 @@ describe("useBoard — cor da seleção", () => {
 
   it("aceita toda cor da paleta", () => {
     const { hook, primeiro } = comDoisPostIts();
-    act(() => hook.result.current.selectNote(primeiro.id));
+    act(() => hook.result.current.selectElement("note", primeiro.id));
 
     for (let color = 0; color < NOTE_COLORS.length; color += 1) {
       act(() => hook.result.current.colorSelection(color as 0));
@@ -769,7 +774,7 @@ describe("useBoard — apagar a seleção", () => {
 
   it("apaga o post-it marcado", () => {
     const { hook, primeiro, segundo } = comDoisPostIts();
-    act(() => hook.result.current.selectNote(primeiro.id));
+    act(() => hook.result.current.selectElement("note", primeiro.id));
 
     act(() => hook.result.current.deleteSelection());
 
@@ -778,8 +783,8 @@ describe("useBoard — apagar a seleção", () => {
 
   it("apaga a seleção inteira", () => {
     const { hook, primeiro, segundo } = comDoisPostIts();
-    act(() => hook.result.current.selectNote(primeiro.id));
-    act(() => hook.result.current.selectNote(segundo.id, true));
+    act(() => hook.result.current.selectElement("note", primeiro.id));
+    act(() => hook.result.current.selectElement("note", segundo.id, true));
 
     act(() => hook.result.current.deleteSelection());
 
@@ -788,12 +793,12 @@ describe("useBoard — apagar a seleção", () => {
 
   it("esvazia a seleção depois de apagar", () => {
     const { hook, primeiro } = comDoisPostIts();
-    act(() => hook.result.current.selectNote(primeiro.id));
+    act(() => hook.result.current.selectElement("note", primeiro.id));
 
     act(() => hook.result.current.deleteSelection());
 
     // Ids de post-its que não existem mais fariam a próxima ação em lote agir sobre nada.
-    expect([...hook.result.current.selection]).toEqual([]);
+    expect([...hook.result.current.selection.notes]).toEqual([]);
   });
 
   it("fecha a edição do post-it apagado", () => {
@@ -809,7 +814,7 @@ describe("useBoard — apagar a seleção", () => {
   it("não mexe na edição de quem não foi apagado", () => {
     const { hook, primeiro, segundo } = comDoisPostIts();
     act(() => hook.result.current.startEditing(segundo.id));
-    act(() => hook.result.current.selectNote(primeiro.id));
+    act(() => hook.result.current.selectElement("note", primeiro.id));
 
     act(() => hook.result.current.deleteSelection());
 
@@ -828,7 +833,7 @@ describe("useBoard — apagar a seleção", () => {
 
   it("apagar duas vezes seguidas não quebra", () => {
     const { hook, primeiro } = comDoisPostIts();
-    act(() => hook.result.current.selectNote(primeiro.id));
+    act(() => hook.result.current.selectElement("note", primeiro.id));
 
     act(() => hook.result.current.deleteSelection());
     act(() => hook.result.current.deleteSelection());
@@ -852,14 +857,14 @@ describe("resetBoard", () => {
     const { result } = renderHook(() => useBoard());
     act(() => result.current.createNoteAt({ x: 10, y: 10 }));
     const id = defined(result.current.notes[0], "o post-it criado").id;
-    act(() => result.current.selectNote(id));
+    act(() => result.current.selectElement("note", id));
     act(() => result.current.startEditing(id));
 
     act(() => result.current.resetBoard());
 
     // Seleção e edição apontariam para post-its que não existem mais, e a próxima ação em
     // lote agiria sobre nada.
-    expect(result.current.selection.size).toBe(0);
+    expect(selectionSize(result.current.selection)).toBe(0);
     expect(result.current.editingId).toBeNull();
   });
 });
