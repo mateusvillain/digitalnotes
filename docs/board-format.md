@@ -7,15 +7,26 @@ exportação. O código vive em `src/lib/board/`: `types.ts` (contrato) e `schem
 ## Modelo
 
 ```ts
-Board = { version: number; notes: Note[] }
+Board = { version: number; notes: Note[]; strokes: Stroke[] }
 Note = { id: string; x: number; y: number; w: number; h: number; color: 0..5; text: string; z: number }
+Stroke = { id: string; color: 0..6; points: number[]; z: number }
 ```
 
 - `x`/`y` — canto superior esquerdo, em coordenadas de canvas (não de tela).
 - `w`/`h` — dimensões em unidades de canvas; padrão 200×200, entre 80 e 2000.
-- `color` — **índice** na paleta `NOTE_COLORS`, nunca o nome nem o hexadecimal.
+- `color` da note — **índice** na paleta `NOTE_COLORS`, nunca o nome nem o hexadecimal.
 - `text` — texto puro, sem formatação, até 2000 caracteres.
-- `z` — ordem de empilhamento; maior fica por cima.
+- `z` — ordem de empilhamento; maior fica por cima. Notes e traços têm pilhas de `z`
+  independentes uma da outra.
+- `color` do traço — índice na paleta `STROKE_COLORS`: as mesmas seis cores de `NOTE_COLORS`,
+  na mesma ordem, mais o preto no índice `6` (o padrão do lápis, epic #64).
+- `points` — coordenadas de canvas **achatadas**: `[x0, y0, x1, y1, …]`, e não uma lista de
+  `{x, y}`. Comprimento par, com ao menos dois pontos (quatro números). É a mesma lógica da
+  cor por índice — o traço é o rabisco inteiro, e cada ponto dele custa bytes de link — mas
+  aqui o formato plano evita que cada ponto pague a chave `x`/`y` no JSON, o que custaria
+  cerca do dobro por ponto num traço de qualquer tamanho.
+- `STROKE_MAX_POINTS` e `STROKE_MAX_COUNT` (em `types.ts`) tetam pontos por traço e traços
+  por board, no mesmo espírito de `CANVAS_MAX_ABS_COORDINATE` e `NOTE_MAX_TEXT_LENGTH`.
 
 ## Por que é compacto
 
@@ -42,19 +53,26 @@ serializado, não como.
 
 ## Versionamento
 
-`version` acompanha `SCHEMA_VERSION` (hoje `1`) e existe para os links não quebrarem quando
+`version` acompanha `SCHEMA_VERSION` (hoje `2`) e existe para os links não quebrarem quando
 o formato evoluir. As regras de leitura:
 
-- Versão **menor ou igual** à atual: aceita. Hoje só existe a v1, então não há migração
-  alguma a fazer — quando existir uma v2, é em `parseBoard` que ela entra, antes da
-  normalização. O board devolvido sempre sai carimbado com a versão atual, porque é nessa
-  versão que ele foi normalizado.
+- Versão **menor ou igual** à atual: aceita. Um board da v1 (sem `strokes`) abre
+  normalmente — `parseBoard` trata o campo ausente como lista vazia, e não como erro. O
+  board devolvido sempre sai carimbado com a versão atual, porque é nessa versão que ele foi
+  normalizado.
 - Versão **maior** que a atual: recusada com mensagem explícita. Um board escrito por uma
   versão mais nova pode ter campos com outro significado, e mostrar dados silenciosamente
   errados é pior do que avisar.
 
-Incrementar `SCHEMA_VERSION` só em mudança incompatível — acrescentar um campo opcional com
-padrão razoável não é incompatível.
+Incrementar `SCHEMA_VERSION` só em mudança incompatível. `strokes` (issue #66) é o exemplo
+que definiu o que "incompatível" cobre aqui: o campo em si é opcional na leitura — um board
+sem ele abre igual, com a lista vazia —, mas a versão subiu de `1` para `2` mesmo assim,
+porque o app que não sabe ler `strokes` não erraria o dado, erraria o **desenho**: abriria
+um board com traços e mostraria só os post-its, sem avisar que faltou algo. É essa classe de
+erro silencioso — dado presente que a versão antiga não sabe interpretar — que a regra de
+recusar versão futura existe para evitar. Um campo opcional só dispensa o incremento quando
+nenhuma versão anterior do app pode mostrar o board de forma **visivelmente** incompleta por
+ignorá-lo.
 
 ## Validação
 
@@ -70,19 +88,30 @@ Um board parcialmente corrompido não derruba a tela. A regra é: **valor recupe
 normalizado, não descartado**.
 
 - **Descartada** só a note irrecuperável — sem `id`, sem posição numérica, ou com cor fora
-  da paleta. Não há como adivinhar onde ela ficava nem de que cor era.
-- **Renomeada** a note com `id` duplicado (`"a"` → `"a-2"`): o identificador colide, mas o
-  texto que o usuário escreveu está intacto, e apagá-lo seria perder conteúdo por causa de
-  um bug de codec.
-- **Ajustado em silêncio** o resto: tamanho e coordenadas são limitados aos extremos, texto
-  é truncado, `z` vira inteiro, campo ausente ganha o padrão.
+  da paleta. Não há como adivinhar onde ela ficava nem de que cor era. Traço irrecuperável
+  segue a mesma regra: sem `id`, sem cor válida, ou sem os dois pontos mínimos depois de
+  descartados os pares com coordenada não numérica.
+- **Renomeada** a note ou o traço com `id` duplicado (`"a"` → `"a-2"`): o identificador
+  colide, mas o conteúdo está intacto, e apagá-lo seria perder trabalho por causa de um bug
+  de codec. Note e traço têm espaços de id separados — o mesmo id numa note e num traço não
+  é colisão.
+- **Ajustado em silêncio** o resto: tamanho e coordenadas de note são limitados aos
+  extremos, texto é truncado, `z` vira inteiro, campo ausente ganha o padrão. No traço, cada
+  par de coordenadas fora do teto é limitado do mesmo jeito, e a lista de pontos (ou de
+  traços do board) é cortada em `STROKE_MAX_POINTS` (ou `STROKE_MAX_COUNT`) quando passa do
+  limite.
 
-`warnings` cobre o que muda a identidade de uma note — descarte e renomeação. Ajuste de
-campo não gera aviso: normalizar valor é o trabalho normal desta função, e avisar a cada
-pixel limitado afogaria os avisos que importam.
+`warnings` cobre o que muda a identidade de uma note ou de um traço — descarte e
+renomeação. Ajuste de campo não gera aviso: normalizar valor é o trabalho normal desta
+função, e avisar a cada pixel limitado afogaria os avisos que importam.
+
+`strokes` ausente do board de entrada não é um erro: é o formato de antes da issue #66, e
+vira lista vazia sem aviso. `strokes` presente mas do formato errado (não é uma lista)
+também vira lista vazia — perder só os traços de um board malformado é preferível a recusar
+a abertura do board inteiro por um campo que só passou a existir agora.
 
 Só um board irrecuperável (não é objeto, versão inválida, versão futura, sem lista de
-notes) devolve `ok: false`.
+notes) devolve `ok: false`. A lista de notes continua obrigatória; a de traços, não.
 
 Para validar uma note isolada, sem board em volta, use `normalizeNote(input)` — devolve a
 note normalizada ou `null`.

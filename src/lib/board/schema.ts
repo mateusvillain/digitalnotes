@@ -13,9 +13,13 @@ import {
   NOTE_MAX_TEXT_LENGTH,
   NOTE_SIZE,
   SCHEMA_VERSION,
+  STROKE_MAX_COUNT,
+  STROKE_MAX_POINTS,
   isNoteColor,
+  isStrokeColor,
   type Board,
   type Note,
+  type Stroke,
 } from "./types";
 
 export type ParseBoardResult =
@@ -78,6 +82,57 @@ export function normalizeNote(input: unknown): Note | null {
 }
 
 /**
+ * Normaliza os pontos de um traço: números finitos, comprimento par, dentro do teto de
+ * pontos por traço e da coordenada máxima. `null` quando não sobra o mínimo de dois pontos.
+ *
+ * Um número não finito não é descartado sozinho — descartar um `x` sem o `y` que vem depois
+ * quebraria o pareamento de todo o resto da lista. Em vez disso, o par inteiro que contém um
+ * valor inválido é removido.
+ */
+function normalizePoints(input: unknown): number[] | null {
+  if (!Array.isArray(input)) return null;
+
+  const pairs = Math.min(Math.floor(input.length / 2), STROKE_MAX_POINTS);
+  const points: number[] = [];
+
+  for (let pair = 0; pair < pairs; pair += 1) {
+    const x = input[pair * 2];
+    const y = input[pair * 2 + 1];
+    if (!isFiniteNumber(x) || !isFiniteNumber(y)) continue;
+
+    points.push(
+      clampOr(x, -CANVAS_MAX_ABS_COORDINATE, CANVAS_MAX_ABS_COORDINATE, 0),
+      clampOr(y, -CANVAS_MAX_ABS_COORDINATE, CANVAS_MAX_ABS_COORDINATE, 0),
+    );
+  }
+
+  return points.length >= 4 ? points : null;
+}
+
+/**
+ * Normaliza um traço. Devolve `null` quando os campos obrigatórios não têm como ser
+ * recuperados — id, cor e ao menos dois pontos.
+ */
+export function normalizeStroke(input: unknown): Stroke | null {
+  if (!isPlainObject(input)) return null;
+
+  const { id, color, points, z } = input;
+
+  if (typeof id !== "string" || id.length === 0) return null;
+  if (!isStrokeColor(color)) return null;
+
+  const normalizedPoints = normalizePoints(points);
+  if (normalizedPoints === null) return null;
+
+  return {
+    id,
+    color,
+    points: normalizedPoints,
+    z: isFiniteNumber(z) ? Math.trunc(z) : 0,
+  };
+}
+
+/**
  * Valida e normaliza um board desconhecido.
  *
  * Boards escritos por uma versão futura do schema são recusados: o formato pode ter mudado
@@ -97,7 +152,7 @@ export function parseBoard(input: unknown): ParseBoardResult {
     return { ok: false, error: "Board inválido: esperava um objeto." };
   }
 
-  const { version, notes } = input;
+  const { version, notes, strokes } = input;
 
   if (!isFiniteNumber(version) || !Number.isInteger(version) || version < 1) {
     return { ok: false, error: "Board inválido: versão de schema ausente ou inválida." };
@@ -135,5 +190,42 @@ export function parseBoard(input: unknown): ParseBoardResult {
     normalized.push(note);
   }
 
-  return { ok: true, board: { version: SCHEMA_VERSION, notes: normalized }, warnings };
+  /*
+    `strokes` ausente é o caso normal de um board gravado antes desta issue (v1): lista
+    vazia, sem aviso — não é dado corrompido, é dado de antes de o campo existir. Presente
+    mas do formato errado, ao contrário de `notes`, não reprova o board inteiro: o resto do
+    board (post-its) continua sendo o que a maioria dos links guarda, e perder só os traços
+    é preferível a recusar a abertura por um campo que a issue #66 é a primeira a exigir.
+  */
+  const rawStrokes = Array.isArray(strokes) ? strokes : [];
+  const seenStrokeIds = new Set<string>();
+  const normalizedStrokes: Stroke[] = [];
+
+  for (const [index, candidate] of rawStrokes.entries()) {
+    if (normalizedStrokes.length >= STROKE_MAX_COUNT) {
+      warnings.push(`Traço na posição ${index} descartado: limite de traços do board atingido.`);
+      continue;
+    }
+
+    const stroke = normalizeStroke(candidate);
+    if (stroke === null) {
+      warnings.push(`Traço na posição ${index} descartado: dados inválidos.`);
+      continue;
+    }
+    if (seenStrokeIds.has(stroke.id)) {
+      const id = uniqueId(stroke.id, seenStrokeIds);
+      warnings.push(
+        `Traço na posição ${index}: id "${stroke.id}" duplicado, renomeado para "${id}".`,
+      );
+      stroke.id = id;
+    }
+    seenStrokeIds.add(stroke.id);
+    normalizedStrokes.push(stroke);
+  }
+
+  return {
+    ok: true,
+    board: { version: SCHEMA_VERSION, notes: normalized, strokes: normalizedStrokes },
+    warnings,
+  };
 }

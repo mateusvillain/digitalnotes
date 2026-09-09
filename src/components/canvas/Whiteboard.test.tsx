@@ -1398,6 +1398,7 @@ describe("Whiteboard — apresentação do quadro vazio", () => {
               z: 1,
             },
           ],
+          strokes: [],
         }}
       />,
     );

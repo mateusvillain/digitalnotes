@@ -13,7 +13,7 @@
  * operação sem efeito.
  */
 
-import { normalizeNote } from "./schema";
+import { normalizeNote, normalizeStroke } from "./schema";
 import {
   NOTE_SIZE,
   SCHEMA_VERSION,
@@ -21,6 +21,8 @@ import {
   type Board,
   type Note,
   type NoteColor,
+  type Stroke,
+  type StrokeColor,
 } from "./types";
 
 /** Comprimento do id de um post-it. Curto porque vai serializado dentro da URL. */
@@ -45,6 +47,13 @@ export interface NewNote {
   h?: number;
 }
 
+/** Dados mínimos para criar um traço; o resto vem dos padrões do contrato. */
+export interface NewStroke {
+  color: StrokeColor;
+  /** Coordenadas de canvas, achatadas — ver {@link Stroke.points}. */
+  points: number[];
+}
+
 export interface BoardStore {
   /** Board atual. A referência muda a cada alteração, para comparação por identidade. */
   getBoard: () => Board;
@@ -67,6 +76,10 @@ export interface BoardStore {
   removeNotes: (ids: readonly string[]) => void;
   /** Traz a note para a frente das demais. */
   bringToFront: (id: string) => void;
+  /** Cria um traço na frente dos demais. Devolve `null` se os dados forem impossíveis. */
+  addStroke: (stroke: NewStroke) => Stroke | null;
+  removeStroke: (id: string) => void;
+  removeStrokes: (ids: readonly string[]) => void;
   /** Substitui o board inteiro — usado pela restauração do autosave local (#22). */
   replaceBoard: (board: Board) => void;
 }
@@ -81,9 +94,9 @@ function createId(taken: ReadonlySet<string>): string {
   }
 }
 
-/** Maior z do board, ou 0 se estiver vazio. */
-function topZ(notes: readonly Note[]): number {
-  return notes.reduce((highest, note) => Math.max(highest, note.z), 0);
+/** Maior z de uma lista de notes ou traços, ou 0 se estiver vazia. */
+function topZ(items: readonly { z: number }[]): number {
+  return items.reduce((highest, item) => Math.max(highest, item.z), 0);
 }
 
 /** Duas notes são iguais quando todo campo do contrato bate. */
@@ -112,6 +125,11 @@ function guard(board: Board): Board {
 
   board.notes.forEach(Object.freeze);
   Object.freeze(board.notes);
+  board.strokes.forEach((stroke) => {
+    Object.freeze(stroke.points);
+    Object.freeze(stroke);
+  });
+  Object.freeze(board.strokes);
   return Object.freeze(board);
 }
 
@@ -126,10 +144,14 @@ export function createBoardStore(initial: Board = createEmptyBoard()): BoardStor
    * dispara outra publicação no meio desta, e sem a cópia os avisos restantes sairiam
    * misturando dois estados.
    */
-  function commit(notes: Note[]): void {
+  function commit(next: { notes?: Note[]; strokes?: Stroke[] }): void {
     // A versão é sempre a atual: o board na memória é, por definição, o que este código
     // entende. Board de outra versão entra pelo parseBoard antes de chegar aqui.
-    board = guard({ version: SCHEMA_VERSION, notes });
+    board = guard({
+      version: SCHEMA_VERSION,
+      notes: next.notes ?? board.notes,
+      strokes: next.strokes ?? board.strokes,
+    });
     for (const listener of [...listeners]) listener();
   }
 
@@ -162,7 +184,7 @@ export function createBoardStore(initial: Board = createEmptyBoard()): BoardStor
     // coordenadas, por exemplo — não cria nada e não derruba o handler de evento.
     if (note === null) return null;
 
-    commit([...board.notes, note]);
+    commit({ notes: [...board.notes, note] });
     return note;
   }
 
@@ -187,7 +209,7 @@ export function createBoardStore(initial: Board = createEmptyBoard()): BoardStor
 
   function updateNotes(updates: readonly NoteUpdate[]): void {
     const notes = applyUpdates(updates);
-    if (notes !== null) commit(notes);
+    if (notes !== null) commit({ notes });
   }
 
   function updateNote(id: string, patch: NotePatch): void {
@@ -198,11 +220,39 @@ export function createBoardStore(initial: Board = createEmptyBoard()): BoardStor
     const targets = new Set(ids);
     const notes = board.notes.filter((note) => !targets.has(note.id));
 
-    if (notes.length !== board.notes.length) commit(notes);
+    if (notes.length !== board.notes.length) commit({ notes });
   }
 
   function removeNote(id: string): void {
     removeNotes([id]);
+  }
+
+  function addStroke(input: NewStroke): Stroke | null {
+    const stroke = normalizeStroke({
+      id: createId(new Set(board.strokes.map((existing) => existing.id))),
+      color: input.color,
+      points: input.points,
+      // Traço novo nasce na frente, como a note: foi o usuário que acabou de desenhá-lo.
+      z: topZ(board.strokes) + 1,
+    });
+
+    // Mesma razão da note: normalizar pelo contrato evita um segundo conjunto de regras
+    // sobre o que é um traço válido, e dado impossível não derruba o handler de evento.
+    if (stroke === null) return null;
+
+    commit({ strokes: [...board.strokes, stroke] });
+    return stroke;
+  }
+
+  function removeStrokes(ids: readonly string[]): void {
+    const targets = new Set(ids);
+    const strokes = board.strokes.filter((stroke) => !targets.has(stroke.id));
+
+    if (strokes.length !== board.strokes.length) commit({ strokes });
+  }
+
+  function removeStroke(id: string): void {
+    removeStrokes([id]);
   }
 
   function getNote(id: string): Note | undefined {
@@ -224,9 +274,12 @@ export function createBoardStore(initial: Board = createEmptyBoard()): BoardStor
   }
 
   function replaceBoard(next: Board): void {
-    // Cópia das notes, e não da lista só: quem chamou não pode continuar segurando as
-    // mesmas referências que a store passou a tratar como imutáveis.
-    commit(next.notes.map((note) => ({ ...note })));
+    // Cópia das notes e dos traços, e não das listas só: quem chamou não pode continuar
+    // segurando as mesmas referências que a store passou a tratar como imutáveis.
+    commit({
+      notes: next.notes.map((note) => ({ ...note })),
+      strokes: next.strokes.map((stroke) => ({ ...stroke, points: [...stroke.points] })),
+    });
   }
 
   // Funções soltas, e não métodos: a interface vai desestruturar a store, e método com
@@ -241,6 +294,9 @@ export function createBoardStore(initial: Board = createEmptyBoard()): BoardStor
     removeNote,
     removeNotes,
     bringToFront,
+    addStroke,
+    removeStroke,
+    removeStrokes,
     replaceBoard,
   };
 }
