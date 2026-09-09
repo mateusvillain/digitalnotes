@@ -121,7 +121,7 @@ export function Onboarding() {
         {/*
           Duas colunas: o que a ação faz à esquerda, como se faz à direita.
           O nome vem primeiro porque é por ele que se procura — quem quer criar uma nota
-          varre a coluna da esquerda até achar "Nota" e só então olha a tecla. As teclas
+          varre a coluna da esquerda até achar a nota e só então olha a tecla. As teclas
           ficam encostadas à direita para formarem uma coluna própria, alinhada pela borda
           de dentro, em vez de uma serrilha de larguras diferentes.
         */}

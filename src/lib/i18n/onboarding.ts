@@ -63,6 +63,13 @@ export interface OnboardingCopy {
  * que não se descobre olhando; mandar tocar num botão visível é gastar uma das poucas
  * linhas com o que a própria tela já diz.
  *
+ * A linha de toque continuou dizendo "Nova nota", e não "Nova nota adesiva" (#81). Ela é a
+ * única das duas listas escrita como resultado de um gesto, e não como nome de ferramenta:
+ * lá não há tecla `N` para associar a um nome, há um duplo toque e o que ele produz. O nome
+ * completo da peça importa onde ela é **escolhida** — o botão e a linha de teclado —, e não
+ * onde só se ensina o gesto que a cria. Foi a largura que fez olhar para esta linha (é a
+ * mais apertada da peça, num aparelho de 320px), mas não foi a largura que decidiu.
+ *
  * O cursor (#83) foi a primeira ferramenta a bater no teto de quatro, e não entrou. Não foi
  * por falta de espaço: `V` leva à ferramenta em que o quadro **já começa**, e ensinar como
  * chegar onde a pessoa está é a linha menos útil que esta lista poderia ter. O botão dele
@@ -74,7 +81,7 @@ export const ONBOARDING: Record<Locale, OnboardingCopy> = {
     title: "Welcome to Virtual Notes",
     subtitle: "An empty board. A few things and you're set.",
     shortcuts: [
-      { keys: ["N"], label: "Note" },
+      { keys: ["N"], label: "Sticky Note" },
       { keys: ["P"], label: "Pencil" },
       { keys: ["Space"], label: "Movement" },
       { keys: ["mod", "S"], label: "Save" },
@@ -89,7 +96,7 @@ export const ONBOARDING: Record<Locale, OnboardingCopy> = {
     title: "Boas-vindas ao Virtual Notes",
     subtitle: "O quadro está vazio. Só isso e você já sabe usar.",
     shortcuts: [
-      { keys: ["N"], label: "Nota" },
+      { keys: ["N"], label: "Nota adesiva" },
       { keys: ["P"], label: "Lápis" },
       { keys: ["Espaço"], label: "Movimentação" },
       { keys: ["mod", "S"], label: "Salvar" },
