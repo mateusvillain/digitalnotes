@@ -30,7 +30,6 @@ function opcoes(overrides: Partial<Parameters<typeof useKeyboardShortcuts>[0]>) 
     onPlaceNote: vi.fn(),
     onSave: vi.fn(),
     onSelectAll: vi.fn(),
-    onCopy: vi.fn(),
     onUndo: vi.fn(),
     onRedo: vi.fn(),
     onTogglePencil: vi.fn(),
@@ -365,53 +364,6 @@ describe("useKeyboardShortcuts — salvar com Ctrl/⌘+S", () => {
     document.body.dispatchEvent(event);
 
     expect(event.defaultPrevented).toBe(true);
-  });
-
-  it("Ctrl+C e ⌘+C copiam a seleção", () => {
-    const onCopy = vi.fn();
-    renderHook(() => useKeyboardShortcuts(opcoes({ onCopy })));
-
-    tecla("c", document.body, { ctrlKey: true });
-    tecla("C", document.body, { metaKey: true });
-
-    expect(onCopy).toHaveBeenCalledTimes(2);
-  });
-
-  it("Ctrl+C dentro de um campo de texto pertence ao texto", () => {
-    const onCopy = vi.fn();
-    renderHook(() => useKeyboardShortcuts(opcoes({ onCopy })));
-
-    tecla("c", elemento("textarea"), { ctrlKey: true });
-
-    expect(onCopy).not.toHaveBeenCalled();
-  });
-
-  /**
-   * Sem `preventDefault`, ao contrário dos vizinhos: fora de um campo de texto e sem seleção
-   * no documento — o quadro tem `select-none` —, o `Ctrl+C` nativo não copiaria nada.
-   * Engoli-lo só tiraria a chance de o navegador fazer algo melhor num caso não previsto.
-   */
-  it("copiar não engole a tecla", () => {
-    renderHook(() => useKeyboardShortcuts(opcoes({})));
-
-    const event = new KeyboardEvent("keydown", {
-      key: "c",
-      ctrlKey: true,
-      bubbles: true,
-      cancelable: true,
-    });
-    document.body.dispatchEvent(event);
-
-    expect(event.defaultPrevented).toBe(false);
-  });
-
-  it("C sem modificador não copia", () => {
-    const onCopy = vi.fn();
-    renderHook(() => useKeyboardShortcuts(opcoes({ onCopy })));
-
-    tecla("c");
-
-    expect(onCopy).not.toHaveBeenCalled();
   });
 
   it("Ctrl+Z e ⌘+Z desfazem", () => {

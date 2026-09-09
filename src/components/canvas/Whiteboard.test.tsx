@@ -1927,16 +1927,6 @@ describe("Whiteboard — copiar e colar (#88)", () => {
 
   function fingeClipboard(): void {
     copiado = null;
-    vi.stubGlobal("navigator", {
-      platform: "Win32",
-      userAgent: "",
-      clipboard: {
-        writeText: (text: string) => {
-          copiado = text;
-          return Promise.resolve();
-        },
-      },
-    });
   }
 
   function criaPostIt(x: number, y: number, texto = ""): void {
@@ -1956,8 +1946,27 @@ describe("Whiteboard — copiar e colar (#88)", () => {
     fireEvent.keyDown(document, { key: "v" });
   }
 
-  function copia(): void {
-    fireEvent.keyDown(document, { key: "c", ctrlKey: true });
+  /**
+   * Dispara o evento nativo de copiar, que é por onde o recorte sai de verdade.
+   *
+   * Pelo evento, e não pela tecla: é o navegador que abre a janela em que a escrita pode
+   * acontecer de forma síncrona, e foi trocar `writeText` no `keydown` por isto que fez
+   * copiar passar a funcionar de verdade.
+   */
+  function copia(target: EventTarget = document.body): boolean {
+    const event = new Event("copy", { bubbles: true, cancelable: true });
+    Object.defineProperty(event, "clipboardData", {
+      value: {
+        setData: (_tipo: string, text: string) => {
+          copiado = text;
+        },
+      },
+    });
+    act(() => {
+      target.dispatchEvent(event);
+    });
+
+    return event.defaultPrevented;
   }
 
   /**
@@ -2118,9 +2127,40 @@ describe("Whiteboard — copiar e colar (#88)", () => {
     fireEvent.pointerDown(surface, { pointerId: 9, button: 0, clientX: 900, clientY: 700 });
     fireEvent.pointerUp(surface, { pointerId: 9, clientX: 900, clientY: 700 });
 
-    copia();
+    const engoliu = copia();
 
-    // O que a pessoa tinha copiado de outro programa continua lá.
+    // O que a pessoa tinha copiado de outro programa continua lá, e o evento segue intacto
+    // para o navegador fazer o que quiser com ele.
+    expect(copiado).toBeNull();
+    expect(engoliu).toBe(false);
+  });
+
+  /**
+   * O `preventDefault` é o ponto do mecanismo: ele **substitui** a cópia nativa em vez de
+   * disputar com ela. Sem isso, o navegador seguiria copiando a seleção de texto do
+   * documento — que não existe, porque o quadro tem `select-none` — por cima do recorte.
+   */
+  it("copiar substitui a cópia nativa, e não disputa com ela", () => {
+    fingeClipboard();
+    render(<Whiteboard />);
+    criaPostIt(200, 200);
+    fireEvent.keyDown(document, { key: "a", ctrlKey: true });
+
+    expect(copia()).toBe(true);
+    expect(copiado).not.toBeNull();
+  });
+
+  /** Dentro de um post-it, copiar é do texto: o quadro não intercepta. */
+  it("copiar dentro do editor pertence ao texto", () => {
+    fingeClipboard();
+    render(<Whiteboard />);
+    criaPostIt(200, 200);
+    fireEvent.keyDown(document, { key: "a", ctrlKey: true });
+    duploCliqueNoFundo(600, 200);
+
+    const engoliu = copia(screen.getByTestId("post-it-editor"));
+
+    expect(engoliu).toBe(false);
     expect(copiado).toBeNull();
   });
 
