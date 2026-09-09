@@ -257,6 +257,27 @@ export function Viewport({
     pinch.current = first && second ? pinchSnapshot(first.point, second.point) : null;
   }, []);
 
+  /**
+   * Arma um traço a partir deste ponteiro, tomando o gesto para o lápis.
+   *
+   * Reivindicar na descida é o ponto: o quadro inteiro é superfície de desenho com o modo
+   * ligado, e sem parar o evento aqui um traço que começasse sobre uma nota viraria arraste
+   * dela. O mouse e o dedo chegam por caminhos diferentes — um pelo tipo de ponteiro, o
+   * outro pela contagem de dedos — mas o que acontece depois é o mesmo, e mora aqui.
+   */
+  const startDrawing = useCallback(
+    (event: PointerEvent<HTMLDivElement>) => {
+      event.stopPropagation();
+      event.preventDefault();
+      event.currentTarget.setPointerCapture(event.pointerId);
+
+      const point = screenToCanvas(localPoint(event), viewportRef.current);
+      drag.current = { kind: "draw", pointerId: event.pointerId, points: [point] };
+      setDrawing([point]);
+    },
+    [localPoint],
+  );
+
   /** Verdadeiro só para eventos nascidos no fundo, e não em algo desenhado sobre ele. */
   const isBackground = useCallback(
     (event: { target: EventTarget; currentTarget: EventTarget }): boolean => {
@@ -290,10 +311,16 @@ export function Viewport({
   /**
    * O que precisa ser decidido na **descida** do evento, antes de um post-it pará-lo.
    *
-   * São dois casos, pelo mesmo motivo: o post-it interrompe o `pointerdown` antes de ele
-   * chegar à superfície, e ambos os gestos valem sobre o quadro inteiro, notas inclusive.
-   * O pan com espaço reivindica o gesto aqui; a contagem de dedos da pinça (#57) precisa
-   * enxergar o toque mesmo quando ele começa sobre uma nota.
+   * Todos os casos aqui existem pelo mesmo motivo: o post-it interrompe o `pointerdown`
+   * antes de ele chegar à superfície, e estes gestos valem sobre o quadro inteiro, notas
+   * inclusive. São quatro, nesta ordem de prioridade:
+   *
+   * 1. A contagem de dedos da pinça (#57), que precisa enxergar o toque mesmo quando ele
+   *    começa sobre uma nota — e que abre a pinça quando o segundo dedo encosta.
+   * 2. O traço com um dedo, dentro dessa contagem, com o lápis ligado (#71).
+   * 3. O traço com o mouse ou a caneta, também com o lápis ligado (#68).
+   * 4. O pan com a barra de espaço segurada, que ganha do lápis: navegar é o gesto que
+   *    precisa existir em qualquer modo.
    */
   const handlePointerDownCapture = useCallback(
     (event: PointerEvent<HTMLDivElement>) => {
@@ -325,7 +352,26 @@ export function Viewport({
           }
 
           drag.current = null;
+          // O traço que o primeiro dedo tinha começado morre aqui, e não pela metade: quem
+          // encostou o segundo dedo está pinçando, não desenhando (#71). Sem limpar a
+          // prévia, o meio-rabisco ficaria pintado na tela sem nunca entrar no board.
+          setDrawing(null);
           restartPinch();
+          return;
+        }
+
+        /*
+          Com o lápis ligado, o primeiro dedo desenha em vez de navegar (#71). A pinça de
+          dois dedos passa a ser a única forma de mover o quadro enquanto o modo está
+          ativo — é a troca que o modo faz no toque, e o motivo de o indicador importar
+          ainda mais aqui.
+
+          Dentro da contagem, e não ao lado dela: assim isto só vale para o **primeiro**
+          dedo. Um terceiro dedo durante a pinça não é contado, e fora daqui ele começaria
+          um traço por baixo do gesto que já está acontecendo.
+        */
+        if (pencil) {
+          startDrawing(event);
           return;
         }
       }
@@ -338,16 +384,10 @@ export function Viewport({
         Espaço continua ganhando do lápis: navegar é o gesto que precisa existir em qualquer
         modo, e é o único que não tem alternativa com o lápis ligado.
 
-        O toque fica de fora: lá um dedo navega, e trocar isso é a issue #71.
+        O toque já foi resolvido na contagem de dedos acima, onde se sabe que dedo é este.
       */
       if (pencil && !spaceHeld && event.button === 0 && event.pointerType !== "touch") {
-        event.stopPropagation();
-        event.preventDefault();
-        event.currentTarget.setPointerCapture(event.pointerId);
-
-        const point = screenToCanvas(localPoint(event), viewportRef.current);
-        drag.current = { kind: "draw", pointerId: event.pointerId, points: [point] };
-        setDrawing([point]);
+        startDrawing(event);
         return;
       }
 
@@ -362,7 +402,7 @@ export function Viewport({
         last: { x: event.clientX, y: event.clientY },
       };
     },
-    [localPoint, pencil, restartPinch, spaceHeld],
+    [pencil, restartPinch, spaceHeld, startDrawing],
   );
 
   const handlePointerDown = useCallback(
@@ -402,6 +442,16 @@ export function Viewport({
       // quadro por lá. Os dois dedos da pinça já foram contados na fase de captura (#57), e
       // selecionar por retângulo fica para quem tem ponteiro.
       if (event.pointerType === "touch") {
+        /*
+          Com o lápis ligado, nenhum dedo navega (#71).
+
+          Os dois primeiros nem chegam aqui — a captura reivindica um para o traço e o outro
+          para a pinça. Quem chega é o terceiro dedo em diante, que a contagem ignora de
+          propósito; sem esta guarda ele armaria um pan por baixo da pinça em curso, e o
+          quadro andaria com um dedo justamente no modo em que um dedo não move nada.
+        */
+        if (pencil) return;
+
         drag.current = {
           kind: "pan",
           pointerId: event.pointerId,
@@ -420,7 +470,7 @@ export function Viewport({
         started: false,
       };
     },
-    [isBackground, localPoint, spaceHeld],
+    [isBackground, localPoint, pencil, spaceHeld],
   );
 
   const handlePointerMove = useCallback(
@@ -498,7 +548,15 @@ export function Viewport({
         restartPinch();
         if (touches.current.size === 1) {
           const [remaining] = [...touches.current.entries()];
-          if (remaining) {
+          /*
+            Sair da pinça com um dedo na tela devolve a navegação a quem ficou — mas não com
+            o lápis ligado, onde um dedo não navega (#71).
+
+            E também não vira traço: o dedo que sobra estava pinçando, e transformá-lo em
+            lápis deixaria tinta que ninguém pediu no caminho de volta do gesto. Ele fica sem
+            função até ser levantado; o traço seguinte começa no toque seguinte.
+          */
+          if (remaining && !pencil) {
             drag.current = { kind: "pan", pointerId: remaining[0], last: remaining[1].point };
           }
         }
@@ -517,7 +575,7 @@ export function Viewport({
 
       return state;
     },
-    [restartPinch],
+    [pencil, restartPinch],
   );
 
   const handlePointerUp = useCallback(
