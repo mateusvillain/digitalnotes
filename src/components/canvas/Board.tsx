@@ -1,13 +1,16 @@
 "use client";
 
 import { PostIt } from "@/components/postit/PostIt";
+import { Strokes } from "./Strokes";
 import type { Selection } from "@/lib/board/selection";
 import type { Point } from "@/lib/canvas/coords";
-import type { Note } from "@/lib/board/types";
+import type { Note, Stroke } from "@/lib/board/types";
 import type { Resizing } from "@/lib/board/useBoard";
 
 interface BoardProps {
   notes: readonly Note[];
+  /** Rabiscos do board, desenhados sob os post-its (#68). */
+  strokes?: readonly Stroke[];
   /** Note em edição de texto, ou `null`. */
   editingId?: string | null;
   /** Ids marcados. */
@@ -41,6 +44,7 @@ interface BoardProps {
  */
 export function Board({
   notes,
+  strokes = [],
   editingId = null,
   selection,
   onEditStart,
@@ -59,6 +63,8 @@ export function Board({
 }: BoardProps) {
   return (
     <>
+      <Strokes strokes={strokes} />
+
       {notes.map((note) => {
         const selected = selection?.has(note.id) ?? false;
 

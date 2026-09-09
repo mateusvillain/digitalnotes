@@ -6,7 +6,13 @@
  * não existir uma segunda lista capaz de divergir da primeira.
  */
 
-import { NOTE_COLORS, type NoteColor, type NoteColorName } from "@/lib/board/types";
+import {
+  NOTE_COLORS,
+  STROKE_COLORS,
+  type NoteColor,
+  type NoteColorName,
+  type StrokeColor,
+} from "@/lib/board/types";
 
 /** Cor do texto escrito em cima de qualquer post-it. */
 export const NOTE_INK_VAR = "--color-note-ink";
@@ -27,4 +33,16 @@ export function noteBackgroundVar(color: NoteColor): NoteBackgroundVar {
  */
 export function noteBackgroundColor(color: NoteColor): string {
   return `var(${noteBackgroundVar(color)})`;
+}
+
+/**
+ * Cor da tinta de um traço, a partir do índice guardado no board (#68).
+ *
+ * As seis primeiras são as mesmas do post-it: o quadro tem uma paleta só, e o rabisco não
+ * inaugura um segundo sistema de cor. O preto reusa `--color-ink`, que é o token de "cor de
+ * escrever" desta interface — o mesmo tom do texto de uma nota, agora sobre o quadro.
+ */
+export function strokeColor(color: StrokeColor): string {
+  const name = STROKE_COLORS[color];
+  return name === "black" ? "var(--color-ink)" : `var(--color-note-${name})`;
 }

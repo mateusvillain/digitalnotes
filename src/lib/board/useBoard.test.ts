@@ -1,7 +1,7 @@
 import { act, renderHook } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 import { defined } from "@/test-utils/defined";
-import { NOTE_COLORS, NOTE_SIZE } from "./types";
+import { NOTE_COLORS, NOTE_SIZE, STROKE_COLOR_BLACK } from "./types";
 import { useBoard } from "./useBoard";
 
 describe("useBoard", () => {
@@ -859,5 +859,70 @@ describe("resetBoard", () => {
     // lote agiria sobre nada.
     expect(result.current.selection.size).toBe(0);
     expect(result.current.editingId).toBeNull();
+  });
+});
+
+describe("useBoard — traço à mão livre", () => {
+  it("grava o traço desenhado, na cor com que o lápis nasce", () => {
+    const { result } = renderHook(() => useBoard());
+
+    act(() =>
+      result.current.addStroke([
+        { x: 0, y: 0 },
+        { x: 50, y: 20 },
+      ]),
+    );
+
+    const stroke = defined(result.current.strokes[0], "o traço gravado");
+    expect(stroke.points).toEqual([0, 0, 50, 20]);
+    expect(stroke.color).toBe(STROKE_COLOR_BLACK);
+  });
+
+  it("simplifica antes de gravar: o board guarda a forma, não a amostragem do ponteiro", () => {
+    const { result } = renderHook(() => useBoard());
+    // Uma reta reportada em 40 passos, como o ponteiro faz.
+    const reta = Array.from({ length: 40 }, (_, index) => ({ x: index * 5, y: index * 5 }));
+
+    act(() => result.current.addStroke(reta));
+
+    // Sobram os extremos: os do meio não descrevem nada que eles já não digam.
+    expect(defined(result.current.strokes[0], "o traço gravado").points).toEqual([0, 0, 195, 195]);
+  });
+
+  it("arredonda as coordenadas, que é o que o contrato guarda", () => {
+    const { result } = renderHook(() => useBoard());
+
+    act(() =>
+      result.current.addStroke([
+        { x: 0.4, y: 10.5 },
+        { x: 50.6, y: 20.49 },
+      ]),
+    );
+
+    expect(defined(result.current.strokes[0], "o traço gravado").points).toEqual([0, 11, 51, 20]);
+  });
+
+  it("cada traço novo nasce na frente do anterior", () => {
+    const { result } = renderHook(() => useBoard());
+    const traço = [
+      { x: 0, y: 0 },
+      { x: 10, y: 10 },
+    ];
+
+    act(() => result.current.addStroke(traço));
+    act(() => result.current.addStroke(traço));
+
+    const [primeiro, segundo] = result.current.strokes;
+    expect(defined(segundo, "o segundo traço").z).toBeGreaterThan(
+      defined(primeiro, "o primeiro traço").z,
+    );
+  });
+
+  it("não grava um traço sem os dois pontos que o contrato exige", () => {
+    const { result } = renderHook(() => useBoard());
+
+    act(() => result.current.addStroke([{ x: 5, y: 5 }]));
+
+    expect(result.current.strokes).toEqual([]);
   });
 });

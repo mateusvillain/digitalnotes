@@ -9,6 +9,7 @@ import { useViewport } from "@/lib/canvas/useViewport";
 import { useTouchPrimary } from "@/lib/dom/useTouchPrimary";
 import { ColorPicker } from "@/components/postit/ColorPicker";
 import { NewBoardButton } from "@/components/ui/NewBoardButton";
+import { PencilButton } from "@/components/ui/PencilButton";
 import { ShareButton } from "@/components/ui/ShareButton";
 import { useShareBoard } from "@/lib/board/useShareBoard";
 import { Onboarding } from "./Onboarding";
@@ -120,20 +121,38 @@ export function Whiteboard({ initialBoard, autosave }: WhiteboardProps) {
 
   const save = useCallback(() => void share.share(), [share]);
 
+  /**
+   * O modo lápis (#68): enquanto ligado, arrastar desenha em vez de selecionar.
+   *
+   * Estado do quadro, e não da superfície: quem liga é o teclado ou o botão da moldura, e
+   * quem obedece é o `Viewport`. Guardá-lo lá dentro obrigaria a moldura a perguntar à
+   * superfície o que ela está fazendo para saber o que desenhar.
+   */
+  const [pencil, setPencil] = useState(false);
+  const togglePencil = useCallback(() => setPencil((ligado) => !ligado), []);
+  // `Esc` desliga, e não alterna: quem aperta `Esc` está saindo de alguma coisa, e sair de
+  // um modo que não estava ligado não pode ligá-lo.
+  const exitPencil = useCallback(() => setPencil(false), []);
+
   useKeyboardShortcuts({
     onDelete: board.deleteSelection,
     onCreateNote: createNoteAtCenter,
     onSave: save,
+    onTogglePencil: togglePencil,
+    onCancel: exitPencil,
   });
 
   return (
     <AppShell
       leadingActions={
-        <NewBoardButton
-          hasNotes={board.notes.length > 0}
-          onNewBoard={board.resetBoard}
-          share={share.share}
-        />
+        <div className="flex flex-col items-start gap-2">
+          <NewBoardButton
+            hasNotes={board.notes.length > 0}
+            onNewBoard={board.resetBoard}
+            share={share.share}
+          />
+          <PencilButton active={pencil} onToggle={togglePencil} />
+        </div>
       }
       trailingActions={
         <ShareButton state={share.state} share={share.share} dismiss={share.dismiss} />
@@ -160,9 +179,12 @@ export function Whiteboard({ initialBoard, autosave }: WhiteboardProps) {
           onBackgroundClick={board.clearSelection}
           onSelectionStart={board.beginRectSelection}
           onSelectionRect={board.selectInRect}
+          pencil={pencil}
+          onStrokeEnd={board.addStroke}
         >
           <Board
             notes={board.notes}
+            strokes={board.strokes}
             editingId={board.editingId}
             selection={board.selection}
             onEditStart={board.startEditing}

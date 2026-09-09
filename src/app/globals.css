@@ -104,6 +104,24 @@ body {
 }
 
 /**
+ * Cursor do modo lápis (issue #68).
+ *
+ * O modo muda o que arrastar faz, então ele precisa se anunciar antes do gesto — é o mesmo
+ * cuidado que a mãozinha já toma com a barra de espaço segurada. Nenhum cursor do sistema
+ * diz "isto desenha": `crosshair` é a mira da seleção e `cell` é de planilha, então o
+ * desenho vem inline, no mesmo traço dos ícones da interface.
+ *
+ * O ponto quente fica na ponta do lápis, embaixo à esquerda, e não no canto do ícone: é
+ * dali que a linha sai. `crosshair` é o reserva para quem não carregar a imagem.
+ */
+.cursor-pencil {
+  cursor:
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='%2318181b' stroke-width='1.75' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M16.5 3.5 20 7 8 19l-4.5 1L4.5 15.5z'/%3E%3Cpath d='M14.5 5.5 18 9'/%3E%3C/svg%3E")
+      4 20,
+    crosshair;
+}
+
+/**
  * Entrada da apresentação do quadro vazio.
  *
  * Um fade curto com um passo para cima, e não um simples aparecer: a peça nasce junto com
