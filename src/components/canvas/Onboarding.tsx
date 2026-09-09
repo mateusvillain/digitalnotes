@@ -86,7 +86,7 @@ function Key({ children }: { children: string }) {
  * A apresentação que ocupa o quadro vazio.
  *
  * O quadro não tem barra de ferramentas nem menu: quem chega vê uma superfície em branco e
- * nenhuma pista do que fazer com ela. Estas três linhas são essa pista, e por isso vivem no
+ * nenhuma pista do que fazer com ela. Estas poucas linhas são essa pista, e por isso vivem no
  * lugar onde a ação acontece — no meio do canvas — em vez de num balão preso a um botão
  * que não existe.
  *

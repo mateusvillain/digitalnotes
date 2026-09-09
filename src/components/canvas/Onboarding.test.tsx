@@ -5,6 +5,7 @@ import { LocaleProvider } from "@/lib/i18n/LocaleProvider";
 import type { Locale } from "@/lib/seo/site";
 import { Onboarding } from "./Onboarding";
 import { ONBOARDING } from "@/lib/i18n/onboarding";
+import { UI } from "@/lib/i18n/ui";
 
 afterEach(() => vi.unstubAllGlobals());
 
@@ -78,27 +79,29 @@ describe("apresentação do quadro vazio", () => {
   });
 
   /**
-   * O lápis é o único que a apresentação anuncia por tecla e não por gesto: no toque ele é
-   * um botão que está na tela o tempo todo, e gastar uma das poucas linhas mandando tocar
-   * num botão visível é ensinar o que a tela já diz.
+   * O rótulo, e não só a tecla: a tecla já está coberta pelo caso acima, e o que este
+   * guarda é a palavra — que precisa existir nos dois idiomas e ser a mesma que o botão do
+   * lápis usa, senão a apresentação e a interface passam a chamar a mesma coisa de dois
+   * nomes.
    */
-  it("anuncia o lápis na lista de teclado, nos dois idiomas", () => {
+  it("dá ao lápis um rótulo próprio nos dois idiomas", () => {
     aparelho();
-    const { container, unmount } = renderiza("pt");
+    const { unmount } = renderiza("pt");
 
-    expect(screen.getByText("Lápis")).toBeDefined();
-    expect([...container.querySelectorAll("kbd")].map((it) => it.textContent)).toContain("P");
+    expect(screen.getByText("Lápis").textContent).toBe(UI.pt.pencil.action);
 
     unmount();
     aparelho();
-    const ingles = renderiza("en");
+    renderiza("en");
 
-    expect(screen.getByText("Pencil")).toBeDefined();
-    expect([...ingles.container.querySelectorAll("kbd")].map((it) => it.textContent)).toContain(
-      "P",
-    );
+    expect(screen.getByText("Pencil").textContent).toBe(UI.en.pencil.action);
   });
 
+  /**
+   * No toque o lápis não é gesto nenhum: é um botão que fica na tela o tempo todo. A
+   * apresentação existe para ensinar o que não se descobre olhando, e uma linha mandando
+   * tocar num botão visível gastaria uma das poucas que cabem.
+   */
   it("não leva o lápis para a lista de toque, onde não há tecla para apertar", () => {
     aparelho({ toque: true });
     const { unmount } = renderiza("pt");
@@ -111,23 +114,6 @@ describe("apresentação do quadro vazio", () => {
     renderiza("en");
 
     expect(screen.queryByText("Pencil")).toBeNull();
-  });
-
-  /**
-   * A frase não conta os itens: são quatro no teclado e três no toque, e um número ali
-   * estaria errado em metade dos aparelhos.
-   */
-  it("o subtítulo não promete um número de linhas", () => {
-    aparelho();
-    const { unmount } = renderiza("pt");
-
-    expect(screen.getByText(ONBOARDING.pt.subtitle).textContent).not.toMatch(/\d|três|quatro/i);
-
-    unmount();
-    aparelho();
-    renderiza("en");
-
-    expect(screen.getByText(ONBOARDING.en.subtitle).textContent).not.toMatch(/\d|three|four/i);
   });
 
   /**

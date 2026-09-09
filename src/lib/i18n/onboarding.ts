@@ -30,10 +30,9 @@ export interface OnboardingCopy {
   /**
    * A frase sob o título.
    *
-   * Não conta os itens de propósito. Ela é a mesma nas duas listas, que não têm o mesmo
-   * tamanho — quatro atalhos de teclado, três gestos de toque —, e um número aqui estaria
-   * errado em metade dos aparelhos. Também deixava a frase presa ao comprimento da lista:
-   * acrescentar uma linha exigia lembrar de reescrever o texto acima dela.
+   * Não conta os itens, e é uma só para as duas listas — que não têm o mesmo tamanho. Um
+   * número aqui estaria errado em metade dos aparelhos, e prenderia a frase ao comprimento
+   * da lista: acrescentar uma linha exigiria lembrar de reescrever o texto acima dela.
    */
   subtitle: string;
   /** Quem tem teclado: os atalhos que abrem o quadro inteiro. */
@@ -67,7 +66,7 @@ export interface OnboardingCopy {
 export const ONBOARDING: Record<Locale, OnboardingCopy> = {
   en: {
     title: "Welcome to Virtual Notes",
-    subtitle: "An empty board. Just these and you're set.",
+    subtitle: "An empty board. A few things and you're set.",
     shortcuts: [
       { keys: ["N"], label: "Note" },
       { keys: ["P"], label: "Pencil" },
@@ -82,7 +81,7 @@ export const ONBOARDING: Record<Locale, OnboardingCopy> = {
   },
   pt: {
     title: "Boas-vindas ao Virtual Notes",
-    subtitle: "O quadro está vazio. Só isto e você já sabe usar.",
+    subtitle: "O quadro está vazio. Só isso e você já sabe usar.",
     shortcuts: [
       { keys: ["N"], label: "Nota" },
       { keys: ["P"], label: "Lápis" },
