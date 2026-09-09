@@ -1532,6 +1532,79 @@ describe("Whiteboard — navegar com a rodinha apertada", () => {
     };
   }
 
+  /**
+   * O gesto da rodinha já funcionava; o que faltava era ele se anunciar (#84).
+   *
+   * Mão **fechada**, e não a mão aberta do espaço: a rodinha não promete o gesto, confirma
+   * que ele está acontecendo — ela só se conhece no `pointerdown`, que é o mesmo instante em
+   * que o pan começa.
+   */
+  it("a rodinha apertada mostra a mão, e solta a devolve", () => {
+    render(<Whiteboard />);
+    const surface = screen.getByTestId("viewport-surface");
+    expect(surface.className).toContain("cursor-default");
+
+    fireEvent.pointerDown(surface, { pointerId: 1, button: 1, clientX: 0, clientY: 0 });
+    expect(surface.className).toContain("cursor-grabbing");
+    expect(surface.dataset.wheelPanning).toBe("true");
+
+    fireEvent.pointerMove(surface, { pointerId: 1, clientX: 60, clientY: 30 });
+    // Durante o movimento nada muda: o cursor já está certo, e o pan não redesenha por evento.
+    expect(surface.className).toContain("cursor-grabbing");
+
+    fireEvent.pointerUp(surface, { pointerId: 1, clientX: 60, clientY: 30 });
+    expect(surface.className).toContain("cursor-default");
+    expect(surface.dataset.wheelPanning).toBe("false");
+  });
+
+  /**
+   * Uma notificação do sistema no meio do gesto não pode deixar a mão fechada na tela para
+   * sempre. O `pointercancel` passa pelo mesmo caminho de saída que a subida.
+   */
+  it("o gesto cancelado pelo sistema também devolve o cursor", () => {
+    render(<Whiteboard />);
+    const surface = screen.getByTestId("viewport-surface");
+
+    fireEvent.pointerDown(surface, { pointerId: 1, button: 1, clientX: 0, clientY: 0 });
+    fireEvent.pointerCancel(surface, { pointerId: 1 });
+
+    expect(surface.className).toContain("cursor-default");
+    expect(surface.dataset.wheelPanning).toBe("false");
+  });
+
+  /**
+   * Espaço ganha de tudo, inclusive de um pan já em curso: é a mesma prioridade com que os
+   * gestos se decidem no `pointerdown`, e o desenho não pode prometer diferente do gesto.
+   */
+  it("com espaço segurado, o espaço manda no cursor", () => {
+    render(<Whiteboard />);
+    const surface = screen.getByTestId("viewport-surface");
+
+    fireEvent.pointerDown(surface, { pointerId: 1, button: 1, clientX: 0, clientY: 0 });
+    fireEvent.keyDown(document, { key: " " });
+
+    // A classe do espaço, e não a da rodinha: `cursor-grab` com o `active:` que fecha a mão
+    // ao apertar. Comparada como classe inteira, porque `cursor-grabbing` aparece dentro da
+    // variante `active:` e um `toContain` solto passaria pelos dois casos.
+    const classes = surface.className.split(/\s+/);
+    expect(classes).toContain("cursor-grab");
+    expect(classes).toContain("active:cursor-grabbing");
+    expect(classes).not.toContain("cursor-grabbing");
+  });
+
+  /** A mão da rodinha ganha do lápis: navegar existe em qualquer ferramenta. */
+  it("a rodinha mostra a mão mesmo com o lápis ligado", () => {
+    render(<Whiteboard />);
+    fireEvent.keyDown(document, { key: "p" });
+    const surface = screen.getByTestId("viewport-surface");
+    expect(surface.className).toContain("cursor-pencil");
+
+    fireEvent.pointerDown(surface, { pointerId: 1, button: 1, clientX: 0, clientY: 0 });
+
+    expect(surface.className).toContain("cursor-grabbing");
+    expect(surface.className).not.toContain("cursor-pencil");
+  });
+
   it("desloca o quadro como segurar espaço", () => {
     render(<Whiteboard />);
     duploCliqueNoFundo(300, 240);

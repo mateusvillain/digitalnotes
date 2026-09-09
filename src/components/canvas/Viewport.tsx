@@ -225,6 +225,19 @@ export function Viewport({
    * algum canto escolhido por falta de resposta.
    */
   const [pointer, setPointer] = useState<Point | null>(null);
+  /**
+   * A rodinha está apertada, navegando o quadro (#84).
+   *
+   * Estado, e não classe derivada de outra coisa, porque não há de onde derivar: a barra de
+   * espaço se conhece **antes** do arrasto — a tecla desce e o cursor muda na hora, mesmo
+   * parado —, e o botão do meio só se conhece no `pointerdown`, que é o mesmo instante em
+   * que o pan começa. O cursor de mão aqui não promete o gesto; confirma que ele está
+   * acontecendo.
+   *
+   * Custa dois renders por gesto, no começo e no fim, e nenhum durante o movimento — que é
+   * a propriedade que o `cursorClass` declara logo abaixo e que o pan não pode perder.
+   */
+  const [wheelPanning, setWheelPanning] = useState(false);
 
   /*
     Sair do modo apaga o ponteiro guardado.
@@ -495,6 +508,7 @@ export function Viewport({
           pointerId: event.pointerId,
           last: { x: event.clientX, y: event.clientY },
         };
+        setWheelPanning(true);
         return;
       }
 
@@ -642,6 +656,12 @@ export function Viewport({
       // haver um `drag` correspondente, e o dedo que sai não pode levar a captura embora.
       releaseCapture(event);
 
+      // Aqui, e não só no `pointerup`: `endDrag` é o caminho comum da subida e do
+      // cancelamento, e uma notificação do sistema no meio do gesto não pode deixar a mão
+      // fechada na tela para sempre. Chamar com `false` já sendo `false` não re-renderiza —
+      // o React descarta o mesmo valor —, então os outros gestos não pagam por isto.
+      setWheelPanning(false);
+
       if (state === null || state.pointerId !== event.pointerId) return null;
 
       drag.current = null;
@@ -706,24 +726,33 @@ export function Viewport({
   const placementPoint = placing && pointer !== null ? screenToCanvas(pointer, viewport) : null;
 
   /*
-    O cursor conta qual gesto o arrasto vai virar: mão com espaço, lápis com o modo ligado,
-    cruz para mirar a nota. Na mesma ordem em que os gestos se decidem no `pointerdown`,
-    senão o desenho prometeria uma coisa e o gesto faria outra.
+    O cursor conta o que o ponteiro vai fazer: mão com espaço, mão fechada com a rodinha
+    apertada, lápis com o modo ligado, cruz para mirar a nota. Na mesma ordem em que os
+    gestos se decidem no `pointerdown`, senão o desenho prometeria uma coisa e o gesto faria
+    outra — e por isso o espaço ganha de tudo, inclusive de um pan já em curso.
+
+    A rodinha entra logo depois porque é a única entrada que não promete, e sim confirma: ela
+    só se conhece quando o pan já começou. Por isso `cursor-grabbing` direto, e não o
+    `cursor-grab` com `active:` do espaço — a mão já está fechada, e o `:active` do browser
+    não cobre o botão do meio.
 
     A ferramenta de seleção fica com a seta do sistema, e é a única que não desenha nada
     próprio. É o gesto que a pessoa já conhece de qualquer outra tela: apontar e clicar.
     A cruz que ficava aqui prometia mira, que é o que a colocação de nota faz — e num
     quadro em que a seleção é a ferramenta de partida, era a mira que estava sempre ligada.
 
-    Muda por classe, e não por estado de gesto: arrastar não precisa de re-render.
+    Muda por classe: dos gestos, só o pan pela rodinha chega a re-renderizar, e ainda assim
+    duas vezes por gesto e nenhuma durante o movimento.
   */
   const cursorClass = spaceHeld
     ? "cursor-grab active:cursor-grabbing"
-    : pencil
-      ? "cursor-pencil"
-      : placing
-        ? "cursor-crosshair"
-        : "cursor-default";
+    : wheelPanning
+      ? "cursor-grabbing"
+      : pencil
+        ? "cursor-pencil"
+        : placing
+          ? "cursor-crosshair"
+          : "cursor-default";
 
   return (
     <div
@@ -764,6 +793,7 @@ export function Viewport({
       onPointerCancel={handlePointerCancel}
       onPointerLeave={handlePointerLeave}
       data-space-held={spaceHeld}
+      data-wheel-panning={wheelPanning}
       data-pencil={pencil}
       data-placing={placing}
       data-testid="viewport-surface"
