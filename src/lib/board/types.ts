@@ -56,6 +56,16 @@ export type StrokeColor = TupleIndex<typeof STROKE_COLORS>;
  */
 export const STROKE_COLOR_BLACK = 6 satisfies StrokeColor;
 
+/**
+ * A cor com que um post-it nasce.
+ *
+ * Existe como constante porque passou a ter dois leitores: a store, que a aplica ao criar,
+ * e a pré-visualização de colocação (#73), que precisa pintar a nota que **vai** ser
+ * criada. Um `0` escrito à mão nos dois lugares deixaria a prévia mentindo no dia em que a
+ * paleta fosse reordenada.
+ */
+export const DEFAULT_NOTE_COLOR = 0 satisfies NoteColor;
+
 /** Union dos índices válidos de uma tupla: `["a", "b"]` -> `0 | 1`. */
 type TupleIndex<T extends readonly unknown[]> =
   Extract<keyof T, `${number}`> extends `${infer Index extends number}` ? Index : never;

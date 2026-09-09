@@ -22,6 +22,7 @@ import {
 import { pinchChange, pinchSnapshot, type PinchSnapshot } from "@/lib/canvas/pinch";
 import { cancelPointerGesture, releaseCapture } from "@/lib/canvas/pointer-capture";
 import { useSpaceHeld } from "@/lib/canvas/useSpaceHeld";
+import { NotePlacementPreview } from "./NotePlacement";
 import { SelectionBox } from "./SelectionBox";
 import { StrokePreview } from "./Strokes";
 import type { ViewportApi } from "@/lib/canvas/useViewport";
@@ -57,6 +58,10 @@ type ViewportProps = Pick<ViewportApi, "viewport" | "pan" | "zoomBy"> & {
   onSelectionRect?: (rect: Rect) => void;
   /** Modo lápis ligado: arrastar desenha em vez de selecionar (#68). */
   pencil?: boolean;
+  /** Modo de colocação ligado: uma nota translúcida segue o cursor e o clique a fixa (#73). */
+  placing?: boolean;
+  /** Clique com o modo de colocação ligado, já convertido para coordenadas de canvas. */
+  onPlaceNote?: (point: Point) => void;
   /** Traço concluído, em coordenadas de canvas, ainda sem simplificação. */
   onStrokeEnd?: (points: Point[]) => void;
   children?: ReactNode;
@@ -153,6 +158,8 @@ export function Viewport({
   onSelectionStart,
   onSelectionRect,
   pencil = false,
+  placing = false,
+  onPlaceNote,
   onStrokeEnd,
   children,
 }: ViewportProps) {
@@ -204,6 +211,34 @@ export function Viewport({
    * de solto, e desenhar às cegas não é desenhar.
    */
   const [drawing, setDrawing] = useState<Point[] | null>(null);
+  /**
+   * Onde o ponteiro está, em pixels de tela relativos ao canto da superfície.
+   *
+   * Em coordenadas de **tela**, e não de canvas, apesar de a prévia ser desenhada dentro da
+   * camada transformada. É o que mantém a nota fantasma sob o cursor quando o quadro anda
+   * por baixo dela: guardado em canvas, o fantasma ficaria grudado no ponto do quadro e
+   * escaparia do cursor durante um pan. A conversão acontece no render, com o viewport de
+   * agora.
+   *
+   * `null` é a resposta honesta para "não há ponteiro sobre o quadro" — logo depois de `N`
+   * com o cursor fora da janela, por exemplo. Sem esse caso a prévia teria de aparecer em
+   * algum canto escolhido por falta de resposta.
+   */
+  const [pointer, setPointer] = useState<Point | null>(null);
+
+  /*
+    Sair do modo apaga o ponteiro guardado.
+
+    Sem isto, ligar o modo de novo pintaria a prévia no último ponto conhecido antes de o
+    cursor se mexer — que é exatamente o canto arbitrário que o estado `null` existe para
+    evitar, só que com um lugar plausível o bastante para ninguém desconfiar.
+
+    Ajuste durante o render, e não num efeito: é o mesmo padrão que o quadro usa para a
+    trava da apresentação. O efeito só rodaria depois da pintura, e a prévia velha chegaria
+    a aparecer por um quadro; aqui o React reinicia o render com o valor novo antes de
+    pintar, e ninguém vê o estado intermediário.
+  */
+  if (!placing && pointer !== null) setPointer(null);
 
   /** Posição do ponteiro relativa ao canto do container — é o que as conversões esperam. */
   const localPoint = useCallback((event: { clientX: number; clientY: number }): Point => {
@@ -325,6 +360,29 @@ export function Viewport({
   const handlePointerDownCapture = useCallback(
     (event: PointerEvent<HTMLDivElement>) => {
       /*
+        O modo de colocação come o gesto inteiro, antes de tudo (#73).
+
+        Antes da contagem de dedos porque ele termina no primeiro toque: não existe pinça
+        durante uma colocação, e não existe segundo dedo — o modo se desliga no `pointerdown`
+        que fixa a nota. Antes do lápis porque os dois nunca estão ligados ao mesmo tempo;
+        quem garante isso é o quadro, que guarda um modo só.
+
+        Espaço continua ganhando, pela mesma razão de sempre: navegar é o gesto que precisa
+        existir em qualquer modo, e alguém que segurou espaço está procurando onde colocar a
+        nota, não colocando-a.
+
+        `stopPropagation` é o que faz o clique valer também sobre um post-it: sem ele a nota
+        de baixo interceptaria o evento e viraria arraste, e colocar uma nota em cima de
+        outra é um pedido perfeitamente comum.
+      */
+      if (placing && !spaceHeld && event.button === 0) {
+        event.stopPropagation();
+        event.preventDefault();
+        onPlaceNote?.(screenToCanvas(localPoint(event), viewportRef.current));
+        return;
+      }
+
+      /*
         Dedos são contados na descida, antes de qualquer post-it parar o evento: com a
         contagem só no fundo, pinçar num quadro cheio — onde é mais provável encostar numa
         nota — simplesmente não funcionaria, e no toque não sobra botão de zoom.
@@ -402,7 +460,7 @@ export function Viewport({
         last: { x: event.clientX, y: event.clientY },
       };
     },
-    [pencil, restartPinch, spaceHeld, startDrawing],
+    [localPoint, onPlaceNote, pencil, placing, restartPinch, spaceHeld, startDrawing],
   );
 
   const handlePointerDown = useCallback(
@@ -413,6 +471,10 @@ export function Viewport({
       if (event.button !== 0 && event.button !== MIDDLE_BUTTON) return;
       // Cada handler declara a própria condição: com espaço, o gesto é da captura acima.
       if (spaceHeld) return;
+      // Colocar uma nota também: a captura já tratou o clique e não deixou gesto nenhum
+      // armado, então sem esta linha o mesmo evento ainda começaria um retângulo de seleção
+      // por baixo da nota recém-colocada.
+      if (placing) return;
 
       // Defesa contra um `pointerup` perdido, que deixaria um gesto pendurado.
       if (drag.current !== null) return;
@@ -470,11 +532,16 @@ export function Viewport({
         started: false,
       };
     },
-    [isBackground, localPoint, pencil, spaceHeld],
+    [isBackground, localPoint, pencil, placing, spaceHeld],
   );
 
   const handlePointerMove = useCallback(
     (event: PointerEvent<HTMLDivElement>) => {
+      // Antes de qualquer gesto, e fora de todos eles: a prévia da colocação segue o cursor
+      // mesmo quando ele passa por cima de um post-it, porque a nota nova pode ser colocada
+      // ali também. Só custa um re-render enquanto o modo está ligado.
+      if (placing) setPointer(localPoint(event));
+
       const touch = touches.current.get(event.pointerId);
       if (touch) {
         touches.current.set(event.pointerId, {
@@ -533,8 +600,16 @@ export function Viewport({
       setMarquee(rect);
       onSelectionRect?.(rect);
     },
-    [localPoint, onSelectionRect, onSelectionStart, pan, zoomBy],
+    [localPoint, onSelectionRect, onSelectionStart, pan, placing, zoomBy],
   );
+
+  /**
+   * O cursor saiu do quadro: não há mais ponto para a prévia obedecer.
+   *
+   * `pointerleave` e não `pointerout`: o segundo dispara também ao passar de um post-it
+   * para o fundo, e a prévia piscaria a cada nota que o cursor cruzasse no caminho.
+   */
+  const handlePointerLeave = useCallback(() => setPointer(null), []);
 
   /**
    * Fecha o que este ponteiro tinha em aberto e devolve o gesto que ele era, ou `null`.
@@ -622,6 +697,15 @@ export function Viewport({
   const origin = canvasToScreen({ x: 0, y: 0 }, viewport);
 
   /*
+    Onde a nota fantasma cai, em coordenadas de canvas.
+
+    Convertido no render, e não guardado assim: é o que faz a prévia acompanhar o pan e o
+    zoom sem depender de o cursor se mexer. Mudou o viewport, muda o ponto — o fantasma
+    continua sob o cursor mesmo quando quem andou foi o quadro.
+  */
+  const placementPoint = placing && pointer !== null ? screenToCanvas(pointer, viewport) : null;
+
+  /*
     O cursor conta qual gesto o arrasto vai virar: mão com espaço, lápis com o modo ligado,
     cruz para selecionar. Na mesma ordem em que os gestos se decidem no `pointerdown`, senão
     o desenho prometeria uma coisa e o gesto faria outra.
@@ -657,8 +741,10 @@ export function Viewport({
       onPointerMove={handlePointerMove}
       onPointerUp={handlePointerUp}
       onPointerCancel={handlePointerCancel}
+      onPointerLeave={handlePointerLeave}
       data-space-held={spaceHeld}
       data-pencil={pencil}
+      data-placing={placing}
       data-testid="viewport-surface"
     >
       <div
@@ -671,6 +757,12 @@ export function Viewport({
       >
         {children}
         <StrokePreview points={drawing} />
+        {/*
+          Depois dos post-its, e não antes: a nota que está sendo colocada vai nascer na
+          frente de todas (a store a cria no topo do z), e uma prévia desenhada por baixo
+          prometeria o contrário no instante em que o cursor passa sobre uma nota existente.
+        */}
+        <NotePlacementPreview at={placementPoint} />
         <SelectionBox rect={marquee} />
       </div>
     </div>

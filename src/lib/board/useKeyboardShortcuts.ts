@@ -6,8 +6,14 @@ import { isEditableTarget } from "@/lib/dom/target";
 interface KeyboardShortcutsOptions {
   /** Apagar o que está marcado. Não recebe nada: quem sabe o que está marcado é quem trata. */
   onDelete: () => void;
-  /** Criar um post-it sem tirar as mãos do teclado. */
-  onCreateNote: () => void;
+  /**
+   * `N`: entrar e sair do modo de colocação de nota (#73).
+   *
+   * Deixou de criar o post-it na hora. `N` agora arma a colocação, e é o clique seguinte
+   * que diz onde a nota fica — a mesma precisão que o duplo clique sempre teve, agora
+   * disponível para quem está no teclado. Como o lápis, a mesma tecla liga e desliga.
+   */
+  onPlaceNote: () => void;
   /** Salvar o quadro — a mesma ação do botão, num atalho que todo mundo já tem no dedo. */
   onSave: () => void;
   /** Ligar e desligar o modo lápis (#68). A mesma tecla faz as duas coisas. */
@@ -16,8 +22,8 @@ interface KeyboardShortcutsOptions {
    * `Esc`: sair do modo em curso.
    *
    * Genérico de propósito. `Esc` significa "desfaz o que está ligado", e quem sabe o que
-   * está ligado é o quadro — hoje o lápis, e o que vier depois entra no mesmo lugar em vez
-   * de pendurar um segundo ouvinte de teclado na mesma tecla.
+   * está ligado é o quadro — o lápis e a colocação de nota, hoje —, e o que vier depois
+   * entra no mesmo lugar em vez de pendurar um segundo ouvinte de teclado na mesma tecla.
    */
   onCancel: () => void;
 }
@@ -49,7 +55,7 @@ function isBareKey(event: KeyboardEvent): boolean {
  */
 export function useKeyboardShortcuts({
   onDelete,
-  onCreateNote,
+  onPlaceNote,
   onSave,
   onTogglePencil,
   onCancel,
@@ -60,10 +66,10 @@ export function useKeyboardShortcuts({
    * Sem isto, um `onDelete` recriado a cada render faria o efeito remover e registrar o
    * ouvinte no documento a cada quadro do arraste.
    */
-  const handlers = useRef({ onDelete, onCreateNote, onSave, onTogglePencil, onCancel });
+  const handlers = useRef({ onDelete, onPlaceNote, onSave, onTogglePencil, onCancel });
   useEffect(() => {
-    handlers.current = { onDelete, onCreateNote, onSave, onTogglePencil, onCancel };
-  }, [onDelete, onCreateNote, onSave, onTogglePencil, onCancel]);
+    handlers.current = { onDelete, onPlaceNote, onSave, onTogglePencil, onCancel };
+  }, [onDelete, onPlaceNote, onSave, onTogglePencil, onCancel]);
 
   useEffect(() => {
     function handleKeyDown(event: KeyboardEvent): void {
@@ -101,7 +107,7 @@ export function useKeyboardShortcuts({
       // querer não deveria ficar sem o atalho.
       if (event.key.toLowerCase() === "n") {
         event.preventDefault();
-        handlers.current.onCreateNote();
+        handlers.current.onPlaceNote();
         return;
       }
 

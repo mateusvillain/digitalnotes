@@ -15,6 +15,7 @@
 
 import { normalizeNote, normalizeStroke } from "./schema";
 import {
+  DEFAULT_NOTE_COLOR,
   NOTE_SIZE,
   SCHEMA_VERSION,
   createEmptyBoard,
@@ -173,7 +174,7 @@ export function createBoardStore(initial: Board = createEmptyBoard()): BoardStor
       y: input.y,
       w: input.w ?? NOTE_SIZE.defaultWidth,
       h: input.h ?? NOTE_SIZE.defaultHeight,
-      color: input.color ?? 0,
+      color: input.color ?? DEFAULT_NOTE_COLOR,
       text: input.text ?? "",
       // Post-it novo nasce na frente: foi o usuário que acabou de colocá-lo ali.
       z: topZ(board.notes) + 1,
