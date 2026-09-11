@@ -20,6 +20,7 @@ import { useShareBoard } from "@/lib/board/useShareBoard";
 import { Onboarding } from "./Onboarding";
 import { Board } from "./Board";
 import { Viewport } from "./Viewport";
+import { SelectionActions } from "./SelectionActions";
 import { SelectionToolbar } from "./SelectionToolbar";
 import { ViewportControls } from "./ViewportControls";
 
@@ -346,6 +347,30 @@ export function Whiteboard({ initialBoard, autosave }: WhiteboardProps) {
             <SelectionToolbar rects={board.selectedRects} viewport={controls.viewport}>
               <ColorPicker value={board.selectionColor} onChange={board.colorSelection} />
             </SelectionToolbar>
+          </div>
+        )}
+
+        {/*
+          Remover e duplicar no toque (#99): fixos na base da tela, e não ancorados na
+          seleção como a barra de cor acima — o alvo inclui traço sozinho, que aquela barra
+          esconde de propósito, e duplicar essa regra aqui só multiplicaria onde a barra
+          pode aparecer sem multiplicar o que ela mostra.
+
+          Mesma guarda de gesto da barra de cor, pelo mesmo motivo, e a mais: só em aparelho
+          de toque, porque em desktop as duas ações já têm caminho pelo teclado (#85, #88).
+        */}
+        {!touchPrimary || inGesture || board.selectedRects.length === 0 ? null : (
+          // Mesmo respiro dos controles de zoom, que ficam no outro canto da mesma borda
+          // (`AppShell`): a faixa inteira encostada em `bottom-0`, com `p-4` empurrando a
+          // caixa para dentro — e não um `bottom-4` na caixa sozinha, que por si só já dava
+          // a mesma distância, mas divergia do padrão que o resto da moldura usa.
+          <div className="pointer-events-none absolute inset-x-0 bottom-0 z-30 flex justify-center p-4">
+            <div className="pointer-events-auto">
+              <SelectionActions
+                onRemove={board.deleteSelection}
+                onDuplicate={board.duplicateSelection}
+              />
+            </div>
           </div>
         )}
       </div>

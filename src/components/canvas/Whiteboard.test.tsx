@@ -4052,3 +4052,142 @@ describe("Whiteboard — modo lápis no toque", () => {
     expect(screen.getByTestId("viewport-layer").style.transform).toContain("translate(60px, 40px)");
   });
 });
+
+describe("Whiteboard — remover e duplicar no toque (#99)", () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  function criaPostIt(x: number, y: number): void {
+    duploCliqueNoFundo(x, y);
+    fireEvent.keyDown(screen.getByTestId("post-it-editor"), { key: "Escape" });
+  }
+
+  /** Rabisca com o lápis, ligando o modo antes e desligando depois. */
+  function desenha(de: [number, number], ate: [number, number]): void {
+    const surface = screen.getByTestId("viewport-surface");
+
+    fireEvent.keyDown(document, { key: "p" });
+    fireEvent.pointerDown(surface, { pointerId: 1, button: 0, clientX: de[0], clientY: de[1] });
+    fireEvent.pointerMove(surface, { pointerId: 1, clientX: ate[0], clientY: ate[1] });
+    fireEvent.pointerUp(surface, { pointerId: 1, clientX: ate[0], clientY: ate[1] });
+    fireEvent.keyDown(document, { key: "Escape" });
+  }
+
+  function tracos(): HTMLElement[] {
+    return screen.queryAllByTestId("stroke-group");
+  }
+
+  /** Clica no alvo do n-ésimo traço, que é a faixa larga em volta da tinta. */
+  function clicaNoTraco(indice: number): void {
+    const alvo = tracos()[indice]?.querySelector('[data-testid="stroke-hit"]');
+    if (alvo === null || alvo === undefined) throw new Error(`traço ${indice} não encontrado`);
+
+    fireEvent.pointerDown(alvo, { pointerId: 5, button: 0 });
+    fireEvent.pointerUp(alvo, { pointerId: 5 });
+  }
+
+  function botaoRemover(): HTMLElement | null {
+    return screen.queryByLabelText(UI.en.selectionActions.remove);
+  }
+
+  function botaoDuplicar(): HTMLElement | null {
+    return screen.queryByLabelText(UI.en.selectionActions.duplicate);
+  }
+
+  it("não aparece em desktop, mesmo com algo marcado", () => {
+    aparelhoDeToque(false);
+    render(<Whiteboard />);
+    criaPostIt(300, 300);
+
+    expect(botaoRemover()).toBeNull();
+    expect(botaoDuplicar()).toBeNull();
+  });
+
+  it("não aparece no toque sem nada marcado", () => {
+    aparelhoDeToque(true);
+    render(<Whiteboard />);
+
+    expect(botaoRemover()).toBeNull();
+    expect(botaoDuplicar()).toBeNull();
+  });
+
+  it("aparece no toque com um post-it marcado", () => {
+    aparelhoDeToque(true);
+    render(<Whiteboard />);
+    criaPostIt(300, 300);
+
+    expect(botaoRemover()).not.toBeNull();
+    expect(botaoDuplicar()).not.toBeNull();
+  });
+
+  // Critério de aceite: a barra de cor esconde uma seleção só de traço de propósito (#70),
+  // mas os ícones de remover e duplicar do toque não têm essa restrição.
+  it("aparece no toque com um traço marcado, mesmo sem post-it na seleção", () => {
+    aparelhoDeToque(true);
+    render(<Whiteboard />);
+    desenha([100, 100], [300, 100]);
+    clicaNoTraco(0);
+
+    expect(botaoRemover()).not.toBeNull();
+    expect(botaoDuplicar()).not.toBeNull();
+  });
+
+  it("some durante um arraste em curso", () => {
+    aparelhoDeToque(true);
+    render(<Whiteboard />);
+    criaPostIt(300, 300);
+    const element = postIt(0);
+
+    fireEvent.pointerDown(element, { pointerId: 1, button: 0, clientX: 0, clientY: 0 });
+    fireEvent.pointerMove(element, { pointerId: 1, clientX: 40, clientY: 40 });
+    expect(botaoRemover()).toBeNull();
+
+    fireEvent.pointerUp(element, { pointerId: 1, clientX: 40, clientY: 40 });
+    expect(botaoRemover()).not.toBeNull();
+  });
+
+  it("remover apaga a seleção, como o Delete", async () => {
+    const user = userEvent.setup();
+    aparelhoDeToque(true);
+    render(<Whiteboard />);
+    criaPostIt(300, 300);
+
+    await user.click(defined(botaoRemover() ?? undefined, "o botão de remover"));
+
+    expect(postIts()).toEqual([]);
+  });
+
+  it("duplicar cria uma cópia deslocada do original, e a deixa marcada", async () => {
+    const user = userEvent.setup();
+    aparelhoDeToque(true);
+    render(<Whiteboard />);
+    criaPostIt(300, 300);
+
+    await user.click(defined(botaoDuplicar() ?? undefined, "o botão de duplicar"));
+
+    expect(postIts()).toHaveLength(2);
+    expect(postIt(1).style.left).not.toBe(postIt(0).style.left);
+    expect(postIt(1).style.top).not.toBe(postIt(0).style.top);
+    expect(postIt(1).dataset.selected).toBe("true");
+    expect(postIt(0).dataset.selected).toBe("false");
+  });
+
+  it("duplica post-it e traço da mesma seleção, num passo só de desfazer", async () => {
+    const user = userEvent.setup();
+    aparelhoDeToque(true);
+    render(<Whiteboard />);
+    criaPostIt(300, 300);
+    desenha([400, 400], [500, 500]);
+    fireEvent.keyDown(document, { key: "a", ctrlKey: true });
+
+    await user.click(defined(botaoDuplicar() ?? undefined, "o botão de duplicar"));
+
+    expect(postIts()).toHaveLength(2);
+    expect(tracos()).toHaveLength(2);
+
+    fireEvent.keyDown(document, { key: "z", ctrlKey: true });
+
+    // Um `Ctrl+Z` só desfaz a duplicação inteira: post-it e traço somem juntos.
+    expect(postIts()).toHaveLength(1);
+    expect(tracos()).toHaveLength(1);
+  });
+});

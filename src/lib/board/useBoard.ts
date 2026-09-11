@@ -193,6 +193,11 @@ export interface BoardApi {
   /** Apaga o que está marcado — notas e traços — e esvazia a seleção. Sem nada, não faz nada. */
   deleteSelection: () => void;
   /**
+   * Duplica o que está marcado — notas e traços, juntos — e marca a cópia (#99). Sem nada,
+   * não faz nada.
+   */
+  duplicateSelection: () => void;
+  /**
    * O que a borracha já tocou na passada em curso, ainda não gravado (#98).
    *
    * Por id do traço original: `null` quando a borracha comeu o traço inteiro, ou a lista dos
@@ -723,6 +728,52 @@ export function useBoard({ initialBoard, autosave = true }: UseBoardOptions = {}
     publishSelection(EMPTY_SELECTION);
   }, [publishSelection, store]);
 
+  /**
+   * Duplica o que está marcado — notas e traços — numa publicação só (#99).
+   *
+   * O mesmo gesto de `pasteFromClipboard`, sem a área de transferência do sistema no meio:
+   * direto da seleção atual para uma cópia dela, deslocada por `PASTE_OFFSET` para as duas
+   * caixas não ficarem coincidentes. Sem contador de cascata próprio — a cópia nasce
+   * marcada, então duplicar de novo em seguida parte da posição da cópia, e o deslocamento
+   * se acumula sozinho a cada chamada, como colar repetido.
+   */
+  const duplicateSelection = useCallback(() => {
+    const current = selectionRef.current;
+    if (isEmpty(current)) return;
+
+    const board = store.getBoard();
+    const notes = selectedNotes(board.notes, current);
+    const strokes = selectedStrokes(board.strokes, current);
+
+    const criados = store.addElements(
+      notes.map((note) => ({
+        x: note.x + PASTE_OFFSET,
+        y: note.y + PASTE_OFFSET,
+        w: note.w,
+        h: note.h,
+        color: note.color,
+        text: note.text,
+      })),
+      strokes.map((stroke) => ({
+        color: stroke.color,
+        points: translateStrokePoints(stroke, { x: PASTE_OFFSET, y: PASTE_OFFSET }),
+      })),
+    );
+
+    // O lote inteiro pode ter sido descartado pelo contrato — mesma guarda de
+    // `pasteFromClipboard`. Sem nada criado não há o que marcar.
+    if (criados.notes.length === 0 && criados.strokes.length === 0) return;
+
+    // A cópia nasce marcada, como o colado: é sobre ela que a próxima ação age, e é o que
+    // torna visível que algo aconteceu quando a cópia cai atrás do original.
+    publishSelection({
+      notes: new Set(criados.notes.map((note) => note.id)),
+      strokes: new Set(criados.strokes.map((stroke) => stroke.id)),
+    });
+    // Mesma razão de `pasteFromClipboard`: duplicar dez post-its não pode abrir um editor.
+    setEditingId(null);
+  }, [publishSelection, store]);
+
   /** Zera o que a passada anterior tinha tocado — o começo de um novo gesto de borracha. */
   const beginErasing = useCallback(() => publishErasing(EMPTY_ERASING), [publishErasing]);
 
@@ -889,6 +940,7 @@ export function useBoard({ initialBoard, autosave = true }: UseBoardOptions = {}
     selectionColor,
     colorSelection,
     deleteSelection,
+    duplicateSelection,
     erasing,
     beginErasing,
     eraseSegment,

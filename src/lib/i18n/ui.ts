@@ -48,6 +48,13 @@ export interface UiCopy {
   };
   /** Dica e `aria-label` do botão que liga o modo borracha (#98). */
   eraser: { action: string };
+  /**
+   * Dica e `aria-label` dos ícones de remover e duplicar a seleção, no toque (#99).
+   *
+   * Só aparecem em aparelho de toque — em desktop as duas ações já têm caminho pelo
+   * teclado — mas o texto existe nos dois idiomas como o resto da interface.
+   */
+  selectionActions: { remove: string; duplicate: string };
   note: {
     /**
      * Nome da peça, no botão que arma a colocação (#73) e na lista de teclado da
@@ -97,6 +104,7 @@ export const UI: Record<Locale, UiCopy> = {
     history: { undo: "Undo", redo: "Redo" },
     pencil: { action: "Pencil" },
     eraser: { action: "Eraser" },
+    selectionActions: { remove: "Delete selection", duplicate: "Duplicate selection" },
     note: {
       action: "Sticky Note",
       empty: "Empty note",
@@ -152,6 +160,7 @@ export const UI: Record<Locale, UiCopy> = {
     history: { undo: "Desfazer", redo: "Refazer" },
     pencil: { action: "Lápis" },
     eraser: { action: "Borracha" },
+    selectionActions: { remove: "Apagar seleção", duplicate: "Duplicar seleção" },
     note: {
       action: "Nota adesiva",
       empty: "Nota vazia",
