@@ -360,7 +360,11 @@ export function Whiteboard({ initialBoard, autosave }: WhiteboardProps) {
           de toque, porque em desktop as duas ações já têm caminho pelo teclado (#85, #88).
         */}
         {!touchPrimary || inGesture || board.selectedRects.length === 0 ? null : (
-          <div className="pointer-events-none absolute inset-x-0 bottom-4 z-30 flex justify-center">
+          // Mesmo respiro dos controles de zoom, que ficam no outro canto da mesma borda
+          // (`AppShell`): a faixa inteira encostada em `bottom-0`, com `p-4` empurrando a
+          // caixa para dentro — e não um `bottom-4` na caixa sozinha, que por si só já dava
+          // a mesma distância, mas divergia do padrão que o resto da moldura usa.
+          <div className="pointer-events-none absolute inset-x-0 bottom-0 z-30 flex justify-center p-4">
             <div className="pointer-events-auto">
               <SelectionActions
                 onRemove={board.deleteSelection}
