@@ -1058,3 +1058,143 @@ describe("useBoard — mover a seleção pelo teclado", () => {
     );
   });
 });
+
+describe("useBoard — borracha (#98)", () => {
+  /** Um quadro com dois traços separados e um post-it, cada um com posição conhecida. */
+  function comDoisTraçosEUmaNota() {
+    const hook = renderHook(() => useBoard());
+    act(() =>
+      hook.result.current.addStroke([
+        { x: 0, y: 0 },
+        { x: 40, y: 0 },
+      ]),
+    );
+    act(() =>
+      hook.result.current.addStroke([
+        { x: 0, y: 200 },
+        { x: 40, y: 200 },
+      ]),
+    );
+    act(() => hook.result.current.createNoteAt({ x: 500, y: 500 }));
+
+    return {
+      hook,
+      primeiro: defined(hook.result.current.strokes[0], "o primeiro traço"),
+      segundo: defined(hook.result.current.strokes[1], "o segundo traço"),
+      nota: defined(hook.result.current.notes[0], "o post-it"),
+    };
+  }
+
+  it("some da lista na hora em que a borracha toca, antes de soltar o ponteiro", () => {
+    const { hook, primeiro } = comDoisTraçosEUmaNota();
+    const podiaDesfazerAntes = hook.result.current.canUndo;
+
+    act(() => hook.result.current.beginErasing());
+    act(() => hook.result.current.eraseSegment({ x: 20, y: 0 }, { x: 20, y: 0 }));
+
+    expect(hook.result.current.strokes.map((s) => s.id)).not.toContain(primeiro.id);
+    // Ainda não gravado: a passada em curso não é, por si só, um passo novo de histórico.
+    expect(hook.result.current.canUndo).toBe(podiaDesfazerAntes);
+  });
+
+  it("um ponto só, sem arrasto, já apaga o traço embaixo (toque simples)", () => {
+    const { hook, primeiro, segundo } = comDoisTraçosEUmaNota();
+
+    act(() => hook.result.current.beginErasing());
+    act(() => hook.result.current.eraseSegment({ x: 20, y: 0 }, { x: 20, y: 0 }));
+    act(() => hook.result.current.endErasing());
+
+    expect(hook.result.current.strokes.map((s) => s.id)).toEqual([segundo.id]);
+    expect(hook.result.current.strokes.map((s) => s.id)).not.toContain(primeiro.id);
+  });
+
+  it("não afeta post-it: a borracha só apaga traço", () => {
+    const { hook, primeiro, nota } = comDoisTraçosEUmaNota();
+
+    act(() => hook.result.current.beginErasing());
+    // O segmento cobre a área toda, inclusive onde o post-it está.
+    act(() => hook.result.current.eraseSegment({ x: 0, y: 0 }, { x: 600, y: 600 }));
+    act(() => hook.result.current.endErasing());
+
+    expect(hook.result.current.strokes.map((s) => s.id)).not.toContain(primeiro.id);
+    expect(hook.result.current.notes.map((n) => n.id)).toEqual([nota.id]);
+  });
+
+  it("ignora o traço fora do alcance do segmento", () => {
+    const { hook } = comDoisTraçosEUmaNota();
+    const antes = hook.result.current.strokes;
+
+    act(() => hook.result.current.beginErasing());
+    act(() => hook.result.current.eraseSegment({ x: 900, y: 900 }, { x: 950, y: 950 }));
+    act(() => hook.result.current.endErasing());
+
+    expect(hook.result.current.strokes).toBe(antes);
+  });
+
+  it("uma passada que apaga vários traços é um passo de desfazer só", () => {
+    const { hook, primeiro, segundo } = comDoisTraçosEUmaNota();
+
+    act(() => hook.result.current.beginErasing());
+    act(() => hook.result.current.eraseSegment({ x: 20, y: 0 }, { x: 20, y: 0 }));
+    act(() => hook.result.current.eraseSegment({ x: 20, y: 0 }, { x: 20, y: 200 }));
+    act(() => hook.result.current.endErasing());
+
+    expect(hook.result.current.strokes).toEqual([]);
+
+    act(() => hook.result.current.undo());
+
+    // Um `Ctrl+Z` só devolve os dois: a passada inteira foi uma remoção, não duas.
+    expect(hook.result.current.strokes.map((s) => s.id).sort()).toEqual(
+      [primeiro.id, segundo.id].sort(),
+    );
+  });
+
+  it("um traço já tocado na passada não é testado de novo, mesmo continuando sob a borracha", () => {
+    const { hook, primeiro } = comDoisTraçosEUmaNota();
+
+    act(() => hook.result.current.beginErasing());
+    act(() => hook.result.current.eraseSegment({ x: 0, y: 0 }, { x: 40, y: 0 }));
+    act(() => hook.result.current.eraseSegment({ x: 40, y: 0 }, { x: 0, y: 0 }));
+    act(() => hook.result.current.endErasing());
+
+    expect(hook.result.current.strokes.map((s) => s.id)).not.toContain(primeiro.id);
+  });
+
+  it("soltar sem ter tocado nada não grava e não mexe no histórico", () => {
+    const { hook } = comDoisTraçosEUmaNota();
+    const antes = hook.result.current.strokes;
+    const podiaDesfazerAntes = hook.result.current.canUndo;
+
+    act(() => hook.result.current.beginErasing());
+    act(() => hook.result.current.endErasing());
+
+    expect(hook.result.current.strokes).toBe(antes);
+    expect(hook.result.current.canUndo).toBe(podiaDesfazerAntes);
+  });
+
+  it("tira da seleção o traço que a borracha apagou", () => {
+    const { hook, primeiro } = comDoisTraçosEUmaNota();
+    act(() => hook.result.current.selectElement("stroke", primeiro.id));
+
+    act(() => hook.result.current.beginErasing());
+    act(() => hook.result.current.eraseSegment({ x: 20, y: 0 }, { x: 20, y: 0 }));
+    act(() => hook.result.current.endErasing());
+
+    expect([...hook.result.current.selection.strokes]).toEqual([]);
+  });
+
+  it("uma nova passada esquece o que a anterior tinha tocado", () => {
+    const { hook, segundo } = comDoisTraçosEUmaNota();
+
+    act(() => hook.result.current.beginErasing());
+    act(() => hook.result.current.eraseSegment({ x: 20, y: 0 }, { x: 20, y: 0 }));
+    act(() => hook.result.current.endErasing());
+    expect(hook.result.current.strokes.map((s) => s.id)).toEqual([segundo.id]);
+
+    act(() => hook.result.current.beginErasing());
+    act(() => hook.result.current.eraseSegment({ x: 20, y: 200 }, { x: 20, y: 200 }));
+    act(() => hook.result.current.endErasing());
+
+    expect(hook.result.current.strokes).toEqual([]);
+  });
+});

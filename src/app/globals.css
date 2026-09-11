@@ -128,6 +128,20 @@ body {
 }
 
 /**
+ * Cursor do modo borracha (#98). Mesma razão do cursor do lápis, mesmo ponto quente: é a
+ * ferramenta que troca o que arrastar faz, e precisa se anunciar antes do gesto.
+ *
+ * O desenho é o mesmo do ícone do botão em src/components/ui/EraserButton.tsx — as duas
+ * cópias precisam andar juntas, pelo mesmo motivo do lápis.
+ */
+.cursor-eraser {
+  cursor:
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='%2318181b' stroke-width='1.75' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M4.5 14.5 12.5 6.5a2 2 0 0 1 2.8 0l3.2 3.2a2 2 0 0 1 0 2.8L11.5 19.5H7z'/%3E%3Cpath d='M7 19.5H20'/%3E%3C/svg%3E")
+      4 20,
+    crosshair;
+}
+
+/**
  * Entrada da apresentação do quadro vazio.
  *
  * Um fade curto com um passo para cima, e não um simples aparecer: a peça nasce junto com

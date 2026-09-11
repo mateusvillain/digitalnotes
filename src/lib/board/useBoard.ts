@@ -22,6 +22,7 @@ import {
   STROKE_MIN_SIZE,
   scaleStrokePoints,
   strokeBounds,
+  strokeIntersectsSegment,
   translateStrokePoints,
 } from "./stroke-geometry";
 import { parseClipboard, serializeSelection } from "./clipboard";
@@ -47,6 +48,9 @@ import {
  * onde se estava olhando.
  */
 const PASTE_OFFSET = 20;
+
+/** Conjunto vazio compartilhado: evita recriar uma instância nova a cada passada sem toque. */
+const EMPTY_SET: ReadonlySet<string> = new Set();
 
 /**
  * O elemento em redimensionamento e o tamanho que ele tem agora, durante o gesto.
@@ -185,6 +189,20 @@ export interface BoardApi {
   colorSelection: (color: NoteColor) => void;
   /** Apaga o que está marcado — notas e traços — e esvazia a seleção. Sem nada, não faz nada. */
   deleteSelection: () => void;
+  /**
+   * Ids de traço tocados pela borracha na passada em curso, ainda não gravados (#98).
+   *
+   * `strokes` já sai sem eles — é o que faz o traço sumir no instante em que a borracha o
+   * toca —, mas a remoção só chega à store em `endErasing`, para a passada inteira ser um
+   * passo só de desfazer.
+   */
+  erasing: ReadonlySet<string>;
+  /** Começa uma passada de borracha: zera o que a passada anterior tinha tocado. */
+  beginErasing: () => void;
+  /** Testa o trecho de `a` a `b` contra todo traço, e soma ao que a passada já tocou. */
+  eraseSegment: (a: Point, b: Point) => void;
+  /** Grava a remoção da passada inteira numa publicação só, e a encerra. */
+  endErasing: () => void;
   /** Grava o texto e fecha a edição. */
   commitText: (id: string, text: string) => void;
   /** Desfaz a última alteração do quadro (#86). Sem nada a desfazer, não faz nada. */
@@ -235,6 +253,7 @@ export function useBoard({ initialBoard, autosave = true }: UseBoardOptions = {}
   const selectionBeforeRect = useRef<Selection>(EMPTY_SELECTION);
   const [dragOffset, setDragOffset] = useState<Point | null>(null);
   const [resizing, setResizing] = useState<Resizing | null>(null);
+  const [erasing, setErasing] = useState<ReadonlySet<string>>(EMPTY_SET);
 
   /**
    * Cópias em ref do que os callbacks de gesto precisam ler.
@@ -250,6 +269,7 @@ export function useBoard({ initialBoard, autosave = true }: UseBoardOptions = {}
   const selectionRef = useRef<Selection>(EMPTY_SELECTION);
   const dragOffsetRef = useRef<Point | null>(null);
   const resizingRef = useRef<Resizing | null>(null);
+  const erasingRef = useRef<ReadonlySet<string>>(EMPTY_SET);
 
   /**
    * Publica a seleção na ref e no estado, nessa ordem.
@@ -275,6 +295,12 @@ export function useBoard({ initialBoard, autosave = true }: UseBoardOptions = {}
   const publishResizing = useCallback((next: Resizing | null) => {
     resizingRef.current = next;
     setResizing(next);
+  }, []);
+
+  /** Publica o que a passada de borracha já tocou na ref e no estado, nessa ordem. */
+  const publishErasing = useCallback((next: ReadonlySet<string>) => {
+    erasingRef.current = next;
+    setErasing(next);
   }, []);
 
   // O mesmo `getBoard` nos dois argumentos: o board inicial no servidor é o mesmo objeto do
@@ -627,6 +653,18 @@ export function useBoard({ initialBoard, autosave = true }: UseBoardOptions = {}
 
   const selectionColor = useMemo(() => sharedColor(selected), [selected]);
 
+  /**
+   * Os traços que a passada de borracha em curso já tocou não são desenhados (#98).
+   *
+   * Some no instante do toque, e não só quando o gesto termina: é o que a promessa de
+   * "apaga ao tocar, sem esperar soltar" exige. A remoção de verdade, na store, só acontece
+   * em `endErasing` — até lá isto é só a lista que se mostra, não a que existe.
+   */
+  const visibleStrokes = useMemo(
+    () => (erasing.size === 0 ? board.strokes : board.strokes.filter((s) => !erasing.has(s.id))),
+    [board.strokes, erasing],
+  );
+
   const colorSelection = useCallback(
     (color: NoteColor) => {
       // Uma publicação só para a seleção inteira, como no arraste: quem escuta é a
@@ -659,6 +697,62 @@ export function useBoard({ initialBoard, autosave = true }: UseBoardOptions = {}
     // fariam a próxima ação em lote agir sobre nada.
     publishSelection(EMPTY_SELECTION);
   }, [publishSelection, store]);
+
+  /** Zera o que a passada anterior tinha tocado — o começo de um novo gesto de borracha. */
+  const beginErasing = useCallback(() => publishErasing(EMPTY_SET), [publishErasing]);
+
+  /**
+   * Testa o trecho `a`→`b` contra todo traço do board, e soma ao que a passada já tocou.
+   *
+   * Só soma — nunca tira. Um traço apagado no meio de uma passada não pode reaparecer por a
+   * borracha ter se afastado dele; "apagado" é definitivo até o gesto acabar e a remoção
+   * virar de fato um passo de histórico.
+   */
+  const eraseSegment = useCallback(
+    (a: Point, b: Point) => {
+      const current = store.getBoard();
+      const touched = erasingRef.current;
+      let next: Set<string> | null = null;
+
+      for (const stroke of current.strokes) {
+        if (touched.has(stroke.id)) continue;
+        if (!strokeIntersectsSegment(stroke, a, b)) continue;
+
+        if (next === null) next = new Set(touched);
+        next.add(stroke.id);
+      }
+
+      if (next !== null) publishErasing(next);
+    },
+    [publishErasing, store],
+  );
+
+  /**
+   * Grava a passada inteira numa remoção só, e a encerra.
+   *
+   * Uma publicação só, como o resto das ações em lote (#98): a store já devolve isso de
+   * graça por `removeStrokes`, e é ela — não este hook — quem decide que a passada inteira é
+   * um passo de desfazer.
+   */
+  const endErasing = useCallback(() => {
+    const touched = erasingRef.current;
+    publishErasing(EMPTY_SET);
+    if (touched.size === 0) return;
+
+    store.removeStrokes([...touched]);
+
+    // Ids apagados não continuam marcados: um traço que sumiu não pode ficar na seleção,
+    // pronto para uma ação em lote seguinte agir sobre nada.
+    publishSelection((current) => {
+      if (current.strokes.size === 0) return current;
+
+      const strokes = new Set(current.strokes);
+      let changed = false;
+      for (const id of touched) changed = strokes.delete(id) || changed;
+
+      return changed ? { ...current, strokes } : current;
+    });
+  }, [publishErasing, publishSelection, store]);
 
   const addStroke = useCallback(
     (points: readonly Point[]) => {
@@ -709,7 +803,7 @@ export function useBoard({ initialBoard, autosave = true }: UseBoardOptions = {}
 
   return {
     notes: board.notes,
-    strokes: board.strokes,
+    strokes: visibleStrokes,
     addStroke,
     getBoard: store.getBoard,
     resetBoard,
@@ -741,6 +835,10 @@ export function useBoard({ initialBoard, autosave = true }: UseBoardOptions = {}
     selectionColor,
     colorSelection,
     deleteSelection,
+    erasing,
+    beginErasing,
+    eraseSegment,
+    endErasing,
     undo,
     redo,
     canUndo: history.canUndo,

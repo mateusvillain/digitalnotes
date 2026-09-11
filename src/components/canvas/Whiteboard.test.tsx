@@ -3117,6 +3117,225 @@ describe("Whiteboard — modo lápis", () => {
   });
 });
 
+describe("Whiteboard — modo borracha (#98)", () => {
+  /** O botão da borracha na moldura, que é a indicação visível de que o modo está ligado. */
+  function botaoBorracha(): HTMLElement {
+    return screen.getByLabelText(UI.en.eraser.action);
+  }
+
+  function modoLigado(): boolean {
+    return botaoBorracha().getAttribute("aria-pressed") === "true";
+  }
+
+  /** Rabisca com o lápis, ligando o modo antes e desligando depois — só o traço importa aqui. */
+  function desenha(de: [number, number], ate: [number, number]): void {
+    const surface = screen.getByTestId("viewport-surface");
+
+    fireEvent.keyDown(document, { key: "p" });
+    fireEvent.pointerDown(surface, { pointerId: 1, button: 0, clientX: de[0], clientY: de[1] });
+    fireEvent.pointerMove(surface, { pointerId: 1, clientX: ate[0], clientY: ate[1] });
+    fireEvent.pointerUp(surface, { pointerId: 1, clientX: ate[0], clientY: ate[1] });
+    fireEvent.keyDown(document, { key: "p" });
+  }
+
+  /**
+   * Passa a borracha de um ponto ao outro, em vários `pointermove` — como `rabisca`, mas
+   * sem soltar ao final: alguns testes precisam inspecionar o quadro em pleno gesto.
+   */
+  function passaABorracha(de: [number, number], ate: [number, number], intermediarios = 4): void {
+    const surface = screen.getByTestId("viewport-surface");
+
+    fireEvent.pointerDown(surface, { pointerId: 2, button: 0, clientX: de[0], clientY: de[1] });
+    for (let passo = 1; passo <= intermediarios; passo += 1) {
+      fireEvent.pointerMove(surface, {
+        pointerId: 2,
+        clientX: de[0] + ((ate[0] - de[0]) * passo) / intermediarios,
+        clientY: de[1] + ((ate[1] - de[1]) * passo) / intermediarios,
+      });
+    }
+  }
+
+  function tracos(): (string | null)[] {
+    return screen.queryAllByTestId("stroke").map((element) => element.getAttribute("points"));
+  }
+
+  it("E liga o modo, e E de novo desliga", () => {
+    render(<Whiteboard />);
+
+    expect(modoLigado()).toBe(false);
+
+    fireEvent.keyDown(document, { key: "e" });
+    expect(modoLigado()).toBe(true);
+
+    fireEvent.keyDown(document, { key: "e" });
+    expect(modoLigado()).toBe(false);
+  });
+
+  it("Esc desliga o modo", () => {
+    render(<Whiteboard />);
+    fireEvent.keyDown(document, { key: "e" });
+
+    fireEvent.keyDown(document, { key: "Escape" });
+
+    expect(modoLigado()).toBe(false);
+  });
+
+  it("o botão da moldura liga e desliga, como a tecla", async () => {
+    const user = userEvent.setup();
+    render(<Whiteboard />);
+
+    await user.click(botaoBorracha());
+    expect(modoLigado()).toBe(true);
+    expect(screen.getByTestId("viewport-surface").dataset.erasing).toBe("true");
+
+    await user.click(botaoBorracha());
+    expect(modoLigado()).toBe(false);
+  });
+
+  it("a borracha exclui o lápis e as outras ferramentas", () => {
+    render(<Whiteboard />);
+    fireEvent.keyDown(document, { key: "p" });
+
+    fireEvent.keyDown(document, { key: "e" });
+
+    expect(modoLigado()).toBe(true);
+    expect(screen.getByLabelText(UI.en.pencil.action).getAttribute("aria-pressed")).toBe("false");
+  });
+
+  it("arrastar sobre um traço o apaga na hora, sem esperar soltar o ponteiro", () => {
+    render(<Whiteboard />);
+    desenha([100, 100], [300, 100]);
+    expect(tracos()).toHaveLength(1);
+    fireEvent.keyDown(document, { key: "e" });
+
+    passaABorracha([200, 90], [200, 110]);
+
+    // Ainda em gesto — sem `pointerup` — e o traço já sumiu da tela.
+    expect(tracos()).toHaveLength(0);
+  });
+
+  it("um toque sem arrasto sobre o traço também o apaga", () => {
+    render(<Whiteboard />);
+    desenha([100, 100], [300, 100]);
+    fireEvent.keyDown(document, { key: "e" });
+    const surface = screen.getByTestId("viewport-surface");
+
+    fireEvent.pointerDown(surface, { pointerId: 2, button: 0, clientX: 200, clientY: 100 });
+    fireEvent.pointerUp(surface, { pointerId: 2, clientX: 200, clientY: 100 });
+
+    expect(tracos()).toHaveLength(0);
+  });
+
+  it("não afeta post-it: passar a borracha por cima de uma nota não faz nada com ela", () => {
+    render(<Whiteboard />);
+    duploCliqueNoFundo(300, 300);
+    fireEvent.keyDown(screen.getByTestId("post-it-editor"), { key: "Escape" });
+    const antes = postIt(0).style.left;
+    fireEvent.keyDown(document, { key: "e" });
+
+    passaABorracha([250, 250], [350, 350]);
+    fireEvent.pointerUp(screen.getByTestId("viewport-surface"), {
+      pointerId: 2,
+      clientX: 350,
+      clientY: 350,
+    });
+
+    expect(postIts()).toHaveLength(1);
+    expect(postIt(0).style.left).toBe(antes);
+  });
+
+  it("apaga o traço inteiro, mesmo tocado num só ponto do meio dele", () => {
+    render(<Whiteboard />);
+    desenha([0, 0], [400, 0]);
+    fireEvent.keyDown(document, { key: "e" });
+
+    passaABorracha([200, 0], [200, 0], 1);
+    fireEvent.pointerUp(screen.getByTestId("viewport-surface"), {
+      pointerId: 2,
+      clientX: 200,
+      clientY: 0,
+    });
+
+    expect(tracos()).toEqual([]);
+  });
+
+  it("uma passada que apaga vários traços é um passo de desfazer só", () => {
+    render(<Whiteboard />);
+    desenha([0, 0], [200, 0]);
+    desenha([0, 100], [200, 100]);
+    expect(tracos()).toHaveLength(2);
+    fireEvent.keyDown(document, { key: "e" });
+
+    passaABorracha([0, 0], [0, 100]);
+    fireEvent.pointerUp(screen.getByTestId("viewport-surface"), {
+      pointerId: 2,
+      clientX: 0,
+      clientY: 100,
+    });
+    expect(tracos()).toEqual([]);
+
+    fireEvent.keyDown(document, { key: "z", ctrlKey: true });
+
+    expect(tracos()).toHaveLength(2);
+  });
+
+  it("funciona no toque com um dedo, como o próprio lápis (#71)", () => {
+    render(<Whiteboard />);
+    desenha([100, 100], [300, 100]);
+    fireEvent.keyDown(document, { key: "e" });
+    const surface = screen.getByTestId("viewport-surface");
+
+    fireEvent.pointerDown(surface, {
+      pointerId: 5,
+      button: 0,
+      pointerType: "touch",
+      clientX: 200,
+      clientY: 90,
+    });
+    fireEvent.pointerMove(surface, {
+      pointerId: 5,
+      pointerType: "touch",
+      clientX: 200,
+      clientY: 110,
+    });
+    fireEvent.pointerUp(surface, {
+      pointerId: 5,
+      pointerType: "touch",
+      clientX: 200,
+      clientY: 110,
+    });
+
+    expect(tracos()).toEqual([]);
+  });
+
+  it("sair da ferramenta não apaga o que a borracha ainda não tinha tocado", () => {
+    render(<Whiteboard />);
+    desenha([0, 0], [200, 0]);
+    desenha([0, 100], [200, 100]);
+    fireEvent.keyDown(document, { key: "e" });
+    const surface = screen.getByTestId("viewport-surface");
+
+    // Toca só o primeiro traço, solta, e sai da ferramenta sem chegar perto do segundo.
+    fireEvent.pointerDown(surface, { pointerId: 2, button: 0, clientX: 100, clientY: 0 });
+    fireEvent.pointerUp(surface, { pointerId: 2, clientX: 100, clientY: 0 });
+    fireEvent.keyDown(document, { key: "Escape" });
+
+    expect(modoLigado()).toBe(false);
+    expect(tracos()).toEqual(["0,100 200,100"]);
+  });
+
+  it("o cursor do quadro vira borracha com o modo ligado", () => {
+    render(<Whiteboard />);
+    const surface = screen.getByTestId("viewport-surface");
+    expect(surface.className).toContain("cursor-default");
+
+    fireEvent.keyDown(document, { key: "e" });
+
+    expect(surface.className).toContain("cursor-eraser");
+    expect(surface.className).not.toContain("cursor-default");
+  });
+});
+
 describe("Whiteboard — selecionar e apagar rabiscos (#70)", () => {
   /**
    * Rabisca de um ponto ao outro com o lápis ligado, e desliga o modo depois.

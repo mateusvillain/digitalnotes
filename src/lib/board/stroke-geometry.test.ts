@@ -1,10 +1,12 @@
 import { describe, expect, it } from "vitest";
 import type { Rect } from "@/lib/canvas/coords";
 import {
+  ERASER_HIT_WIDTH,
   STROKE_MIN_SIZE,
   scaleStrokePoints,
   strokeBounds,
   strokeIntersectsRect,
+  strokeIntersectsSegment,
   strokePoints,
   translateStrokePoints,
 } from "./stroke-geometry";
@@ -114,6 +116,52 @@ describe("strokeIntersectsRect", () => {
     const zigue = stroke([0, 0, 10, 10, 500, 500, 510, 510]);
 
     expect(strokeIntersectsRect(zigue, rect(200, 200, 50, 50))).toBe(true);
+  });
+});
+
+describe("strokeIntersectsSegment", () => {
+  it("pega o traço que o trecho da borracha atravessa", () => {
+    expect(
+      strokeIntersectsSegment(stroke([0, 50, 200, 50]), { x: 100, y: 0 }, { x: 100, y: 100 }),
+    ).toBe(true);
+  });
+
+  it("ignora o traço fora do alcance do trecho", () => {
+    expect(
+      strokeIntersectsSegment(stroke([0, 0, 10, 10]), { x: 900, y: 900 }, { x: 950, y: 950 }),
+    ).toBe(false);
+  });
+
+  /**
+   * O toque sem arrasto — `a` igual a `b` — é o clique simples que o critério de aceite
+   * pede. Sem alargar por `ERASER_HIT_WIDTH`, um ponto sozinho não tocaria segmento nenhum
+   * mesmo em cima da tinta, porque `strokeIntersectsRect` não intersecta um retângulo sem
+   * área (a mesma resposta que dá para o clique parado).
+   */
+  it("um ponto só, sem arrasto, ainda apaga o que estiver embaixo", () => {
+    expect(
+      strokeIntersectsSegment(stroke([0, 50, 200, 50]), { x: 100, y: 50 }, { x: 100, y: 50 }),
+    ).toBe(true);
+  });
+
+  it("o alvo é mais largo que a tinta, para caber o dedo", () => {
+    // A 5 unidades da linha: fora da tinta (2 de largura), mas dentro do alvo generoso.
+    const perto = 5;
+    expect(perto).toBeLessThan(ERASER_HIT_WIDTH / 2);
+
+    expect(
+      strokeIntersectsSegment(
+        stroke([0, 50, 200, 50]),
+        { x: 100, y: 50 + perto },
+        { x: 100, y: 50 + perto },
+      ),
+    ).toBe(true);
+  });
+
+  it("um `hitWidth` explícito substitui o padrão", () => {
+    expect(
+      strokeIntersectsSegment(stroke([0, 50, 200, 50]), { x: 100, y: 60 }, { x: 100, y: 60 }, 4),
+    ).toBe(false);
   });
 });
 

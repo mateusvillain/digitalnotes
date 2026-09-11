@@ -34,6 +34,7 @@ function opcoes(overrides: Partial<Parameters<typeof useKeyboardShortcuts>[0]>) 
     onUndo: vi.fn(),
     onRedo: vi.fn(),
     onTogglePencil: vi.fn(),
+    onToggleEraser: vi.fn(),
     onSelectTool: vi.fn(),
     onCancel: vi.fn(),
     // Por padrão o quadro tinha algo marcado: quem exercita a seleção vazia diz isso no
@@ -282,6 +283,37 @@ describe("useKeyboardShortcuts — salvar com Ctrl/⌘+S", () => {
     tecla("p", document.body, { altKey: true });
 
     expect(onTogglePencil).not.toHaveBeenCalled();
+  });
+
+  it("E alterna o modo borracha", () => {
+    const onToggleEraser = vi.fn();
+    renderHook(() => useKeyboardShortcuts(opcoes({ onToggleEraser })));
+
+    tecla("e");
+    tecla("E");
+
+    expect(onToggleEraser).toHaveBeenCalledTimes(2);
+  });
+
+  it("E não alterna com o cursor dentro de um post-it", () => {
+    const onToggleEraser = vi.fn();
+    renderHook(() => useKeyboardShortcuts(opcoes({ onToggleEraser })));
+
+    tecla("e", elemento("textarea"));
+    tecla("e", elemento("input"));
+
+    expect(onToggleEraser).not.toHaveBeenCalled();
+  });
+
+  it("E com modificador segurado pertence ao navegador", () => {
+    const onToggleEraser = vi.fn();
+    renderHook(() => useKeyboardShortcuts(opcoes({ onToggleEraser })));
+
+    tecla("e", document.body, { ctrlKey: true });
+    tecla("e", document.body, { metaKey: true });
+    tecla("e", document.body, { altKey: true });
+
+    expect(onToggleEraser).not.toHaveBeenCalled();
   });
 
   it("V pede a ferramenta de seleção", () => {

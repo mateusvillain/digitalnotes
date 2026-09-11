@@ -95,6 +95,40 @@ export function strokeIntersectsRect(stroke: Stroke, rect: Rect): boolean {
  */
 export const STROKE_MIN_SIZE = 4;
 
+/**
+ * Largura do alvo da borracha, em unidades de canvas.
+ *
+ * Mesma ideia do alvo de clique do traço (`STROKE_HIT_WIDTH`, em `Strokes.tsx`): a tinta
+ * tem 2 unidades, e exigir acerto exato do gesto de apagar tornaria a ferramenta inútil no
+ * toque, onde o dedo cobre a linha sem nunca coincidir com ela pixel a pixel.
+ */
+export const ERASER_HIT_WIDTH = 16;
+
+/**
+ * O trecho que a borracha andou, de `a` a `b`, toca a tinta deste traço.
+ *
+ * Um ponto só — `a` igual a `b` — é o toque sem arrasto: o clique simples que o critério de
+ * aceite pede. A caixa que envolve os dois pontos, alargada por `hitWidth`, vira a mesma
+ * pergunta que a seleção por retângulo já sabe responder; não há geometria nova aqui, só um
+ * retângulo mais generoso em volta do gesto.
+ */
+export function strokeIntersectsSegment(
+  stroke: Stroke,
+  a: Point,
+  b: Point,
+  hitWidth: number = ERASER_HIT_WIDTH,
+): boolean {
+  const box = rectFromCorners(a, b);
+  const rect: Rect = {
+    x: box.x - hitWidth / 2,
+    y: box.y - hitWidth / 2,
+    w: box.w + hitWidth,
+    h: box.h + hitWidth,
+  };
+
+  return strokeIntersectsRect(stroke, rect);
+}
+
 /** O traço deslocado, em coordenadas de canvas. Devolve a lista achatada do contrato. */
 export function translateStrokePoints(stroke: Stroke, offset: Point): number[] {
   return stroke.points.map((value, index) => value + (index % 2 === 0 ? offset.x : offset.y));

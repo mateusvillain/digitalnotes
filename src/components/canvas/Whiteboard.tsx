@@ -14,6 +14,7 @@ import { HistoryButtons } from "@/components/ui/HistoryButtons";
 import { NewBoardButton } from "@/components/ui/NewBoardButton";
 import { NoteButton } from "@/components/ui/NoteButton";
 import { PencilButton } from "@/components/ui/PencilButton";
+import { EraserButton } from "@/components/ui/EraserButton";
 import { ShareButton } from "@/components/ui/ShareButton";
 import { useShareBoard } from "@/lib/board/useShareBoard";
 import { Onboarding } from "./Onboarding";
@@ -36,8 +37,11 @@ type WhiteboardProps = Pick<UseBoardOptions, "initialBoard" | "autosave">;
  * eles, sair do lápis era uma ação sem destino, e a ferramenta mais usada do quadro era a
  * única sem representação na tela. Não há mais "nenhuma": há sempre uma ferramenta, e a
  * de partida é a de selecionar.
+ *
+ * `"erasing"` chegou com a borracha (#98), como uma quarta ferramenta exclusiva das demais
+ * — a mesma regra que já valia entre o lápis e a colocação de nota, agora com mais um nome.
  */
-type BoardMode = "select" | "pencil" | "placing";
+type BoardMode = "select" | "pencil" | "erasing" | "placing";
 
 /**
  * O quadro: junta o estado de viewport à superfície navegável, aos controles e aos post-its.
@@ -143,6 +147,7 @@ export function Whiteboard({ initialBoard, autosave }: WhiteboardProps) {
   const [mode, setMode] = useState<BoardMode>("select");
   const selecting = mode === "select";
   const pencil = mode === "pencil";
+  const erasing = mode === "erasing";
   const placing = mode === "placing";
 
   /**
@@ -157,6 +162,7 @@ export function Whiteboard({ initialBoard, autosave }: WhiteboardProps) {
   }, []);
 
   const togglePencil = useCallback(() => toggleMode("pencil"), [toggleMode]);
+  const toggleEraser = useCallback(() => toggleMode("erasing"), [toggleMode]);
   const togglePlacing = useCallback(() => toggleMode("placing"), [toggleMode]);
   /**
    * Escolher a seleção, e não alternar para ela.
@@ -199,7 +205,7 @@ export function Whiteboard({ initialBoard, autosave }: WhiteboardProps) {
     trava chegaria um quadro atrasada. React reinicia o render com o valor novo antes de
     pintar, então ninguém vê o estado intermediário.
   */
-  if ((hasContent || placing || pencil) && !taught) setTaught(true);
+  if ((hasContent || placing || pencil || erasing) && !taught) setTaught(true);
 
   /**
    * A apresentação some no mesmo quadro em que o primeiro post-it aparece.
@@ -218,6 +224,7 @@ export function Whiteboard({ initialBoard, autosave }: WhiteboardProps) {
     onUndo: board.undo,
     onRedo: board.redo,
     onTogglePencil: togglePencil,
+    onToggleEraser: toggleEraser,
     onCancel: selectTool,
     onSelectTool: selectTool,
     onNudge: board.nudgeSelection,
@@ -241,6 +248,7 @@ export function Whiteboard({ initialBoard, autosave }: WhiteboardProps) {
           <SelectButton active={selecting} onSelect={selectTool} />
           <NoteButton active={placing} onToggle={togglePlacing} />
           <PencilButton active={pencil} onToggle={togglePencil} />
+          <EraserButton active={erasing} onToggle={toggleEraser} />
         </div>
       }
       trailingActions={
@@ -280,9 +288,13 @@ export function Whiteboard({ initialBoard, autosave }: WhiteboardProps) {
           onSelectionStart={board.beginRectSelection}
           onSelectionRect={board.selectInRect}
           pencil={pencil}
+          erasing={erasing}
           placing={placing}
           onPlaceNote={placeNote}
           onStrokeEnd={board.addStroke}
+          onEraseStart={board.beginErasing}
+          onEraseSegment={board.eraseSegment}
+          onEraseEnd={board.endErasing}
         >
           <Board
             notes={board.notes}

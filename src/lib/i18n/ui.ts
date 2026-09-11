@@ -46,6 +46,8 @@ export interface UiCopy {
     /** Dica e `aria-label` do botão que liga o modo lápis (#68). */
     action: string;
   };
+  /** Dica e `aria-label` do botão que liga o modo borracha (#98). */
+  eraser: { action: string };
   note: {
     /**
      * Nome da peça, no botão que arma a colocação (#73) e na lista de teclado da
@@ -94,6 +96,7 @@ export const UI: Record<Locale, UiCopy> = {
     select: { action: "Select" },
     history: { undo: "Undo", redo: "Redo" },
     pencil: { action: "Pencil" },
+    eraser: { action: "Eraser" },
     note: {
       action: "Sticky Note",
       empty: "Empty note",
@@ -148,6 +151,7 @@ export const UI: Record<Locale, UiCopy> = {
     select: { action: "Seleção" },
     history: { undo: "Desfazer", redo: "Refazer" },
     pencil: { action: "Lápis" },
+    eraser: { action: "Borracha" },
     note: {
       action: "Nota adesiva",
       empty: "Nota vazia",
