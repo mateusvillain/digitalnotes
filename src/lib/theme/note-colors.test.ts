@@ -1,9 +1,9 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
-import { NOTE_COLORS } from "@/lib/board/types";
+import { NOTE_COLORS, STROKE_COLOR_BLACK } from "@/lib/board/types";
 import { WCAG_AA_NORMAL_TEXT, contrastRatio, parseHexColor } from "./contrast";
-import { NOTE_INK_VAR, noteBackgroundVar } from "./note-colors";
+import { NOTE_INK_VAR, noteBackgroundVar, strokeColor } from "./note-colors";
 
 const globalsCss = readFileSync(resolve(import.meta.dirname, "../../app/globals.css"), "utf8");
 
@@ -68,6 +68,23 @@ describe("tokens de cor do post-it", () => {
       expect(ratio).toBeGreaterThanOrEqual(WCAG_AA_NORMAL_TEXT);
     },
   );
+});
+
+describe("tokens de cor do traço (#69)", () => {
+  it("o preto do lápis reusa --color-ink, e não um token próprio", () => {
+    expect(strokeColor(STROKE_COLOR_BLACK)).toBe("var(--color-ink)");
+  });
+
+  /**
+   * O critério de aceite pede o mesmo contraste que as cores de nota já garantem — aqui
+   * sobre `--color-canvas`, e não `--color-surface`: é sobre o quadro que o traço é
+   * desenhado, nunca sobre o fundo de um post-it.
+   */
+  it("atende WCAG AA sobre a superfície do quadro", () => {
+    const ratio = contrastRatio(tokenValue("--color-ink"), tokenValue("--color-canvas"));
+
+    expect(ratio).toBeGreaterThanOrEqual(WCAG_AA_NORMAL_TEXT);
+  });
 });
 
 describe("tokens de texto sobre as superfícies da interface", () => {

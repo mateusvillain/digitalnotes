@@ -1,10 +1,11 @@
-import { act, createEvent, fireEvent, render, screen } from "@testing-library/react";
+import { act, createEvent, fireEvent, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { defined } from "@/test-utils/defined";
 import { stubMatchMedia } from "@/test-utils/matchMedia";
-import { NOTE_SIZE, SCHEMA_VERSION } from "@/lib/board/types";
+import { NOTE_COLORS, NOTE_SIZE, SCHEMA_VERSION, STROKE_COLORS } from "@/lib/board/types";
 import { MAX_SCALE, MIN_SCALE, scaleAsPercent } from "@/lib/canvas/coords";
+import { strokeColor } from "@/lib/theme/note-colors";
 import { Whiteboard } from "./Whiteboard";
 import { UI } from "@/lib/i18n/ui";
 
@@ -4189,5 +4190,108 @@ describe("Whiteboard — remover e duplicar no toque (#99)", () => {
     // Um `Ctrl+Z` só desfaz a duplicação inteira: post-it e traço somem juntos.
     expect(postIts()).toHaveLength(1);
     expect(tracos()).toHaveLength(1);
+  });
+});
+
+describe("Whiteboard — cor do lápis (#69)", () => {
+  function ligaLapis(): void {
+    fireEvent.keyDown(document, { key: "p" });
+  }
+
+  /** Rabisca de um ponto ao outro, com o lápis já ligado. */
+  function rabisca(de: [number, number], ate: [number, number]): void {
+    const surface = screen.getByTestId("viewport-surface");
+
+    fireEvent.pointerDown(surface, { pointerId: 1, button: 0, clientX: de[0], clientY: de[1] });
+    fireEvent.pointerMove(surface, { pointerId: 1, clientX: ate[0], clientY: ate[1] });
+    fireEvent.pointerUp(surface, { pointerId: 1, clientX: ate[0], clientY: ate[1] });
+  }
+
+  function paleta(): HTMLElement | null {
+    return screen.queryByTestId("pencil-color-picker");
+  }
+
+  /** A paleta, exigindo que ela exista — para os testes que já ligaram o lápis antes. */
+  function paletaAberta(): HTMLElement {
+    return defined(paleta() ?? undefined, "a paleta do lápis");
+  }
+
+  /** A cor de tinta de cada traço gravado — o atributo `stroke` do SVG. */
+  function coresDosTracos(): (string | null)[] {
+    return screen.queryAllByTestId("stroke").map((element) => element.getAttribute("stroke"));
+  }
+
+  it("a paleta só aparece com o modo lápis ligado", () => {
+    render(<Whiteboard />);
+    expect(paleta()).toBeNull();
+
+    ligaLapis();
+    expect(paleta()).not.toBeNull();
+
+    ligaLapis();
+    expect(paleta()).toBeNull();
+  });
+
+  it("oferece sete opções: as seis da nota, mais o preto", () => {
+    render(<Whiteboard />);
+    ligaLapis();
+
+    const cores = within(paletaAberta()).getAllByRole("radio");
+    expect(cores).toHaveLength(STROKE_COLORS.length);
+    expect(cores.map((cor) => cor.getAttribute("aria-label"))).toEqual([
+      ...NOTE_COLORS.map((name) => UI.en.note.colors[name]),
+      UI.en.pencil.black,
+    ]);
+  });
+
+  it("o preto é a cor do primeiro traço da sessão", () => {
+    render(<Whiteboard />);
+    ligaLapis();
+
+    rabisca([100, 100], [300, 100]);
+
+    expect(coresDosTracos()).toEqual([strokeColor(6)]);
+  });
+
+  it("a cor escolhida vale para o próximo traço, até ser trocada de novo", () => {
+    render(<Whiteboard />);
+    ligaLapis();
+    const azul = within(paletaAberta()).getByRole("radio", {
+      name: UI.en.note.colors.blue,
+    });
+    fireEvent.click(azul);
+
+    rabisca([100, 100], [300, 100]);
+    rabisca([100, 200], [300, 200]);
+
+    expect(coresDosTracos()).toEqual([strokeColor(3), strokeColor(3)]);
+  });
+
+  it("não recolore o que já foi desenhado", () => {
+    render(<Whiteboard />);
+    ligaLapis();
+    rabisca([100, 100], [300, 100]);
+
+    const azul = within(paletaAberta()).getByRole("radio", {
+      name: UI.en.note.colors.blue,
+    });
+    fireEvent.click(azul);
+
+    expect(coresDosTracos()).toEqual([strokeColor(6)]);
+  });
+
+  it("desligar e religar o modo mantém a última cor escolhida", () => {
+    render(<Whiteboard />);
+    ligaLapis();
+    const verde = within(paletaAberta()).getByRole("radio", {
+      name: UI.en.note.colors.green,
+    });
+    fireEvent.click(verde);
+    ligaLapis();
+
+    ligaLapis();
+    rabisca([100, 100], [300, 100]);
+
+    expect(coresDosTracos()).toEqual([strokeColor(2)]);
   });
 });

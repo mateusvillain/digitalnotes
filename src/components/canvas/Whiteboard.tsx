@@ -14,6 +14,7 @@ import { HistoryButtons } from "@/components/ui/HistoryButtons";
 import { NewBoardButton } from "@/components/ui/NewBoardButton";
 import { NoteButton } from "@/components/ui/NoteButton";
 import { PencilButton } from "@/components/ui/PencilButton";
+import { PencilColorPicker } from "@/components/ui/PencilColorPicker";
 import { EraserButton } from "@/components/ui/EraserButton";
 import { ShareButton } from "@/components/ui/ShareButton";
 import { useShareBoard } from "@/lib/board/useShareBoard";
@@ -249,6 +250,17 @@ export function Whiteboard({ initialBoard, autosave }: WhiteboardProps) {
           <SelectButton active={selecting} onSelect={selectTool} />
           <NoteButton active={placing} onToggle={togglePlacing} />
           <PencilButton active={pencil} onToggle={togglePencil} />
+          {/*
+            Só com o lápis ligado (#69): a paleta escolhe a cor do **próximo** traço, e fora
+            do modo não há gesto nenhum para ela influenciar. Mesma caixa dos botões de
+            ferramenta — borda, fundo e sombra — para a pilha continuar parecendo um grupo
+            só, com um item a mais quando o lápis está ativo.
+          */}
+          {pencil ? (
+            <div className="rounded-control border border-border bg-surface p-1 shadow-control">
+              <PencilColorPicker value={board.pencilColor} onChange={board.setPencilColor} />
+            </div>
+          ) : null}
           <EraserButton active={erasing} onToggle={toggleEraser} />
         </div>
       }
