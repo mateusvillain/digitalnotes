@@ -20,14 +20,17 @@ import {
 } from "./selection";
 import {
   STROKE_MIN_SIZE,
+  flattenPoints,
+  pointsFromFlat,
   scaleStrokePoints,
+  splitPolylineBySegment,
   strokeBounds,
-  strokeIntersectsSegment,
+  strokePoints,
   translateStrokePoints,
 } from "./stroke-geometry";
 import { parseClipboard, serializeSelection } from "./clipboard";
 import { clampNoteSize } from "./schema";
-import { createBoardStore } from "./store";
+import { createBoardStore, type NewStroke } from "./store";
 import { useLocalPersistence } from "./useLocalPersistence";
 import {
   NOTE_SIZE,
@@ -49,8 +52,8 @@ import {
  */
 const PASTE_OFFSET = 20;
 
-/** Conjunto vazio compartilhado: evita recriar uma instância nova a cada passada sem toque. */
-const EMPTY_SET: ReadonlySet<string> = new Set();
+/** Mapa vazio compartilhado: evita recriar uma instância nova a cada passada sem toque. */
+const EMPTY_ERASING: ReadonlyMap<string, number[][] | null> = new Map();
 
 /**
  * O elemento em redimensionamento e o tamanho que ele tem agora, durante o gesto.
@@ -190,18 +193,22 @@ export interface BoardApi {
   /** Apaga o que está marcado — notas e traços — e esvazia a seleção. Sem nada, não faz nada. */
   deleteSelection: () => void;
   /**
-   * Ids de traço tocados pela borracha na passada em curso, ainda não gravados (#98).
+   * O que a borracha já tocou na passada em curso, ainda não gravado (#98).
    *
-   * `strokes` já sai sem eles — é o que faz o traço sumir no instante em que a borracha o
-   * toca —, mas a remoção só chega à store em `endErasing`, para a passada inteira ser um
-   * passo só de desfazer.
+   * Por id do traço original: `null` quando a borracha comeu o traço inteiro, ou a lista dos
+   * pedaços que sobraram (cada um uma lista achatada, pronta para virar um novo traço) quando
+   * só parte dele foi tocada — apaga como uma borracha de verdade, não o rabisco inteiro.
+   *
+   * `strokes` já sai refletindo isto — é o que faz a tinta sumir no instante em que a
+   * borracha a toca —, mas a gravação só chega à store em `endErasing`, para a passada
+   * inteira ser um passo só de desfazer.
    */
-  erasing: ReadonlySet<string>;
+  erasing: ReadonlyMap<string, number[][] | null>;
   /** Começa uma passada de borracha: zera o que a passada anterior tinha tocado. */
   beginErasing: () => void;
-  /** Testa o trecho de `a` a `b` contra todo traço, e soma ao que a passada já tocou. */
+  /** Testa o trecho de `a` a `b` contra todo traço, e apaga só a tinta que ele tocou. */
   eraseSegment: (a: Point, b: Point) => void;
-  /** Grava a remoção da passada inteira numa publicação só, e a encerra. */
+  /** Grava a passada inteira numa publicação só, e a encerra. */
   endErasing: () => void;
   /** Grava o texto e fecha a edição. */
   commitText: (id: string, text: string) => void;
@@ -253,7 +260,7 @@ export function useBoard({ initialBoard, autosave = true }: UseBoardOptions = {}
   const selectionBeforeRect = useRef<Selection>(EMPTY_SELECTION);
   const [dragOffset, setDragOffset] = useState<Point | null>(null);
   const [resizing, setResizing] = useState<Resizing | null>(null);
-  const [erasing, setErasing] = useState<ReadonlySet<string>>(EMPTY_SET);
+  const [erasing, setErasing] = useState<ReadonlyMap<string, number[][] | null>>(EMPTY_ERASING);
 
   /**
    * Cópias em ref do que os callbacks de gesto precisam ler.
@@ -269,7 +276,7 @@ export function useBoard({ initialBoard, autosave = true }: UseBoardOptions = {}
   const selectionRef = useRef<Selection>(EMPTY_SELECTION);
   const dragOffsetRef = useRef<Point | null>(null);
   const resizingRef = useRef<Resizing | null>(null);
-  const erasingRef = useRef<ReadonlySet<string>>(EMPTY_SET);
+  const erasingRef = useRef<ReadonlyMap<string, number[][] | null>>(EMPTY_ERASING);
 
   /**
    * Publica a seleção na ref e no estado, nessa ordem.
@@ -298,7 +305,7 @@ export function useBoard({ initialBoard, autosave = true }: UseBoardOptions = {}
   }, []);
 
   /** Publica o que a passada de borracha já tocou na ref e no estado, nessa ordem. */
-  const publishErasing = useCallback((next: ReadonlySet<string>) => {
+  const publishErasing = useCallback((next: ReadonlyMap<string, number[][] | null>) => {
     erasingRef.current = next;
     setErasing(next);
   }, []);
@@ -654,16 +661,34 @@ export function useBoard({ initialBoard, autosave = true }: UseBoardOptions = {}
   const selectionColor = useMemo(() => sharedColor(selected), [selected]);
 
   /**
-   * Os traços que a passada de borracha em curso já tocou não são desenhados (#98).
+   * O que a passada de borracha em curso já tocou aparece cortado, não como o traço
+   * inteiro (#98).
    *
-   * Some no instante do toque, e não só quando o gesto termina: é o que a promessa de
-   * "apaga ao tocar, sem esperar soltar" exige. A remoção de verdade, na store, só acontece
-   * em `endErasing` — até lá isto é só a lista que se mostra, não a que existe.
+   * Muda no instante do toque, e não só quando o gesto termina: é o que a promessa de
+   * "apaga ao tocar, sem esperar soltar" exige. A gravação de verdade, na store, só acontece
+   * em `endErasing` — até lá isto é só a lista que se mostra, não a que existe. Cada pedaço
+   * sobrevivente vira um traço de mentira, com o id original sufixado — não precisa ser um
+   * id que a store aceitaria, porque nunca chega a ela; some com o próximo toque ou com o
+   * fim da passada, o que vier primeiro.
    */
-  const visibleStrokes = useMemo(
-    () => (erasing.size === 0 ? board.strokes : board.strokes.filter((s) => !erasing.has(s.id))),
-    [board.strokes, erasing],
-  );
+  const visibleStrokes = useMemo(() => {
+    if (erasing.size === 0) return board.strokes;
+
+    const result: Stroke[] = [];
+    for (const stroke of board.strokes) {
+      const runs = erasing.get(stroke.id);
+      if (runs === undefined) {
+        result.push(stroke);
+        continue;
+      }
+      if (runs === null) continue;
+
+      runs.forEach((points, index) => {
+        result.push({ ...stroke, id: `${stroke.id}:${index}`, points });
+      });
+    }
+    return result;
+  }, [board.strokes, erasing]);
 
   const colorSelection = useCallback(
     (color: NoteColor) => {
@@ -699,27 +724,45 @@ export function useBoard({ initialBoard, autosave = true }: UseBoardOptions = {}
   }, [publishSelection, store]);
 
   /** Zera o que a passada anterior tinha tocado — o começo de um novo gesto de borracha. */
-  const beginErasing = useCallback(() => publishErasing(EMPTY_SET), [publishErasing]);
+  const beginErasing = useCallback(() => publishErasing(EMPTY_ERASING), [publishErasing]);
 
   /**
-   * Testa o trecho `a`→`b` contra todo traço do board, e soma ao que a passada já tocou.
+   * Testa o trecho `a`→`b` contra o que sobra de cada traço nesta passada, e apaga só a
+   * tinta que ele tocou — como uma borracha de verdade, e não o rabisco inteiro (#98).
    *
-   * Só soma — nunca tira. Um traço apagado no meio de uma passada não pode reaparecer por a
-   * borracha ter se afastado dele; "apagado" é definitivo até o gesto acabar e a remoção
-   * virar de fato um passo de histórico.
+   * "O que sobra" pode já vir de um toque anterior da mesma passada: um traço já dividido
+   * continua sendo testado pedaço a pedaço, para o segundo passe da borracha poder cortar de
+   * novo um pedaço que o primeiro deixou de pé. Um traço já comido por inteiro (`null`) não é
+   * testado de novo — não sobrou tinta nele para tocar.
    */
   const eraseSegment = useCallback(
     (a: Point, b: Point) => {
-      const current = store.getBoard();
+      const board = store.getBoard();
       const touched = erasingRef.current;
-      let next: Set<string> | null = null;
+      let next: Map<string, number[][] | null> | null = null;
 
-      for (const stroke of current.strokes) {
-        if (touched.has(stroke.id)) continue;
-        if (!strokeIntersectsSegment(stroke, a, b)) continue;
+      for (const stroke of board.strokes) {
+        const already = touched.get(stroke.id);
+        if (already === null) continue;
 
-        if (next === null) next = new Set(touched);
-        next.add(stroke.id);
+        const pieces = already === undefined ? [strokePoints(stroke)] : already.map(pointsFromFlat);
+
+        let changed = false;
+        const result: Point[][] = [];
+        for (const piece of pieces) {
+          const split = splitPolylineBySegment(piece, a, b);
+          if (split === null) {
+            result.push(piece);
+            continue;
+          }
+          changed = true;
+          result.push(...split);
+        }
+
+        if (!changed) continue;
+
+        if (next === null) next = new Map(touched);
+        next.set(stroke.id, result.length === 0 ? null : result.map(flattenPoints));
       }
 
       if (next !== null) publishErasing(next);
@@ -728,27 +771,38 @@ export function useBoard({ initialBoard, autosave = true }: UseBoardOptions = {}
   );
 
   /**
-   * Grava a passada inteira numa remoção só, e a encerra.
+   * Grava a passada inteira numa publicação só, e a encerra.
    *
-   * Uma publicação só, como o resto das ações em lote (#98): a store já devolve isso de
-   * graça por `removeStrokes`, e é ela — não este hook — quem decide que a passada inteira é
-   * um passo de desfazer.
+   * O traço original é trocado pelos pedaços que sobraram — `spliceStrokes` faz as duas
+   * coisas numa publicação só, como o resto das ações em lote (#98), para a passada inteira
+   * ser um passo só de desfazer, por vários traços que tenha tocado.
    */
   const endErasing = useCallback(() => {
     const touched = erasingRef.current;
-    publishErasing(EMPTY_SET);
+    publishErasing(EMPTY_ERASING);
     if (touched.size === 0) return;
 
-    store.removeStrokes([...touched]);
+    const board = store.getBoard();
+    const byId = new Map(board.strokes.map((stroke) => [stroke.id, stroke]));
+    const additions: NewStroke[] = [];
+
+    for (const [id, runs] of touched) {
+      const original = byId.get(id);
+      if (original === undefined || runs === null) continue;
+      for (const points of runs) additions.push({ color: original.color, points });
+    }
+
+    store.spliceStrokes([...touched.keys()], additions);
 
     // Ids apagados não continuam marcados: um traço que sumiu não pode ficar na seleção,
-    // pronto para uma ação em lote seguinte agir sobre nada.
+    // pronto para uma ação em lote seguinte agir sobre nada. Os pedaços que sobraram nascem
+    // com ids novos e nunca estiveram na seleção para começar.
     publishSelection((current) => {
       if (current.strokes.size === 0) return current;
 
       const strokes = new Set(current.strokes);
       let changed = false;
-      for (const id of touched) changed = strokes.delete(id) || changed;
+      for (const id of touched.keys()) changed = strokes.delete(id) || changed;
 
       return changed ? { ...current, strokes } : current;
     });

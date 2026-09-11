@@ -22,6 +22,7 @@ import {
 import { pinchChange, pinchSnapshot, type PinchSnapshot } from "@/lib/canvas/pinch";
 import { cancelPointerGesture, releaseCapture } from "@/lib/canvas/pointer-capture";
 import { useSpaceHeld } from "@/lib/canvas/useSpaceHeld";
+import { EraserCursor } from "./EraserCursor";
 import { NotePlacementPreview } from "./NotePlacement";
 import { SelectionBox } from "./SelectionBox";
 import { StrokePreview } from "./Strokes";
@@ -268,8 +269,12 @@ export function Viewport({
     trava da apresentação. O efeito só rodaria depois da pintura, e a prévia velha chegaria
     a aparecer por um quadro; aqui o React reinicia o render com o valor novo antes de
     pintar, e ninguém vê o estado intermediário.
+
+    A borracha entra na mesma guarda que a colocação de nota: o círculo do alvo (#98) segue
+    o mesmo ponteiro guardado, pela mesma razão de não aparecer num canto arbitrário ao
+    ligar o modo.
   */
-  if (!placing && pointer !== null) setPointer(null);
+  if (!placing && !erasing && pointer !== null) setPointer(null);
 
   /** Posição do ponteiro relativa ao canto do container — é o que as conversões esperam. */
   const localPoint = useCallback((event: { clientX: number; clientY: number }): Point => {
@@ -626,10 +631,10 @@ export function Viewport({
 
   const handlePointerMove = useCallback(
     (event: PointerEvent<HTMLDivElement>) => {
-      // Antes de qualquer gesto, e fora de todos eles: a prévia da colocação segue o cursor
-      // mesmo quando ele passa por cima de um post-it, porque a nota nova pode ser colocada
-      // ali também. Só custa um re-render enquanto o modo está ligado.
-      if (placing) setPointer(localPoint(event));
+      // Antes de qualquer gesto, e fora de todos eles: a prévia da colocação e o círculo da
+      // borracha seguem o cursor mesmo quando ele passa por cima de um post-it. Só custa um
+      // re-render enquanto um dos dois modos está ligado.
+      if (placing || erasing) setPointer(localPoint(event));
 
       const touch = touches.current.get(event.pointerId);
       if (touch) {
@@ -699,7 +704,7 @@ export function Viewport({
       setMarquee(rect);
       onSelectionRect?.(rect);
     },
-    [localPoint, onEraseSegment, onSelectionRect, onSelectionStart, pan, placing, zoomBy],
+    [erasing, localPoint, onEraseSegment, onSelectionRect, onSelectionStart, pan, placing, zoomBy],
   );
 
   /**
@@ -824,6 +829,9 @@ export function Viewport({
   */
   const placementPoint = placing && pointer !== null ? screenToCanvas(pointer, viewport) : null;
 
+  /** Onde o círculo da borracha cai, em coordenadas de canvas — mesma conta, mesma razão. */
+  const eraserPoint = erasing && pointer !== null ? screenToCanvas(pointer, viewport) : null;
+
   /*
     O cursor conta o que o ponteiro vai fazer: mão com espaço, mão fechada com a rodinha
     apertada, lápis com o modo ligado, cruz para mirar a nota. Na mesma ordem em que os
@@ -840,6 +848,10 @@ export function Viewport({
     A cruz que ficava aqui prometia mira, que é o que a colocação de nota faz — e num
     quadro em que a seleção é a ferramenta de partida, era a mira que estava sempre ligada.
 
+    A borracha some o cursor do sistema (#98): o círculo de `EraserCursor`, do tamanho exato
+    do alvo, é quem responde por ela agora — um ícone de tamanho fixo ao lado do círculo só
+    confundiria sobre qual dos dois é a área de verdade.
+
     Muda por classe: dos gestos, só o pan pela rodinha chega a re-renderizar, e ainda assim
     duas vezes por gesto e nenhuma durante o movimento.
   */
@@ -850,7 +862,7 @@ export function Viewport({
       : pencil
         ? "cursor-pencil"
         : erasing
-          ? "cursor-eraser"
+          ? "cursor-none"
           : placing
             ? "cursor-crosshair"
             : "cursor-default";
@@ -916,6 +928,7 @@ export function Viewport({
           prometeria o contrário no instante em que o cursor passa sobre uma nota existente.
         */}
         <NotePlacementPreview at={placementPoint} />
+        <EraserCursor at={eraserPoint} />
         <SelectionBox rect={marquee} />
       </div>
     </div>

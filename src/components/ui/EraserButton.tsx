@@ -14,8 +14,9 @@ interface EraserButtonProps {
 /**
  * Ícone de borracha, no mesmo traço do resto da interface.
  *
- * O mesmo desenho é o cursor do modo, em `.cursor-eraser` (src/app/globals.css). As duas
- * cópias precisam andar juntas, como o lápis já faz.
+ * O cursor do modo não repete este desenho — é um círculo do tamanho do alvo, em
+ * `EraserCursor.tsx` (#98) —, porque um ícone de tamanho fixo não diz nada sobre o alcance
+ * real do gesto, e é justamente isso que o círculo precisa mostrar.
  */
 function EraserIcon() {
   return (

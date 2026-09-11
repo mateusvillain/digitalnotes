@@ -1097,15 +1097,19 @@ describe("useBoard — borracha (#98)", () => {
     expect(hook.result.current.canUndo).toBe(podiaDesfazerAntes);
   });
 
-  it("um ponto só, sem arrasto, já apaga o traço embaixo (toque simples)", () => {
+  it("um ponto só, sem arrasto, já apaga a área tocada (toque simples)", () => {
     const { hook, primeiro, segundo } = comDoisTraçosEUmaNota();
 
     act(() => hook.result.current.beginErasing());
     act(() => hook.result.current.eraseSegment({ x: 20, y: 0 }, { x: 20, y: 0 }));
     act(() => hook.result.current.endErasing());
 
-    expect(hook.result.current.strokes.map((s) => s.id)).toEqual([segundo.id]);
-    expect(hook.result.current.strokes.map((s) => s.id)).not.toContain(primeiro.id);
+    const ids = hook.result.current.strokes.map((s) => s.id);
+    expect(ids).not.toContain(primeiro.id);
+    expect(ids).toContain(segundo.id);
+    // O toque foi no meio do traço: o que sobra dos dois lados do buraco continua de pé,
+    // como uma borracha de verdade — não some o traço inteiro por um toque no meio dele.
+    expect(hook.result.current.strokes.filter((s) => s.id !== segundo.id)).toHaveLength(2);
   });
 
   it("não afeta post-it: a borracha só apaga traço", () => {
@@ -1139,11 +1143,14 @@ describe("useBoard — borracha (#98)", () => {
     act(() => hook.result.current.eraseSegment({ x: 20, y: 0 }, { x: 20, y: 200 }));
     act(() => hook.result.current.endErasing());
 
-    expect(hook.result.current.strokes).toEqual([]);
+    const ids = hook.result.current.strokes.map((s) => s.id);
+    expect(ids).not.toContain(primeiro.id);
+    expect(ids).not.toContain(segundo.id);
 
     act(() => hook.result.current.undo());
 
-    // Um `Ctrl+Z` só devolve os dois: a passada inteira foi uma remoção, não duas.
+    // Um `Ctrl+Z` só devolve os dois originais: a passada inteira, tocando os dois traços,
+    // foi um passo só de desfazer.
     expect(hook.result.current.strokes.map((s) => s.id).sort()).toEqual(
       [primeiro.id, segundo.id].sort(),
     );
@@ -1184,17 +1191,22 @@ describe("useBoard — borracha (#98)", () => {
   });
 
   it("uma nova passada esquece o que a anterior tinha tocado", () => {
-    const { hook, segundo } = comDoisTraçosEUmaNota();
+    const { hook, primeiro, segundo } = comDoisTraçosEUmaNota();
 
     act(() => hook.result.current.beginErasing());
     act(() => hook.result.current.eraseSegment({ x: 20, y: 0 }, { x: 20, y: 0 }));
     act(() => hook.result.current.endErasing());
-    expect(hook.result.current.strokes.map((s) => s.id)).toEqual([segundo.id]);
+    let ids = hook.result.current.strokes.map((s) => s.id);
+    expect(ids).not.toContain(primeiro.id);
+    expect(ids).toContain(segundo.id);
 
     act(() => hook.result.current.beginErasing());
     act(() => hook.result.current.eraseSegment({ x: 20, y: 200 }, { x: 20, y: 200 }));
     act(() => hook.result.current.endErasing());
 
-    expect(hook.result.current.strokes).toEqual([]);
+    // A segunda passada apaga `segundo` sem precisar retocar o que a primeira já tinha
+    // tratado: o controle de "já tocado" não vaza de uma passada para a outra.
+    ids = hook.result.current.strokes.map((s) => s.id);
+    expect(ids).not.toContain(segundo.id);
   });
 });

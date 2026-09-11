@@ -3202,7 +3202,7 @@ describe("Whiteboard — modo borracha (#98)", () => {
     expect(screen.getByLabelText(UI.en.pencil.action).getAttribute("aria-pressed")).toBe("false");
   });
 
-  it("arrastar sobre um traço o apaga na hora, sem esperar soltar o ponteiro", () => {
+  it("arrastar sobre um traço corta a área tocada na hora, sem esperar soltar o ponteiro", () => {
     render(<Whiteboard />);
     desenha([100, 100], [300, 100]);
     expect(tracos()).toHaveLength(1);
@@ -3210,11 +3210,12 @@ describe("Whiteboard — modo borracha (#98)", () => {
 
     passaABorracha([200, 90], [200, 110]);
 
-    // Ainda em gesto — sem `pointerup` — e o traço já sumiu da tela.
-    expect(tracos()).toHaveLength(0);
+    // Ainda em gesto — sem `pointerup` — e o traço já aparece cortado em dois: só o buraco
+    // do meio sumiu da tela, não o rabisco inteiro.
+    expect(tracos()).toHaveLength(2);
   });
 
-  it("um toque sem arrasto sobre o traço também o apaga", () => {
+  it("um toque sem arrasto sobre o traço também corta a área tocada", () => {
     render(<Whiteboard />);
     desenha([100, 100], [300, 100]);
     fireEvent.keyDown(document, { key: "e" });
@@ -3223,7 +3224,7 @@ describe("Whiteboard — modo borracha (#98)", () => {
     fireEvent.pointerDown(surface, { pointerId: 2, button: 0, clientX: 200, clientY: 100 });
     fireEvent.pointerUp(surface, { pointerId: 2, clientX: 200, clientY: 100 });
 
-    expect(tracos()).toHaveLength(0);
+    expect(tracos()).toHaveLength(2);
   });
 
   it("não afeta post-it: passar a borracha por cima de uma nota não faz nada com ela", () => {
@@ -3244,7 +3245,7 @@ describe("Whiteboard — modo borracha (#98)", () => {
     expect(postIt(0).style.left).toBe(antes);
   });
 
-  it("apaga o traço inteiro, mesmo tocado num só ponto do meio dele", () => {
+  it("corta só a área tocada, mesmo tocado num só ponto do meio do traço", () => {
     render(<Whiteboard />);
     desenha([0, 0], [400, 0]);
     fireEvent.keyDown(document, { key: "e" });
@@ -3256,7 +3257,9 @@ describe("Whiteboard — modo borracha (#98)", () => {
       clientY: 0,
     });
 
-    expect(tracos()).toEqual([]);
+    // O toque foi um ponto só, no meio: o que sobra dos dois lados do buraco continua de
+    // pé, como uma borracha de verdade — não some o traço inteiro.
+    expect(tracos()).toEqual(["0,0 192,0", "208,0 400,0"]);
   });
 
   it("uma passada que apaga vários traços é um passo de desfazer só", () => {
@@ -3272,11 +3275,15 @@ describe("Whiteboard — modo borracha (#98)", () => {
       clientX: 0,
       clientY: 100,
     });
-    expect(tracos()).toEqual([]);
+    // Os dois traços saem cortados, não apagados por inteiro, mas a área tocada — a ponta
+    // esquerda de cada um — some dos dois.
+    for (const pontos of tracos()) expect(pontos).not.toMatch(/^0,/);
 
     fireEvent.keyDown(document, { key: "z", ctrlKey: true });
 
-    expect(tracos()).toHaveLength(2);
+    // Um `Ctrl+Z` só devolve os dois originais: a passada inteira, tocando os dois traços,
+    // foi um passo só de desfazer.
+    expect(tracos()).toEqual(["0,0 200,0", "0,100 200,100"]);
   });
 
   it("funciona no toque com um dedo, como o próprio lápis (#71)", () => {
@@ -3305,7 +3312,7 @@ describe("Whiteboard — modo borracha (#98)", () => {
       clientY: 110,
     });
 
-    expect(tracos()).toEqual([]);
+    expect(tracos()).toEqual(["100,100 193,100", "207,100 300,100"]);
   });
 
   it("sair da ferramenta não apaga o que a borracha ainda não tinha tocado", () => {
@@ -3321,17 +3328,19 @@ describe("Whiteboard — modo borracha (#98)", () => {
     fireEvent.keyDown(document, { key: "Escape" });
 
     expect(modoLigado()).toBe(false);
-    expect(tracos()).toEqual(["0,100 200,100"]);
+    // O primeiro traço sai cortado no meio; o segundo, que a borracha nunca chegou a
+    // tocar, continua inteiro.
+    expect(tracos()).toEqual(["0,100 200,100", "0,0 92,0", "108,0 200,0"]);
   });
 
-  it("o cursor do quadro vira borracha com o modo ligado", () => {
+  it("o cursor do sistema some com o modo ligado — o círculo do alvo responde por ele", () => {
     render(<Whiteboard />);
     const surface = screen.getByTestId("viewport-surface");
     expect(surface.className).toContain("cursor-default");
 
     fireEvent.keyDown(document, { key: "e" });
 
-    expect(surface.className).toContain("cursor-eraser");
+    expect(surface.className).toContain("cursor-none");
     expect(surface.className).not.toContain("cursor-default");
   });
 });

@@ -21,20 +21,30 @@ import {
 import type { Stroke } from "./types";
 
 /**
- * Os pontos do traço, despachados aos pares.
+ * Uma lista achatada de coordenadas, despachada aos pares.
  *
  * Um número solto no fim é ignorado. O contrato não produz isso — `normalizeStroke` exige
  * comprimento par —, mas um board vindo de um link antigo ou editado à mão pode trazer, e
  * meio ponto não é um ponto.
  */
-export function strokePoints(stroke: Stroke): Point[] {
+export function pointsFromFlat(flat: readonly number[]): Point[] {
   const points: Point[] = [];
 
-  for (let index = 0; index + 1 < stroke.points.length; index += 2) {
-    points.push({ x: stroke.points[index]!, y: stroke.points[index + 1]! });
+  for (let index = 0; index + 1 < flat.length; index += 2) {
+    points.push({ x: flat[index]!, y: flat[index + 1]! });
   }
 
   return points;
+}
+
+/** Os pontos do traço, despachados aos pares — ver {@link pointsFromFlat}. */
+export function strokePoints(stroke: Stroke): Point[] {
+  return pointsFromFlat(stroke.points);
+}
+
+/** O inverso de {@link strokePoints}: pares de volta à lista achatada do contrato. */
+export function flattenPoints(points: readonly Point[]): number[] {
+  return points.flatMap((point) => [point.x, point.y]);
 }
 
 /**
@@ -104,6 +114,17 @@ export const STROKE_MIN_SIZE = 4;
  */
 export const ERASER_HIT_WIDTH = 16;
 
+/** O retângulo do alvo da borracha: a caixa de `a` a `b`, alargada por `hitWidth`. */
+function eraserRect(a: Point, b: Point, hitWidth: number): Rect {
+  const box = rectFromCorners(a, b);
+  return {
+    x: box.x - hitWidth / 2,
+    y: box.y - hitWidth / 2,
+    w: box.w + hitWidth,
+    h: box.h + hitWidth,
+  };
+}
+
 /**
  * O trecho que a borracha andou, de `a` a `b`, toca a tinta deste traço.
  *
@@ -118,15 +139,162 @@ export function strokeIntersectsSegment(
   b: Point,
   hitWidth: number = ERASER_HIT_WIDTH,
 ): boolean {
-  const box = rectFromCorners(a, b);
-  const rect: Rect = {
-    x: box.x - hitWidth / 2,
-    y: box.y - hitWidth / 2,
-    w: box.w + hitWidth,
-    h: box.h + hitWidth,
-  };
+  return strokeIntersectsRect(stroke, eraserRect(a, b, hitWidth));
+}
 
-  return strokeIntersectsRect(stroke, rect);
+/** Ponto entre `p` e `q`, na fração `t` (0 é `p`, 1 é `q`). */
+function lerp(p: Point, q: Point, t: number): Point {
+  return { x: p.x + (q.x - p.x) * t, y: p.y + (q.y - p.y) * t };
+}
+
+/**
+ * O trecho de `p`→`q`, como fração `[t0, t1]` do caminho, que cai dentro do círculo de
+ * centro `c` e raio `r` — ou `null` se o segmento nunca entra nele.
+ *
+ * É a borda redonda do alvo da borracha (#98), resolvida direto: `|p + t·(q−p) − c|² = r²`
+ * é uma equação do segundo grau em `t`, e as raízes são onde o segmento cruza o círculo. Sem
+ * raiz real, o segmento passa inteiro por fora. `t` fica preso a `[0, 1]`: o que existe fora
+ * do segmento não é deste segmento.
+ */
+function segmentCircleInterval(p: Point, q: Point, c: Point, r: number): [number, number] | null {
+  const dx = q.x - p.x;
+  const dy = q.y - p.y;
+  const fx = p.x - c.x;
+  const fy = p.y - c.y;
+
+  const a = dx * dx + dy * dy;
+  const b = 2 * (fx * dx + fy * dy);
+  const cc = fx * fx + fy * fy - r * r;
+
+  // p e q coincidem: não há segmento, só um ponto — dentro ou fora do círculo por inteiro.
+  if (a === 0) return cc <= 0 ? [0, 1] : null;
+
+  const discriminant = b * b - 4 * a * cc;
+  if (discriminant < 0) return null;
+
+  const root = Math.sqrt(discriminant);
+  const t0 = Math.max(0, (-b - root) / (2 * a));
+  const t1 = Math.min(1, (-b + root) / (2 * a));
+
+  return t0 < t1 ? [t0, t1] : null;
+}
+
+/**
+ * Une intervalos de `[0, 1]` que se sobrepõem ou se tocam, em ordem crescente.
+ *
+ * Vários círculos ao longo do trecho `a`→`b` (ver {@link eraserSamples}) podem tocar o mesmo
+ * segmento do traço em intervalos que se emendam; sem unir, o corte ficaria picotado em
+ * pedaços curtos demais para formar um traço (`STROKE_MIN_SIZE`) em vez de um buraco só.
+ */
+function mergeIntervals(intervals: [number, number][]): [number, number][] {
+  if (intervals.length === 0) return intervals;
+
+  const sorted = [...intervals].sort((a, b) => a[0] - b[0]);
+  const merged: [number, number][] = [sorted[0]!];
+
+  for (const [start, end] of sorted.slice(1)) {
+    const last = merged[merged.length - 1]!;
+    if (start > last[1]) {
+      merged.push([start, end]);
+    } else if (end > last[1]) {
+      last[1] = end;
+    }
+  }
+
+  return merged;
+}
+
+/**
+ * Pontos ao longo de `a`→`b`, espaçados no máximo por `radius`, para aproximar o alvo da
+ * borracha — uma cápsula (dois semicírculos nas pontas, reto no meio) — pela união dos
+ * círculos centrados neles.
+ *
+ * Um arrasto rápido entre dois eventos de ponteiro anda vários pixels de uma vez, e testar
+ * só as pontas `a` e `b` deixaria buracos no meio do trecho — a tinta bem no centro do
+ * arrasto sobreviveria por estar longe demais dos dois círculos das pontas. Espaçar por não
+ * mais que o raio garante que os círculos vizinhos se sobrepõem, sem falha na cobertura.
+ */
+function eraserSamples(a: Point, b: Point, radius: number): Point[] {
+  const length = Math.hypot(b.x - a.x, b.y - a.y);
+  if (length === 0) return [a];
+
+  const steps = Math.max(1, Math.ceil(length / radius));
+  const samples: Point[] = [];
+  for (let step = 0; step <= steps; step += 1) samples.push(lerp(a, b, step / steps));
+
+  return samples;
+}
+
+/**
+ * O que sobra de uma polilinha depois que a borracha passa de `a` a `b` por cima dela, como
+ * uma borracha de verdade: só some a tinta que o círculo do alvo tocou, não o segmento
+ * inteiro onde ele tocou de raspão.
+ *
+ * Cada segmento da polilinha é cortado no ponto exato onde entra e sai do alvo — não no
+ * vértice mais próximo —, porque um traço simplificado (#67) tem vértices espaçados, e um
+ * segmento longo entre dois deles não pode sumir inteiro por um toque de leve no meio dele.
+ * O que sobra de cada lado do corte continua de pé como uma polilinha própria — daí a lista
+ * de listas, não uma lista só. Um pedaço com um ponto só é descartado: um ponto não é um
+ * traço, pela mesma regra do contrato (`normalizeStroke`) que já exige dois.
+ *
+ * `null` quando nenhum segmento foi tocado — o chamador não tem pedaço nenhum a substituir.
+ * Isso é diferente de devolver a lista vazia, que é "a borracha comeu a polilinha inteira".
+ */
+export function splitPolylineBySegment(
+  points: readonly Point[],
+  a: Point,
+  b: Point,
+  hitWidth: number = ERASER_HIT_WIDTH,
+): Point[][] | null {
+  if (points.length < 2) return null;
+
+  const radius = hitWidth / 2;
+  const samples = eraserSamples(a, b, radius);
+
+  const runs: Point[][] = [];
+  let current: Point[] = [];
+  let touched = false;
+
+  for (let index = 0; index + 1 < points.length; index += 1) {
+    const p = points[index]!;
+    const q = points[index + 1]!;
+
+    const erased = mergeIntervals(
+      samples.flatMap((center): [number, number][] => {
+        const interval = segmentCircleInterval(p, q, center, radius);
+        return interval === null ? [] : [interval];
+      }),
+    );
+
+    if (erased.length === 0) {
+      if (current.length === 0) current.push(p);
+      current.push(q);
+      continue;
+    }
+
+    touched = true;
+    let cursor = 0;
+
+    for (const [t0, t1] of erased) {
+      if (t0 > cursor) {
+        if (current.length === 0) current.push(cursor === 0 ? p : lerp(p, q, cursor));
+        current.push(lerp(p, q, t0));
+      }
+      if (current.length >= 2) runs.push(current);
+      current = [];
+      cursor = t1;
+    }
+
+    if (cursor < 1) {
+      current.push(cursor === 0 ? p : lerp(p, q, cursor));
+      current.push(q);
+    }
+  }
+
+  if (current.length >= 2) runs.push(current);
+  if (!touched) return null;
+
+  return runs;
 }
 
 /** O traço deslocado, em coordenadas de canvas. Devolve a lista achatada do contrato. */

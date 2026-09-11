@@ -139,6 +139,14 @@ export interface BoardStore {
   removeStroke: (id: string) => void;
   removeStrokes: (ids: readonly string[]) => void;
   /**
+   * Substitui traços por outros, numa publicação só (#98).
+   *
+   * A ferramenta de borracha usa isto para trocar o traço original pelos pedaços que
+   * sobraram do gesto: os ids de `ids` deixam de existir, e `additions` entra com ids novos,
+   * como em `addElements`.
+   */
+  spliceStrokes: (ids: readonly string[], additions: readonly NewStroke[]) => void;
+  /**
    * Apaga notes e traços numa publicação só (#70).
    *
    * Existe porque uma seleção pode misturar os dois, e chamar `removeNotes` seguido de
@@ -529,6 +537,41 @@ export function createBoardStore(initial: Board = createEmptyBoard()): BoardStor
     removeStrokes([id]);
   }
 
+  /**
+   * Tira os traços de `ids` e põe `additions` no lugar, numa publicação só — o que sobra de
+   * uma passada de borracha (#98): o traço original é substituído pelos pedaços que a
+   * borracha não tocou, e não simplesmente apagado.
+   *
+   * Uma publicação só, e não uma remoção seguida de criação, pela mesma razão de
+   * `removeElements`: a passada inteira, por vários traços que sejam, é um passo de desfazer
+   * só.
+   */
+  function spliceStrokes(ids: readonly string[], additions: readonly NewStroke[]): void {
+    const targets = new Set(ids);
+    const kept = board.strokes.filter((stroke) => !targets.has(stroke.id));
+
+    const takenIds = new Set(kept.map((stroke) => stroke.id));
+    let z = topZ(kept);
+
+    const created: Stroke[] = [];
+    for (const candidate of additions) {
+      const id = createId(takenIds);
+      z += 1;
+      // Normalizar pelo contrato, como em `addStroke`: um pedaço com coordenada impossível
+      // não entra no board, mas não derruba a passada inteira.
+      const stroke = normalizeStroke({ id, color: candidate.color, points: candidate.points, z });
+      if (stroke === null) continue;
+
+      takenIds.add(id);
+      created.push(stroke);
+    }
+
+    // Nada removido e nada criado, nada publicado: a mesma regra de `removeElements`.
+    if (kept.length === board.strokes.length && created.length === 0) return;
+
+    commit({ strokes: [...kept, ...created] });
+  }
+
   function removeElements(noteIds: readonly string[], strokeIds: readonly string[]): void {
     const notesToRemove = new Set(noteIds);
     const strokesToRemove = new Set(strokeIds);
@@ -601,6 +644,7 @@ export function createBoardStore(initial: Board = createEmptyBoard()): BoardStor
     updateElements,
     removeStroke,
     removeStrokes,
+    spliceStrokes,
     removeElements,
     replaceBoard,
     restoreBoard,
