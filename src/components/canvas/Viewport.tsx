@@ -22,6 +22,7 @@ import {
 import { pinchChange, pinchSnapshot, type PinchSnapshot } from "@/lib/canvas/pinch";
 import { cancelPointerGesture, releaseCapture } from "@/lib/canvas/pointer-capture";
 import { useSpaceHeld } from "@/lib/canvas/useSpaceHeld";
+import { EraserCursor } from "./EraserCursor";
 import { NotePlacementPreview } from "./NotePlacement";
 import { SelectionBox } from "./SelectionBox";
 import { StrokePreview } from "./Strokes";
@@ -58,12 +59,20 @@ type ViewportProps = Pick<ViewportApi, "viewport" | "pan" | "zoomBy"> & {
   onSelectionRect?: (rect: Rect) => void;
   /** Modo lápis ligado: arrastar desenha em vez de selecionar (#68). */
   pencil?: boolean;
+  /** Modo borracha ligado: arrastar ou tocar apaga o traço que encostar (#98). */
+  erasing?: boolean;
   /** Modo de colocação ligado: uma nota translúcida segue o cursor e o clique a fixa (#73). */
   placing?: boolean;
   /** Clique com o modo de colocação ligado, já convertido para coordenadas de canvas. */
   onPlaceNote?: (point: Point) => void;
   /** Traço concluído, em coordenadas de canvas, ainda sem simplificação. */
   onStrokeEnd?: (points: Point[]) => void;
+  /** Começo de uma passada de borracha: o gesto acabou de tomar a superfície. */
+  onEraseStart?: () => void;
+  /** Trecho da passada de borracha, de onde o ponteiro estava a onde está agora. */
+  onEraseSegment?: (a: Point, b: Point) => void;
+  /** Fim da passada de borracha: solta o ponteiro, grava o que foi tocado. */
+  onEraseEnd?: () => void;
   children?: ReactNode;
 };
 
@@ -117,6 +126,12 @@ type DragState =
       points: Point[];
     }
   | {
+      kind: "erase";
+      pointerId: number;
+      /** Último ponto reportado, em coordenadas de canvas — origem do próximo segmento. */
+      last: Point;
+    }
+  | {
       kind: "marquee";
       pointerId: number;
       /** Origem em pixels de tela, para separar clique de arrasto. */
@@ -158,9 +173,13 @@ export function Viewport({
   onSelectionStart,
   onSelectionRect,
   pencil = false,
+  erasing = false,
   placing = false,
   onPlaceNote,
   onStrokeEnd,
+  onEraseStart,
+  onEraseSegment,
+  onEraseEnd,
   children,
 }: ViewportProps) {
   const spaceHeld = useSpaceHeld();
@@ -250,8 +269,12 @@ export function Viewport({
     trava da apresentação. O efeito só rodaria depois da pintura, e a prévia velha chegaria
     a aparecer por um quadro; aqui o React reinicia o render com o valor novo antes de
     pintar, e ninguém vê o estado intermediário.
+
+    A borracha entra na mesma guarda que a colocação de nota: o círculo do alvo (#98) segue
+    o mesmo ponteiro guardado, pela mesma razão de não aparecer num canto arbitrário ao
+    ligar o modo.
   */
-  if (!placing && pointer !== null) setPointer(null);
+  if (!placing && !erasing && pointer !== null) setPointer(null);
 
   /** Posição do ponteiro relativa ao canto do container — é o que as conversões esperam. */
   const localPoint = useCallback((event: { clientX: number; clientY: number }): Point => {
@@ -324,6 +347,31 @@ export function Viewport({
       setDrawing([point]);
     },
     [localPoint],
+  );
+
+  /**
+   * Arma uma passada de borracha a partir deste ponteiro, tomando o gesto para ela.
+   *
+   * Reivindicar na descida, como o lápis: com o modo ligado o quadro inteiro é alvo da
+   * borracha, e sem parar o evento aqui um traço sob o ponteiro capturaria o gesto para a
+   * própria seleção antes que a borracha o visse.
+   *
+   * O ponto da descida já é testado — não só os movimentos seguintes —, porque é ele que
+   * cobre o toque sem arrasto: um clique parado que nunca gera `pointermove` ainda precisa
+   * apagar o que estiver embaixo (#98).
+   */
+  const startErasing = useCallback(
+    (event: PointerEvent<HTMLDivElement>) => {
+      event.stopPropagation();
+      event.preventDefault();
+      event.currentTarget.setPointerCapture(event.pointerId);
+
+      const point = screenToCanvas(localPoint(event), viewportRef.current);
+      drag.current = { kind: "erase", pointerId: event.pointerId, last: point };
+      onEraseStart?.();
+      onEraseSegment?.(point, point);
+    },
+    [localPoint, onEraseSegment, onEraseStart],
   );
 
   /** Verdadeiro só para eventos nascidos no fundo, e não em algo desenhado sobre ele. */
@@ -422,6 +470,12 @@ export function Viewport({
             cancelPointerGesture(first.target, firstId);
           }
 
+          // A passada de borracha do primeiro dedo, ao contrário do traço, não morre: o que
+          // já tocou já sumiu do board de verdade para quem olha, e um segundo dedo chegando
+          // não é motivo para reaparecer tinta que a pessoa acabou de apagar. Grava o que
+          // houver e encerra a passada, em vez de descartá-la.
+          if (drag.current?.kind === "erase") onEraseEnd?.();
+
           drag.current = null;
           // O traço que o primeiro dedo tinha começado morre aqui, e não pela metade: quem
           // encostou o segundo dedo está pinçando, não desenhando (#71). Sem limpar a
@@ -440,9 +494,17 @@ export function Viewport({
           Dentro da contagem, e não ao lado dela: assim isto só vale para o **primeiro**
           dedo. Um terceiro dedo durante a pinça não é contado, e fora daqui ele começaria
           um traço por baixo do gesto que já está acontecendo.
+
+          A borracha segue a mesma regra, pela mesma razão (#98): um dedo só apaga, dois
+          pinçam.
         */
         if (pencil) {
           startDrawing(event);
+          return;
+        }
+
+        if (erasing) {
+          startErasing(event);
           return;
         }
       }
@@ -462,6 +524,13 @@ export function Viewport({
         return;
       }
 
+      // A borracha reivindica o gesto pela mesma razão do lápis logo acima, na mesma ordem
+      // de prioridade: espaço ganha de tudo, o lápis nunca está ligado ao mesmo tempo (#98).
+      if (erasing && !spaceHeld && event.button === 0 && event.pointerType !== "touch") {
+        startErasing(event);
+        return;
+      }
+
       if (!spaceHeld || event.button !== 0) return;
 
       event.stopPropagation();
@@ -473,7 +542,18 @@ export function Viewport({
         last: { x: event.clientX, y: event.clientY },
       };
     },
-    [localPoint, onPlaceNote, pencil, placing, restartPinch, spaceHeld, startDrawing],
+    [
+      erasing,
+      localPoint,
+      onEraseEnd,
+      onPlaceNote,
+      pencil,
+      placing,
+      restartPinch,
+      spaceHeld,
+      startDrawing,
+      startErasing,
+    ],
   );
 
   const handlePointerDown = useCallback(
@@ -526,7 +606,7 @@ export function Viewport({
           propósito; sem esta guarda ele armaria um pan por baixo da pinça em curso, e o
           quadro andaria com um dedo justamente no modo em que um dedo não move nada.
         */
-        if (pencil) return;
+        if (pencil || erasing) return;
 
         drag.current = {
           kind: "pan",
@@ -546,15 +626,15 @@ export function Viewport({
         started: false,
       };
     },
-    [isBackground, localPoint, pencil, placing, spaceHeld],
+    [erasing, isBackground, localPoint, pencil, placing, spaceHeld],
   );
 
   const handlePointerMove = useCallback(
     (event: PointerEvent<HTMLDivElement>) => {
-      // Antes de qualquer gesto, e fora de todos eles: a prévia da colocação segue o cursor
-      // mesmo quando ele passa por cima de um post-it, porque a nota nova pode ser colocada
-      // ali também. Só custa um re-render enquanto o modo está ligado.
-      if (placing) setPointer(localPoint(event));
+      // Antes de qualquer gesto, e fora de todos eles: a prévia da colocação e o círculo da
+      // borracha seguem o cursor mesmo quando ele passa por cima de um post-it. Só custa um
+      // re-render enquanto um dos dois modos está ligado.
+      if (placing || erasing) setPointer(localPoint(event));
 
       const touch = touches.current.get(event.pointerId);
       if (touch) {
@@ -588,6 +668,16 @@ export function Viewport({
         return;
       }
 
+      if (state.kind === "erase") {
+        // O segmento entre o último ponto reportado e este, em coordenadas de canvas: é
+        // ele que a passada testa contra cada traço, e não o ponto sozinho — sem isto, um
+        // movimento rápido pularia por cima de um rabisco fino sem nunca tocá-lo.
+        const point = screenToCanvas(localPoint(event), viewportRef.current);
+        onEraseSegment?.(state.last, point);
+        state.last = point;
+        return;
+      }
+
       if (state.kind === "draw") {
         // Em coordenadas de canvas desde já: o traço é conteúdo do quadro, e guardá-lo em
         // pixels de tela o prenderia ao zoom e ao pan do instante em que foi desenhado.
@@ -614,7 +704,7 @@ export function Viewport({
       setMarquee(rect);
       onSelectionRect?.(rect);
     },
-    [localPoint, onSelectionRect, onSelectionStart, pan, placing, zoomBy],
+    [erasing, localPoint, onEraseSegment, onSelectionRect, onSelectionStart, pan, placing, zoomBy],
   );
 
   /**
@@ -645,7 +735,10 @@ export function Viewport({
             lápis deixaria tinta que ninguém pediu no caminho de volta do gesto. Ele fica sem
             função até ser levantado; o traço seguinte começa no toque seguinte.
           */
-          if (remaining && !pencil) {
+          // Nem com a borracha ligada, pela mesma razão (#98): o dedo que sobra estava
+          // pinçando, e apagar por baixo dele no caminho de volta apagaria tinta que
+          // ninguém mirou.
+          if (remaining && !pencil && !erasing) {
             drag.current = { kind: "pan", pointerId: remaining[0], last: remaining[1].point };
           }
         }
@@ -670,7 +763,7 @@ export function Viewport({
 
       return state;
     },
-    [pencil, restartPinch],
+    [erasing, pencil, restartPinch],
   );
 
   const handlePointerUp = useCallback(
@@ -685,6 +778,13 @@ export function Viewport({
         return;
       }
 
+      if (state.kind === "erase") {
+        // Soltar o ponteiro é o fim normal da passada: grava numa remoção só o que ela
+        // tocou (#98).
+        onEraseEnd?.();
+        return;
+      }
+
       if (state.kind !== "marquee") return;
 
       // Um retângulo que nunca chegou a começar foi um clique, e clique no fundo limpa a
@@ -694,7 +794,7 @@ export function Viewport({
       // shift-clique que errou o alvo não pode desfazer a seleção que ele ia ampliar.
       if (!state.started && !state.additive) onBackgroundClick?.();
     },
-    [endDrag, onBackgroundClick, onStrokeEnd],
+    [endDrag, onBackgroundClick, onEraseEnd, onStrokeEnd],
   );
 
   /**
@@ -709,9 +809,13 @@ export function Viewport({
       // tratá-lo aqui desfaria a pinça no instante em que ela começa.
       if (cancelledByPinch.current.delete(event.pointerId)) return;
 
-      endDrag(event);
+      const state = endDrag(event);
+      // Uma passada de borracha interrompida pelo sistema também não pode ficar pendurada:
+      // o que ela já tocou já sumiu da tela, e sem gravar ficaria escondido para sempre sem
+      // nunca ter entrado no histórico (#98).
+      if (state?.kind === "erase") onEraseEnd?.();
     },
-    [endDrag],
+    [endDrag, onEraseEnd],
   );
 
   const origin = canvasToScreen({ x: 0, y: 0 }, viewport);
@@ -724,6 +828,9 @@ export function Viewport({
     continua sob o cursor mesmo quando quem andou foi o quadro.
   */
   const placementPoint = placing && pointer !== null ? screenToCanvas(pointer, viewport) : null;
+
+  /** Onde o círculo da borracha cai, em coordenadas de canvas — mesma conta, mesma razão. */
+  const eraserPoint = erasing && pointer !== null ? screenToCanvas(pointer, viewport) : null;
 
   /*
     O cursor conta o que o ponteiro vai fazer: mão com espaço, mão fechada com a rodinha
@@ -741,6 +848,10 @@ export function Viewport({
     A cruz que ficava aqui prometia mira, que é o que a colocação de nota faz — e num
     quadro em que a seleção é a ferramenta de partida, era a mira que estava sempre ligada.
 
+    A borracha some o cursor do sistema (#98): o círculo de `EraserCursor`, do tamanho exato
+    do alvo, é quem responde por ela agora — um ícone de tamanho fixo ao lado do círculo só
+    confundiria sobre qual dos dois é a área de verdade.
+
     Muda por classe: dos gestos, só o pan pela rodinha chega a re-renderizar, e ainda assim
     duas vezes por gesto e nenhuma durante o movimento.
   */
@@ -750,9 +861,11 @@ export function Viewport({
       ? "cursor-grabbing"
       : pencil
         ? "cursor-pencil"
-        : placing
-          ? "cursor-crosshair"
-          : "cursor-default";
+        : erasing
+          ? "cursor-none"
+          : placing
+            ? "cursor-crosshair"
+            : "cursor-default";
 
   return (
     <div
@@ -795,6 +908,7 @@ export function Viewport({
       data-space-held={spaceHeld}
       data-wheel-panning={wheelPanning}
       data-pencil={pencil}
+      data-erasing={erasing}
       data-placing={placing}
       data-testid="viewport-surface"
     >
@@ -814,6 +928,7 @@ export function Viewport({
           prometeria o contrário no instante em que o cursor passa sobre uma nota existente.
         */}
         <NotePlacementPreview at={placementPoint} />
+        <EraserCursor at={eraserPoint} />
         <SelectionBox rect={marquee} />
       </div>
     </div>

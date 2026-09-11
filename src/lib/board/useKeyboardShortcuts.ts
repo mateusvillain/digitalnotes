@@ -30,6 +30,8 @@ interface KeyboardShortcutsOptions {
   onRedo: () => void;
   /** Ligar e desligar o modo lápis (#68). A mesma tecla faz as duas coisas. */
   onTogglePencil: () => void;
+  /** Ligar e desligar o modo borracha (#98). A mesma tecla faz as duas coisas. */
+  onToggleEraser: () => void;
   /**
    * `V`: escolher a ferramenta de seleção (#83).
    *
@@ -139,6 +141,7 @@ export function useKeyboardShortcuts({
   onUndo,
   onRedo,
   onTogglePencil,
+  onToggleEraser,
   onSelectTool,
   onCancel,
   onNudge,
@@ -157,6 +160,7 @@ export function useKeyboardShortcuts({
     onUndo,
     onRedo,
     onTogglePencil,
+    onToggleEraser,
     onSelectTool,
     onCancel,
     onNudge,
@@ -170,6 +174,7 @@ export function useKeyboardShortcuts({
       onUndo,
       onRedo,
       onTogglePencil,
+      onToggleEraser,
       onSelectTool,
       onCancel,
       onNudge,
@@ -182,6 +187,7 @@ export function useKeyboardShortcuts({
     onUndo,
     onRedo,
     onTogglePencil,
+    onToggleEraser,
     onSelectTool,
     onCancel,
     onNudge,
@@ -286,6 +292,12 @@ export function useKeyboardShortcuts({
       if (event.key.toLowerCase() === "p") {
         event.preventDefault();
         handlers.current.onTogglePencil();
+        return;
+      }
+
+      if (event.key.toLowerCase() === "e") {
+        event.preventDefault();
+        handlers.current.onToggleEraser();
         return;
       }
 
