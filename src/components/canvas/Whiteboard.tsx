@@ -301,6 +301,7 @@ export function Whiteboard({ initialBoard, autosave }: WhiteboardProps) {
           onSelectionStart={board.beginRectSelection}
           onSelectionRect={board.selectInRect}
           pencil={pencil}
+          pencilColor={board.pencilColor}
           erasing={erasing}
           placing={placing}
           onPlaceNote={placeNote}

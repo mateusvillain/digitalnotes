@@ -98,6 +98,7 @@ describe("StrokePreview", () => {
           { x: 0, y: 0 },
           { x: 10, y: 5 },
         ]}
+        color={6}
       />,
     );
 
@@ -107,14 +108,35 @@ describe("StrokePreview", () => {
   });
 
   it("não desenha nada fora de um gesto", () => {
-    render(<StrokePreview points={null} />);
+    render(<StrokePreview points={null} color={6} />);
 
     expect(screen.queryByTestId("stroke-preview")).toBeNull();
   });
 
   it("não desenha um ponto só, que ainda não é linha", () => {
-    render(<StrokePreview points={[{ x: 3, y: 3 }]} />);
+    render(<StrokePreview points={[{ x: 3, y: 3 }]} color={6} />);
 
     expect(screen.queryByTestId("stroke-preview")).toBeNull();
+  });
+
+  /**
+   * A regressão real que motivou a prop (#69): a prévia ignorava a cor do lápis e nascia
+   * sempre preta, e só a gravação — no `pointerup` — usava a cor escolhida. O traço parecia
+   * preto enquanto se desenhava e "trocava" de cor de repente ao soltar o ponteiro.
+   */
+  it("desenha na cor do lápis, não sempre preto", () => {
+    render(
+      <StrokePreview
+        points={[
+          { x: 0, y: 0 },
+          { x: 10, y: 5 },
+        ]}
+        color={3}
+      />,
+    );
+
+    expect(
+      screen.getByTestId("stroke-preview").querySelector("polyline")?.getAttribute("stroke"),
+    ).toBe("var(--color-note-blue)");
   });
 });

@@ -22,6 +22,7 @@ import {
 import { pinchChange, pinchSnapshot, type PinchSnapshot } from "@/lib/canvas/pinch";
 import { cancelPointerGesture, releaseCapture } from "@/lib/canvas/pointer-capture";
 import { useSpaceHeld } from "@/lib/canvas/useSpaceHeld";
+import { STROKE_COLOR_BLACK, type StrokeColor } from "@/lib/board/types";
 import { EraserCursor } from "./EraserCursor";
 import { NotePlacementPreview } from "./NotePlacement";
 import { SelectionBox } from "./SelectionBox";
@@ -59,6 +60,8 @@ type ViewportProps = Pick<ViewportApi, "viewport" | "pan" | "zoomBy"> & {
   onSelectionRect?: (rect: Rect) => void;
   /** Modo lápis ligado: arrastar desenha em vez de selecionar (#68). */
   pencil?: boolean;
+  /** Cor do lápis (#69), para o traço em curso nascer com ela, e não preto por padrão. */
+  pencilColor?: StrokeColor;
   /** Modo borracha ligado: arrastar ou tocar apaga o traço que encostar (#98). */
   erasing?: boolean;
   /** Modo de colocação ligado: uma nota translúcida segue o cursor e o clique a fixa (#73). */
@@ -173,6 +176,7 @@ export function Viewport({
   onSelectionStart,
   onSelectionRect,
   pencil = false,
+  pencilColor = STROKE_COLOR_BLACK,
   erasing = false,
   placing = false,
   onPlaceNote,
@@ -921,7 +925,7 @@ export function Viewport({
         data-testid="viewport-layer"
       >
         {children}
-        <StrokePreview points={drawing} />
+        <StrokePreview points={drawing} color={pencilColor} />
         {/*
           Depois dos post-its, e não antes: a nota que está sendo colocada vai nascer na
           frente de todas (a store a cria no topo do z), e uma prévia desenhada por baixo
