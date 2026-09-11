@@ -846,6 +846,106 @@ describe("useBoard — apagar a seleção", () => {
   });
 });
 
+describe("useBoard — duplicar a seleção (#99)", () => {
+  function comUmPostIt() {
+    const hook = renderHook(() => useBoard());
+    act(() => hook.result.current.createNoteAt({ x: 100, y: 100 }));
+
+    return { hook, original: defined(hook.result.current.notes[0], "o post-it") };
+  }
+
+  it("cria uma cópia com id próprio, deslocada do original", () => {
+    const { hook, original } = comUmPostIt();
+
+    act(() => hook.result.current.duplicateSelection());
+
+    expect(hook.result.current.notes).toHaveLength(2);
+    const copia = defined(
+      hook.result.current.notes.find((note) => note.id !== original.id),
+      "a cópia",
+    );
+    expect(copia.x).not.toBe(original.x);
+    expect(copia.y).not.toBe(original.y);
+  });
+
+  it("a cópia nasce marcada, e só ela", () => {
+    const { hook, original } = comUmPostIt();
+
+    act(() => hook.result.current.duplicateSelection());
+
+    const copia = defined(
+      hook.result.current.notes.find((note) => note.id !== original.id),
+      "a cópia",
+    );
+    expect([...hook.result.current.selection.notes]).toEqual([copia.id]);
+  });
+
+  it("duplica post-it e traço da mesma seleção, numa publicação só", () => {
+    const hook = renderHook(() => useBoard());
+    act(() => hook.result.current.createNoteAt({ x: 0, y: 0 }));
+    act(() =>
+      hook.result.current.addStroke([
+        { x: 0, y: 200 },
+        { x: 100, y: 200 },
+      ]),
+    );
+    act(() => hook.result.current.selectEverything());
+
+    act(() => hook.result.current.duplicateSelection());
+
+    expect(hook.result.current.notes).toHaveLength(2);
+    expect(hook.result.current.strokes).toHaveLength(2);
+  });
+
+  it("um passo só de desfazer para a seleção inteira", () => {
+    const hook = renderHook(() => useBoard());
+    act(() => hook.result.current.createNoteAt({ x: 0, y: 0 }));
+    act(() =>
+      hook.result.current.addStroke([
+        { x: 0, y: 200 },
+        { x: 100, y: 200 },
+      ]),
+    );
+    act(() => hook.result.current.selectEverything());
+
+    act(() => hook.result.current.duplicateSelection());
+    act(() => hook.result.current.undo());
+
+    expect(hook.result.current.notes).toHaveLength(1);
+    expect(hook.result.current.strokes).toHaveLength(1);
+  });
+
+  it("sem seleção, não faz nada", () => {
+    const { hook } = comUmPostIt();
+    act(() => hook.result.current.clearSelection());
+    const antes = hook.result.current.notes;
+
+    act(() => hook.result.current.duplicateSelection());
+
+    expect(hook.result.current.notes).toBe(antes);
+  });
+
+  it("duplicar de novo em seguida parte da cópia, e não empilha sobre o original", () => {
+    const { hook } = comUmPostIt();
+
+    act(() => hook.result.current.duplicateSelection());
+    const primeiraCopia = defined(
+      hook.result.current.notes[hook.result.current.notes.length - 1],
+      "a primeira cópia",
+    );
+
+    act(() => hook.result.current.duplicateSelection());
+    const segundaCopia = defined(
+      hook.result.current.notes[hook.result.current.notes.length - 1],
+      "a segunda cópia",
+    );
+
+    expect(hook.result.current.notes).toHaveLength(3);
+    expect(segundaCopia.x).not.toBe(primeiraCopia.x);
+    expect(segundaCopia.y).not.toBe(primeiraCopia.y);
+  });
+});
+
 describe("resetBoard", () => {
   it("descarta os post-its e começa um quadro vazio", () => {
     const { result } = renderHook(() => useBoard());
