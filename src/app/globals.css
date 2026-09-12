@@ -7,8 +7,15 @@
  * Tailwind gere as utilitárias (`bg-surface`, `text-ink`, `shadow-note`) e exponha a
  * variável CSS de uma vez só. Nenhum componente deve escrever um valor de cor literal: se
  * falta um token, o lugar de criá-lo é este arquivo.
+ *
+ * `static`, e não o `@theme` de sempre: o lápis e o post-it só consomem estas variáveis por
+ * `var(--color-note-*)` montado em JS (`note-colors.ts`), nunca por uma classe Tailwind
+ * literal no código-fonte. Sem `static`, o Tailwind decide sozinho quais variáveis valem a
+ * pena gerar a partir do que encontra escaneando o repositório, e cores sem uma classe
+ * literal correspondente somem da folha compilada — foi o que aconteceu com
+ * `--color-note-purple`, que virava `initial` e apagava o traço roxo do lápis (#69).
  */
-@theme {
+@theme static {
   /* Superfícies e texto */
   --color-canvas: #f4f4f5;
   --color-canvas-dot: #d4d4d8;

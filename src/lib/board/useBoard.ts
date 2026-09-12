@@ -40,6 +40,7 @@ import {
   type Note,
   type NoteColor,
   type Stroke,
+  type StrokeColor,
 } from "./types";
 
 /**
@@ -85,6 +86,14 @@ export interface BoardApi {
    * crus que o ponteiro reportou e não precisa saber que existe compressão.
    */
   addStroke: (points: readonly Point[]) => void;
+  /**
+   * Cor do próximo traço (#69). Preto até ser trocada; a troca vale para os traços
+   * seguintes, e não recolore o que já foi desenhado — para isso, a mesma paleta pinta a
+   * seleção, como `colorSelection` já faz para post-it.
+   */
+  pencilColor: StrokeColor;
+  /** Troca a cor do lápis. */
+  setPencilColor: (color: StrokeColor) => void;
   /**
    * Descarta o board atual e começa um quadro vazio (#58).
    *
@@ -266,6 +275,13 @@ export function useBoard({ initialBoard, autosave = true }: UseBoardOptions = {}
   const [dragOffset, setDragOffset] = useState<Point | null>(null);
   const [resizing, setResizing] = useState<Resizing | null>(null);
   const [erasing, setErasing] = useState<ReadonlyMap<string, number[][] | null>>(EMPTY_ERASING);
+  /**
+   * Cor do próximo traço a ser desenhado (#69). Preto ao ligar o lápis pela primeira vez na
+   * sessão, e vale para todos os traços seguintes até ser trocada de novo — não é campo do
+   * board, então nem persiste no link nem entra no histórico de desfazer: é escolha de
+   * interface sobre o que o **próximo** gesto vai fazer, não conteúdo do quadro já feito.
+   */
+  const [pencilColor, setPencilColor] = useState<StrokeColor>(STROKE_COLOR_BLACK);
 
   /**
    * Cópias em ref do que os callbacks de gesto precisam ler.
@@ -863,11 +879,11 @@ export function useBoard({ initialBoard, autosave = true }: UseBoardOptions = {}
     (points: readonly Point[]) => {
       const simplified = simplify(points);
       store.addStroke({
-        color: STROKE_COLOR_BLACK,
+        color: pencilColor,
         points: simplified.flatMap((point) => [point.x, point.y]),
       });
     },
-    [store],
+    [pencilColor, store],
   );
 
   const resetBoard = useCallback(() => {
@@ -910,6 +926,8 @@ export function useBoard({ initialBoard, autosave = true }: UseBoardOptions = {}
     notes: board.notes,
     strokes: visibleStrokes,
     addStroke,
+    pencilColor,
+    setPencilColor,
     getBoard: store.getBoard,
     resetBoard,
     editingId,

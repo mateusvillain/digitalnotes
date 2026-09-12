@@ -1,7 +1,7 @@
 "use client";
 
 import { strokeColor } from "@/lib/theme/note-colors";
-import { STROKE_COLOR_BLACK, type Stroke } from "@/lib/board/types";
+import type { Stroke, StrokeColor } from "@/lib/board/types";
 import { useRef, type PointerEvent, type ReactNode } from "react";
 import { useDrag } from "@/lib/canvas/useDrag";
 import type { Point, Rect, Size } from "@/lib/canvas/coords";
@@ -312,6 +312,8 @@ export function Strokes({
 interface StrokePreviewProps {
   /** O traço em curso, em coordenadas de canvas, ou `null` fora de um gesto de desenho. */
   points: readonly Point[] | null;
+  /** Cor do lápis no instante do gesto (#69) — a mesma que `addStroke` vai gravar. */
+  color: StrokeColor;
 }
 
 /**
@@ -325,18 +327,17 @@ interface StrokePreviewProps {
  * que faz o rabisco continuar exatamente onde estava quando o ponteiro é solto, em vez de
  * piscar de lugar ao virar conteúdo.
  *
- * Nasce preto porque é a cor com que o lápis nasce ({@link STROKE_COLOR_BLACK}); a mesma
- * constante que a gravação usa, para o que se vê desenhando não poder divergir do que fica.
+ * A cor vem de fora, e não nasce preta (#69): antes, a prévia ignorava a paleta do lápis e
+ * só a gravação usava a cor escolhida, então o traço parecia preto enquanto se desenhava e
+ * "trocava" de cor de repente ao soltar o ponteiro — o mesmo bug que a prévia existe para
+ * evitar (ver o comentário acima sobre não piscar de lugar).
  */
-export function StrokePreview({ points }: StrokePreviewProps) {
+export function StrokePreview({ points, color }: StrokePreviewProps) {
   if (points === null || points.length < 2) return null;
 
   return (
     <InkLayer testId="stroke-preview">
-      <InkLine
-        points={points.flatMap((point) => [point.x, point.y])}
-        color={strokeColor(STROKE_COLOR_BLACK)}
-      />
+      <InkLine points={points.flatMap((point) => [point.x, point.y])} color={strokeColor(color)} />
     </InkLayer>
   );
 }

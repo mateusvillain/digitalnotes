@@ -1,0 +1,64 @@
+import { render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { describe, expect, it, vi } from "vitest";
+import {
+  NOTE_COLORS,
+  STROKE_COLORS,
+  STROKE_COLOR_BLACK,
+  type StrokeColor,
+} from "@/lib/board/types";
+import { strokeColor } from "@/lib/theme/note-colors";
+import { PencilColorPicker } from "./PencilColorPicker";
+import { UI } from "@/lib/i18n/ui";
+
+function cores(): HTMLElement[] {
+  return screen.getAllByRole("radio");
+}
+
+/**
+ * Cobre só o que é específico do lápis — quantas opções, ordem, rótulos e cor de fundo. A
+ * navegação por teclado (Tab, setas, Home/End) é a mesma base de `ColorRadioGroup`, e já é
+ * testada a fundo em `ColorPicker.test.tsx`; repeti-la aqui testaria a mesma implementação
+ * duas vezes.
+ */
+describe("PencilColorPicker", () => {
+  it("mostra sete opções: as seis da nota, mais o preto por último", () => {
+    render(<PencilColorPicker value={STROKE_COLOR_BLACK} onChange={vi.fn()} />);
+
+    expect(cores()).toHaveLength(STROKE_COLORS.length);
+    expect(cores().map((cor) => cor.getAttribute("aria-label"))).toEqual([
+      ...NOTE_COLORS.map((name) => UI.en.note.colors[name]),
+      UI.en.pencil.black,
+    ]);
+  });
+
+  it("pinta cada quadradinho com a cor de traço correspondente", () => {
+    render(<PencilColorPicker value={STROKE_COLOR_BLACK} onChange={vi.fn()} />);
+
+    const estilos = cores().map((cor) => cor.style.backgroundColor);
+    expect(estilos).toEqual(STROKE_COLORS.map((_, index) => strokeColor(index as StrokeColor)));
+  });
+
+  it("marca o preto quando ele é a cor atual", () => {
+    render(<PencilColorPicker value={STROKE_COLOR_BLACK} onChange={vi.fn()} />);
+
+    expect(cores()[6]?.getAttribute("aria-checked")).toBe("true");
+    expect(cores()[0]?.getAttribute("aria-checked")).toBe("false");
+  });
+
+  it("avisa a cor escolhida no clique", async () => {
+    const user = userEvent.setup();
+    const onChange = vi.fn();
+    render(<PencilColorPicker value={STROKE_COLOR_BLACK} onChange={onChange} />);
+
+    await user.click(screen.getByRole("radio", { name: UI.en.note.colors.blue }));
+
+    expect(onChange).toHaveBeenCalledWith(3);
+  });
+
+  it("é um grupo de rádio com nome próprio, diferente do seletor de nota", () => {
+    render(<PencilColorPicker value={STROKE_COLOR_BLACK} onChange={vi.fn()} />);
+
+    expect(screen.getByRole("radiogroup", { name: UI.en.pencil.color })).toBeDefined();
+  });
+});

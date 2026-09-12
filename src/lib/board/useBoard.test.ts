@@ -1058,6 +1058,65 @@ describe("useBoard — traço à mão livre", () => {
   });
 });
 
+describe("useBoard — cor do lápis (#69)", () => {
+  it("o lápis nasce preto", () => {
+    const { result } = renderHook(() => useBoard());
+
+    expect(result.current.pencilColor).toBe(STROKE_COLOR_BLACK);
+  });
+
+  it("a cor trocada vale para o próximo traço", () => {
+    const { result } = renderHook(() => useBoard());
+
+    act(() => result.current.setPencilColor(3));
+    act(() =>
+      result.current.addStroke([
+        { x: 0, y: 0 },
+        { x: 50, y: 20 },
+      ]),
+    );
+
+    expect(defined(result.current.strokes[0], "o traço gravado").color).toBe(3);
+  });
+
+  it("continua valendo para os traços seguintes, até ser trocada de novo", () => {
+    const { result } = renderHook(() => useBoard());
+    const traço = [
+      { x: 0, y: 0 },
+      { x: 50, y: 20 },
+    ];
+
+    act(() => result.current.setPencilColor(1));
+    act(() => result.current.addStroke(traço));
+    act(() => result.current.addStroke(traço));
+
+    expect(result.current.strokes.map((stroke) => stroke.color)).toEqual([1, 1]);
+  });
+
+  it("não recolore o que já foi desenhado", () => {
+    const { result } = renderHook(() => useBoard());
+    const traço = [
+      { x: 0, y: 0 },
+      { x: 50, y: 20 },
+    ];
+
+    act(() => result.current.addStroke(traço));
+    act(() => result.current.setPencilColor(4));
+
+    expect(defined(result.current.strokes[0], "o traço gravado").color).toBe(STROKE_COLOR_BLACK);
+  });
+
+  it("é independente da cor de post-it: trocar uma não muda a outra", () => {
+    const { result } = renderHook(() => useBoard());
+    act(() => result.current.createNoteAt({ x: 0, y: 0 }));
+    act(() => result.current.selectEverything());
+
+    act(() => result.current.colorSelection(5));
+
+    expect(result.current.pencilColor).toBe(STROKE_COLOR_BLACK);
+  });
+});
+
 describe("useBoard — mover a seleção pelo teclado", () => {
   /** Um quadro com um post-it e um traço, cada um com posição conhecida. */
   function comNotaETraço() {

@@ -45,6 +45,15 @@ export interface UiCopy {
   pencil: {
     /** Dica e `aria-label` do botão que liga o modo lápis (#68). */
     action: string;
+    /**
+     * Nome do grupo de cores do traço, e nome da única cor que não é uma cor de nota (#69).
+     *
+     * As outras seis saem de `note.colors` — a mesma paleta, o mesmo rótulo —, e não são
+     * repetidas aqui: duas traduções da mesma palavra ("Amarelo") divergiriam no dia em que
+     * uma fosse ajustada e a outra não.
+     */
+    color: string;
+    black: string;
   };
   /** Dica e `aria-label` do botão que liga o modo borracha (#98). */
   eraser: { action: string };
@@ -102,7 +111,7 @@ export const UI: Record<Locale, UiCopy> = {
     zoom: { out: "Zoom out", reset: "Reset zoom to 100%", in: "Zoom in" },
     select: { action: "Select" },
     history: { undo: "Undo", redo: "Redo" },
-    pencil: { action: "Pencil" },
+    pencil: { action: "Pencil", color: "Pencil colour", black: "Black" },
     eraser: { action: "Eraser" },
     selectionActions: { remove: "Delete selection", duplicate: "Duplicate selection" },
     note: {
@@ -158,7 +167,7 @@ export const UI: Record<Locale, UiCopy> = {
     zoom: { out: "Diminuir zoom", reset: "Voltar o zoom para 100%", in: "Aumentar zoom" },
     select: { action: "Seleção" },
     history: { undo: "Desfazer", redo: "Refazer" },
-    pencil: { action: "Lápis" },
+    pencil: { action: "Lápis", color: "Cor do lápis", black: "Preto" },
     eraser: { action: "Borracha" },
     selectionActions: { remove: "Apagar seleção", duplicate: "Duplicar seleção" },
     note: {
