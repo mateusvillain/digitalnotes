@@ -16,7 +16,7 @@ const globalsCss = readFileSync(resolve(import.meta.dirname, "../../app/globals.
  * passaria por token.
  */
 const themeBlock = (() => {
-  const start = globalsCss.indexOf("@theme {");
+  const start = globalsCss.indexOf("@theme static {");
   if (start === -1) throw new Error("Bloco @theme não encontrado em globals.css");
 
   let depth = 0;
